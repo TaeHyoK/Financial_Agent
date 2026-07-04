@@ -1,0 +1,2 @@
+"""YFinance market data pipeline."""
+

@@ -1,0 +1,304 @@
+body {
+  font-family: "Noto Sans KR", "Noto Sans CJK KR", "Apple SD Gothic Neo", sans-serif;
+  color: #1A202C;
+  background: #F4F6F8;
+  line-height: 1.55;
+  letter-spacing: normal;
+  word-spacing: normal;
+  word-break: keep-all;
+  margin: 0;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: normal;
+  word-spacing: normal;
+  color: #0B1F3A;
+}
+
+p,
+li,
+td,
+th,
+div {
+  letter-spacing: normal;
+  word-spacing: normal;
+}
+
+.report-page {
+  width: 1120px;
+  margin: 32px auto;
+  padding: 40px 48px;
+  background: white;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  border-radius: 14px;
+  box-sizing: border-box;
+}
+
+.report-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 2px solid #0B1F3A;
+  padding-bottom: 18px;
+  margin-bottom: 24px;
+}
+
+.report-title h1 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1.2;
+}
+
+.report-title p,
+.meta-block {
+  color: #4A5568;
+  font-size: 14px;
+  margin: 6px 0 0 0;
+}
+
+.metric-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin: 18px 0 22px 0;
+}
+
+.metric-card {
+  background: #0B1F3A;
+  color: #FFFFFF;
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+
+.metric-card .label {
+  font-size: 13px;
+  color: #CBD5E1;
+  margin-bottom: 8px;
+}
+
+.metric-card .value {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.investment-dashboard {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 16px;
+  margin: 18px 0 22px 0;
+}
+
+.recommendation-tile {
+  background: #0B1F3A;
+  color: #FFFFFF;
+  border-radius: 12px;
+  padding: 20px 22px;
+  min-height: 186px;
+  box-sizing: border-box;
+}
+
+.recommendation-tile .label {
+  color: #CBD5E1;
+  font-size: 13px;
+}
+
+.recommendation-value {
+  margin-top: 8px;
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.recommendation-tile p {
+  margin: 14px 0 0 0;
+  color: #E2E8F0;
+  font-size: 13px;
+}
+
+.dashboard-main {
+  border: 1px solid #CBD5E1;
+  border-radius: 12px;
+  padding: 16px;
+  background: #F8FAFC;
+}
+
+.dashboard-message {
+  border-bottom: 1px solid #E2E8F0;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+}
+
+.dashboard-message p {
+  margin: 5px 0 0 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.dashboard-panel {
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #FFFFFF;
+}
+
+.dashboard-panel ul {
+  margin: 6px 0 0 0;
+  padding-left: 17px;
+  font-size: 13px;
+}
+
+.dashboard-panel li {
+  margin: 4px 0;
+}
+
+.metric-snapshot {
+  border-left: 5px solid #0B1F3A;
+}
+
+.section-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.three-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.card {
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 18px 20px;
+  background: #FFFFFF;
+}
+
+.summary-card {
+  background: #EAF2FF;
+  border-left: 5px solid #1F5AA6;
+}
+
+.risk-card {
+  background: #FFF1F0;
+  border-left: 5px solid #B42318;
+}
+
+.executive-summary {
+  background: #F8FAFC;
+  border-left: 5px solid #0B1F3A;
+  margin-bottom: 18px;
+}
+
+.group-heading {
+  margin: 18px 0 10px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #CBD5E1;
+  font-size: 17px;
+}
+
+.takeaway-box {
+  background: #EAF2FF;
+  border: 1px solid #1F5AA6;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-top: 12px;
+}
+
+.note-box {
+  background: #F4F6F8;
+  border: 1px solid #CBD5E1;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 13px;
+  color: #4A5568;
+}
+
+.chart-img {
+  width: 100%;
+  max-width: 100%;
+  margin: 16px 0 10px 0;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+}
+
+.chart-block {
+  margin-top: 24px;
+}
+
+.chart-block h3,
+.card h3 {
+  margin-top: 0;
+}
+
+.label {
+  color: #1F5AA6;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.card-section {
+  margin-top: 12px;
+}
+
+.metrics-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 14px;
+  font-size: 14px;
+}
+
+.metrics-table th {
+  background: #0B1F3A;
+  color: #FFFFFF;
+  text-align: left;
+  padding: 10px 12px;
+}
+
+.metrics-table td {
+  border-bottom: 1px solid #E2E8F0;
+  padding: 10px 12px;
+}
+
+.pill-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.pill-list li {
+  margin: 6px 0;
+}
+
+.page-label {
+  color: #1F5AA6;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.debug-source-trace {
+  font-size: 13px;
+  color: #4A5568;
+}
+
+@media print {
+  body {
+    background: white;
+  }
+
+  .report-page {
+    width: auto;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+    page-break-after: always;
+  }
+}

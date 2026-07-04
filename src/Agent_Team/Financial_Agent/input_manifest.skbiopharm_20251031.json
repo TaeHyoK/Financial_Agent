@@ -1,0 +1,32 @@
+{
+  "agent_name": "Financial Analyst Agent",
+  "agent_version": "3.4",
+  "target_entity": {
+    "company_name": "SK바이오팜",
+    "ticker": "326030.KS",
+    "corp_code": "00878696",
+    "as_of_date": "2025-10-31"
+  },
+  "input_paths": {
+    "dart_main": "/home/agent2/Financial_Agent_Final/Output_total/Financial/SK바이오팜_20251031/dart_main.json",
+    "yfinance_market_summary": "/home/agent2/Financial_Agent_Final/Output_total/Y_Finance/market_summary_20251031.json",
+    "news_llm_period_summaries": "/home/agent2/Financial_Agent_Final/Output_total/News/SK바이오팜_20251031/context_exports/month/llm_period_summaries.json"
+  },
+  "input_roles": {
+    "dart_main": "primary_financial_anchor",
+    "yfinance_market_summary": "market_context",
+    "news_llm_period_summaries": "news_context"
+  },
+  "source_notes": {
+    "news_granularity": "month",
+    "selected_date": "2025-10-31",
+    "dart_latest_period": "2025 Q3 YTD"
+  },
+  "output_contract": {
+    "format": "json",
+    "mode": "financial_report_with_sy_handoff",
+    "schema_path": "/home/agent2/Financial_Agent_Final/src/Agent_Team/Financial_Agent/output_schema.json",
+    "language": "ko",
+    "investment_decision_allowed": false
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "company_code": "00878696",
+  "company_name": "SK바이오팜",
+  "ticker": "326030.KS",
+  "report_type": "quarterly report",
+  "date_range": "20241101-20251031",
+  "selected_date": "20251031",
+  "llm_model": "gpt-5.4-mini",
+  "max_retries": 1
+}

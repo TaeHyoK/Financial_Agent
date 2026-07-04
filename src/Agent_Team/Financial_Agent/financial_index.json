@@ -1,0 +1,12 @@
+{
+    "output_metrics_order": [
+      "Revenue",
+      "Revenue Growth",
+      "Cost of Operations",
+      "Contribution Profit",
+      "Contribution Margin",
+      "SG&A",
+      "SG&A Margin",
+      "EPS"
+    ]
+  }

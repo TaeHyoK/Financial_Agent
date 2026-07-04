@@ -1,0 +1,60 @@
+data_root: "Output_total/News/artifacts"
+inputs_root: "Output_total/News/inputs"
+
+news:
+  collector: "google_news_rss"
+  collection_days: 365
+  query_language: "ko"
+  max_results: 200
+  dedup_on_url: true
+
+dart:
+  api_key_env: "DART_API_KEY"
+  fetch_lookback_days: 550
+  parser_py_path: null
+  sections_to_extract:
+    - "사업의 개요"
+    - "주요 제품 및 서비스"
+    - "원재료 및 생산설비"
+    - "주요계약 및 연구개발활동"
+  chunking:
+    target_char_min: 40
+    target_char_max: 140
+    hard_char_max: 220
+    min_char_drop: 25
+    topk_per_section:
+      overview: 6
+      products: 10
+      materials: 8
+      facilities: 8
+      contracts: 6
+      rnd: 6
+    diversity:
+      enabled: true
+      cosine_skip_threshold: 0.80
+
+models:
+  embedding_model_name: "BAAI/bge-m3"
+  reranker_model_name: "BAAI/bge-reranker-v2-m3"
+  device: "cuda"
+  batch_size: 32
+
+clustering:
+  method: "hdbscan"
+  time_window_hours: 48
+  min_cluster_size: 3
+  min_samples: 1
+
+scoring:
+  alpha: 0.75
+  beta: 0.15
+  gamma: 0.10
+  delta: 0.05
+  tau_hours: 48
+  mention_transform: "log1p"
+  impact_topk: 3
+  rerank_all_chunks: true
+
+outputs:
+  format: ["parquet", "jsonl"]
+  keep_cluster_members: true

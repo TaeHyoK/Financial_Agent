@@ -1,0 +1,571 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.sy/sy-agent/financial_analyst_output_validation_schema.json",
+  "title": "SY Agent Financial Analyst Output Validation Schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "agent_name",
+    "agent_role",
+    "output_version",
+    "output_mode",
+    "target_entity",
+    "source_agent",
+    "graph_flow",
+    "validation_summary",
+    "llm_evaluation_checks",
+    "source_context",
+    "dialogue_trace",
+    "claim_validations",
+    "verified_output",
+    "revision_brief",
+    "report_rewritten",
+    "confidence"
+  ],
+  "properties": {
+    "agent_name": {
+      "const": "SY Agent"
+    },
+    "agent_role": {
+      "const": "Financial Analyst Output LLM Verifier"
+    },
+    "output_version": {
+      "const": "1.0"
+    },
+    "output_mode": {
+      "const": "financial_analyst_output_validation"
+    },
+    "target_entity": {
+      "$ref": "#/$defs/target_entity"
+    },
+    "source_agent": {
+      "$ref": "#/$defs/source_agent"
+    },
+    "graph_flow": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "prefixItems": [
+        {
+          "const": "Input Specialist Output"
+        },
+        {
+          "const": "Claim Extraction Node"
+        },
+        {
+          "const": "DART Source Context Node"
+        },
+        {
+          "const": "SY Question 1 Node"
+        },
+        {
+          "const": "Specialist Answer 1 Node"
+        },
+        {
+          "const": "SY Question 2 Node"
+        },
+        {
+          "const": "Specialist Answer 2 Node"
+        },
+        {
+          "const": "SY LLM Evaluation Node"
+        },
+        {
+          "const": "Revision Brief Node"
+        },
+        {
+          "const": "Specialist Report Rewrite Node"
+        },
+        {
+          "const": "Specialist Final Rewrite Node"
+        },
+        {
+          "const": "Verified Handoff Output"
+        }
+      ],
+      "minItems": 12,
+      "maxItems": 12
+    },
+    "validation_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "overall_status",
+        "summary_ko",
+        "evaluation_mode",
+        "total_claims",
+        "kept_claims",
+        "revised_claims",
+        "hallucination_candidate_claims",
+        "removed_claims"
+      ],
+      "properties": {
+        "overall_status": {
+          "enum": [
+            "pass",
+            "needs_revision",
+            "fail"
+          ]
+        },
+        "summary_ko": {
+          "type": "string"
+        },
+        "evaluation_mode": {
+          "const": "llm_only_question_answer_verification"
+        },
+        "total_claims": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "kept_claims": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "revised_claims": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hallucination_candidate_claims": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removed_claims": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "llm_evaluation_checks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/llm_check"
+      }
+    },
+    "source_context": {
+      "type": "object"
+    },
+    "dialogue_trace": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dialogue_message"
+      }
+    },
+    "claim_validations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/claim_validation"
+      }
+    },
+    "verified_output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kept_claim_ids",
+        "kept_claims",
+        "revision_claims",
+        "hallucination_candidate_claims",
+        "removed_claims"
+      ],
+      "properties": {
+        "kept_claim_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "kept_claims": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/kept_claim"
+          }
+        },
+        "revision_claims": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/revision_claim"
+          }
+        },
+        "hallucination_candidate_claims": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/hallucination_candidate_claim"
+          }
+        },
+        "removed_claims": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/removed_claim"
+          }
+        }
+      }
+    },
+    "revision_brief": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "report_rewritten": {
+      "type": "boolean"
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "grade",
+        "reason_ko"
+      ],
+      "properties": {
+        "grade": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "reason_ko": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "target_entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "company_name",
+        "ticker",
+        "corp_code",
+        "as_of_date"
+      ],
+      "properties": {
+        "company_name": {
+          "type": "string"
+        },
+        "ticker": {
+          "type": "string"
+        },
+        "corp_code": {
+          "type": "string"
+        },
+        "as_of_date": {
+          "type": "string"
+        }
+      }
+    },
+    "source_agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agent_name",
+        "output_version",
+        "output_path"
+      ],
+      "properties": {
+        "agent_name": {
+          "type": "string"
+        },
+        "output_version": {
+          "type": "string"
+        },
+        "output_path": {
+          "type": "string"
+        }
+      }
+    },
+    "llm_check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "check_id",
+        "check_name",
+        "status",
+        "summary_ko"
+      ],
+      "properties": {
+        "check_id": {
+          "type": "string"
+        },
+        "check_name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "summary_ko": {
+          "type": "string"
+        }
+      }
+    },
+    "dialogue_message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node",
+        "role",
+        "content"
+      ],
+      "properties": {
+        "node": {
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "system",
+            "sy",
+            "specialist"
+          ]
+        },
+        "content": {
+          "type": "string"
+        }
+      }
+    },
+    "claim_validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_id",
+        "claim_ko",
+        "claim_origin",
+        "section_path",
+        "financial_dimension",
+        "question_1_ko",
+        "answer_1_ko",
+        "question_2_ko",
+        "answer_2_ko",
+        "evidence_refs",
+        "source_context_refs",
+        "support_level",
+        "decision",
+        "reason_ko",
+        "revision_suggestion_ko"
+      ],
+      "properties": {
+        "claim_id": {
+          "type": "string"
+        },
+        "claim_ko": {
+          "type": "string"
+        },
+        "claim_origin": {
+          "type": "string"
+        },
+        "section_path": {
+          "type": "string"
+        },
+        "financial_dimension": {
+          "type": "string"
+        },
+        "question_1_ko": {
+          "const": "왜 이런 의견을 냈어?"
+        },
+        "answer_1_ko": {
+          "type": "string"
+        },
+        "question_2_ko": {
+          "type": "string"
+        },
+        "answer_2_ko": {
+          "type": "string"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source_context_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "support_level": {
+          "enum": [
+            "supported",
+            "weakly_supported",
+            "unsupported",
+            "contradicted"
+          ]
+        },
+        "decision": {
+          "enum": [
+            "keep",
+            "revise",
+            "hallucination_candidate",
+            "remove"
+          ]
+        },
+        "reason_ko": {
+          "type": "string"
+        },
+        "revision_suggestion_ko": {
+          "type": "string"
+        }
+      }
+    },
+    "kept_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_id",
+        "claim_ko",
+        "claim_origin",
+        "section_path",
+        "financial_dimension",
+        "evidence_refs",
+        "source_context_refs",
+        "reason_ko"
+      ],
+      "properties": {
+        "claim_id": {
+          "type": "string"
+        },
+        "claim_ko": {
+          "type": "string"
+        },
+        "claim_origin": {
+          "type": "string"
+        },
+        "section_path": {
+          "type": "string"
+        },
+        "financial_dimension": {
+          "type": "string"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source_context_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reason_ko": {
+          "type": "string"
+        }
+      }
+    },
+    "revision_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_id",
+        "claim_ko",
+        "claim_origin",
+        "section_path",
+        "financial_dimension",
+        "evidence_refs",
+        "source_context_refs",
+        "revision_reason_ko",
+        "revision_suggestion_ko"
+      ],
+      "properties": {
+        "claim_id": {
+          "type": "string"
+        },
+        "claim_ko": {
+          "type": "string"
+        },
+        "claim_origin": {
+          "type": "string"
+        },
+        "section_path": {
+          "type": "string"
+        },
+        "financial_dimension": {
+          "type": "string"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source_context_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "revision_reason_ko": {
+          "type": "string"
+        },
+        "revision_suggestion_ko": {
+          "type": "string"
+        }
+      }
+    },
+    "hallucination_candidate_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_id",
+        "claim_ko",
+        "claim_origin",
+        "section_path",
+        "financial_dimension",
+        "reason_ko"
+      ],
+      "properties": {
+        "claim_id": {
+          "type": "string"
+        },
+        "claim_ko": {
+          "type": "string"
+        },
+        "claim_origin": {
+          "type": "string"
+        },
+        "section_path": {
+          "type": "string"
+        },
+        "financial_dimension": {
+          "type": "string"
+        },
+        "reason_ko": {
+          "type": "string"
+        }
+      }
+    },
+    "removed_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_id",
+        "claim_ko",
+        "claim_origin",
+        "section_path",
+        "financial_dimension",
+        "remove_reason_ko"
+      ],
+      "properties": {
+        "claim_id": {
+          "type": "string"
+        },
+        "claim_ko": {
+          "type": "string"
+        },
+        "claim_origin": {
+          "type": "string"
+        },
+        "section_path": {
+          "type": "string"
+        },
+        "financial_dimension": {
+          "type": "string"
+        },
+        "remove_reason_ko": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

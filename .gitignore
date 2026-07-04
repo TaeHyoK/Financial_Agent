@@ -1,0 +1,33 @@
+# Environment and secrets
+.env
+.env.*
+*.env
+configs/.env
+!.env.example
+!*.env.example
+
+# Python environments and caches
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+*.egg-info/
+build/
+dist/
+
+# Logs and runtime outputs
+logs/
+*.log
+Output_total/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

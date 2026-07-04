@@ -1,0 +1,458 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.sy/financial-analyst-agent/report_schema.json",
+  "title": "Financial Analyst Agent Report Schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "agent_name",
+    "role",
+    "target_company",
+    "ticker",
+    "corp_code",
+    "as_of_date",
+    "main_view",
+    "financial_statement_view",
+    "detailed_analysis",
+    "cross_data_reconciliation",
+    "sy_handoff"
+  ],
+  "properties": {
+    "agent_name": {
+      "const": "Financial Analyst Agent"
+    },
+    "role": {
+      "const": "DART-based Financial Statement Analyst"
+    },
+    "target_company": {
+      "type": "string"
+    },
+    "ticker": {
+      "type": "string"
+    },
+    "corp_code": {
+      "type": "string"
+    },
+    "as_of_date": {
+      "type": "string"
+    },
+    "main_view": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "direction",
+        "primary_basis",
+        "main_cautions",
+        "not_investment_decision"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "direction": {
+          "enum": [
+            "positive",
+            "neutral",
+            "negative",
+            "mixed"
+          ]
+        },
+        "primary_basis": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "main_cautions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "not_investment_decision": {
+          "const": true
+        }
+      }
+    },
+    "financial_statement_view": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revenue_growth",
+        "profitability",
+        "cost_efficiency",
+        "eps",
+        "risk_context",
+        "cash_flow",
+        "balance_sheet",
+        "capital_structure",
+        "debt",
+        "liquidity"
+      ],
+      "properties": {
+        "revenue_growth": {
+          "$ref": "#/$defs/statement_view"
+        },
+        "profitability": {
+          "$ref": "#/$defs/statement_view"
+        },
+        "cost_efficiency": {
+          "$ref": "#/$defs/statement_view"
+        },
+        "eps": {
+          "$ref": "#/$defs/statement_view"
+        },
+        "risk_context": {
+          "$ref": "#/$defs/statement_view"
+        },
+        "cash_flow": {
+          "$ref": "#/$defs/statement_view"
+        },
+        "balance_sheet": {
+          "$ref": "#/$defs/statement_view"
+        },
+        "capital_structure": {
+          "$ref": "#/$defs/statement_view"
+        },
+        "debt": {
+          "$ref": "#/$defs/statement_view"
+        },
+        "liquidity": {
+          "$ref": "#/$defs/statement_view"
+        }
+      }
+    },
+    "detailed_analysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revenue",
+        "margin",
+        "expense_efficiency",
+        "eps",
+        "risk_and_context",
+        "cash_flow",
+        "balance_sheet",
+        "capital_structure",
+        "debt",
+        "liquidity"
+      ],
+      "properties": {
+        "revenue": {
+          "$ref": "#/$defs/detailed_item"
+        },
+        "margin": {
+          "$ref": "#/$defs/detailed_item"
+        },
+        "expense_efficiency": {
+          "$ref": "#/$defs/detailed_item"
+        },
+        "eps": {
+          "$ref": "#/$defs/detailed_item"
+        },
+        "risk_and_context": {
+          "$ref": "#/$defs/detailed_item"
+        },
+        "cash_flow": {
+          "$ref": "#/$defs/detailed_item"
+        },
+        "balance_sheet": {
+          "$ref": "#/$defs/detailed_item"
+        },
+        "capital_structure": {
+          "$ref": "#/$defs/detailed_item"
+        },
+        "debt": {
+          "$ref": "#/$defs/detailed_item"
+        },
+        "liquidity": {
+          "$ref": "#/$defs/detailed_item"
+        }
+      }
+    },
+    "cross_data_reconciliation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "main_analysis",
+        "news_plus_dart",
+        "market_plus_dart",
+        "market_plus_news_plus_dart"
+      ],
+      "properties": {
+        "main_analysis": {
+          "$ref": "#/$defs/cross_analysis_section"
+        },
+        "news_plus_dart": {
+          "$ref": "#/$defs/cross_analysis_section"
+        },
+        "market_plus_dart": {
+          "$ref": "#/$defs/cross_analysis_section"
+        },
+        "market_plus_news_plus_dart": {
+          "$ref": "#/$defs/cross_analysis_section"
+        }
+      }
+    },
+    "sy_handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "financial_claims",
+        "key_evidence",
+        "reconciliation_flags"
+      ],
+      "properties": {
+                "financial_claims": {
+                  "type": "array",
+                  "minItems": 0,
+                  "maxItems": 10,
+                  "items": {
+                    "$ref": "#/$defs/financial_claim"
+                  }
+                },
+                "key_evidence": {
+                  "type": "array",
+                  "minItems": 0,
+                  "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        },
+        "reconciliation_flags": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reconciliation_flag"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "statement_view": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stance",
+        "reasoning",
+        "key_features"
+      ],
+      "properties": {
+        "stance": {
+          "type": "string"
+        },
+        "reasoning": {
+          "type": "string"
+        },
+        "key_features": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "detailed_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "interpretation",
+        "supporting_features"
+      ],
+      "properties": {
+        "interpretation": {
+          "type": "string"
+        },
+        "supporting_features": {
+          "type": "object"
+        },
+        "caution": {
+          "type": "string"
+        }
+      }
+    },
+    "cross_analysis_section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "reaction_points",
+        "divergences"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "reaction_points": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/cross_analysis_item"
+          }
+        },
+        "divergences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/cross_analysis_item"
+          }
+        }
+      }
+    },
+    "cross_analysis_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "point",
+        "cross_analysis",
+        "reaction_interpretation"
+      ],
+      "properties": {
+        "point": {
+          "type": "string"
+        },
+        "cross_analysis": {
+          "type": "string"
+        },
+        "reaction_interpretation": {
+          "type": "string"
+        }
+      }
+    },
+    "financial_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_id",
+        "claim_ko",
+        "financial_dimension",
+        "status",
+        "dart_anchor_summary_ko",
+        "context_summary_ko",
+        "caution_ko",
+        "action_for_sy"
+      ],
+      "properties": {
+        "claim_id": {
+          "type": "string"
+        },
+        "claim_ko": {
+          "type": "string"
+        },
+        "financial_dimension": {
+          "enum": [
+            "growth",
+            "profitability",
+            "cost_efficiency",
+            "eps",
+            "earnings_quality",
+            "valuation_context",
+            "risk"
+          ]
+        },
+        "status": {
+          "enum": [
+            "active",
+            "conditional",
+            "caution",
+            "weak",
+            "rejected"
+          ]
+        },
+        "dart_anchor_summary_ko": {
+          "type": "string"
+        },
+        "context_summary_ko": {
+          "type": "string"
+        },
+        "caution_ko": {
+          "type": "string"
+        },
+        "action_for_sy": {
+          "enum": [
+            "use_normally",
+            "use_with_caution",
+            "reduce_weight",
+            "block_specific_claim"
+          ]
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_id",
+        "claim_id",
+        "source",
+        "metric_or_event",
+        "period",
+        "value",
+        "period_basis",
+        "interpretation_ko"
+      ],
+      "properties": {
+        "evidence_id": {
+          "type": "string"
+        },
+        "claim_id": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "DART",
+            "Y-Finance",
+            "News"
+          ]
+        },
+        "metric_or_event": {
+          "type": "string"
+        },
+        "period": {
+          "type": "string"
+        },
+        "value": {},
+        "period_basis": {
+          "enum": [
+            "YTD",
+            "QUARTER",
+            "FULL_YEAR",
+            "POINT_IN_TIME",
+            "context_only"
+          ]
+        },
+        "interpretation_ko": {
+          "type": "string"
+        }
+      }
+    },
+    "reconciliation_flag": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "flag_ko",
+        "severity",
+        "action_for_sy"
+      ],
+      "properties": {
+        "flag_ko": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "action_for_sy": {
+          "enum": [
+            "use_normally",
+            "use_with_caution",
+            "reduce_weight",
+            "block_specific_claim"
+          ]
+        }
+      }
+    }
+  }
+}

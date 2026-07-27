@@ -543,6 +543,7 @@ YFinance:
 Global:
   run_manifest.json 존재
   run_status.json 존재
+  전체 step 기록 전에는 pipeline_completed=false 및 status=running
   실패 단계가 없거나 실패 단계가 명시적으로 기록됨
 ```
 

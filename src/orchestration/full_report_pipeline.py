@@ -282,6 +282,10 @@ def run_full_pipeline(args: argparse.Namespace) -> dict[str, Any]:
             selected_date=selected_date,
             directory=directory,
         )
+        canonical_run_key = build_run_key(target.company_name, selected_date)
+        if canonical_run_key != paths.run_key:
+            paths = FullPipelinePaths(output_root, canonical_run_key, execution_id)
+            paths.ensure_directories()
         peer: CompanyIdentity | None = None
         if ablation.include_competitor:
             peer_resolution = _resolve_peer_selection(
@@ -291,6 +295,22 @@ def run_full_pipeline(args: argparse.Namespace) -> dict[str, Any]:
             )
             peer_stock_code = str((peer_resolution.get("selected_peer") or {}).get("stock_code") or "")
             if not peer_stock_code:
+                _write_json(paths.peer_resolution, peer_resolution)
+                manifest = _base_manifest(
+                    args=args,
+                    ablation=ablation,
+                    paths=paths,
+                    selected_date=selected_date,
+                    status="resolving_identities",
+                    steps=steps,
+                    target=target,
+                )
+                manifest["peer_resolution_failure"] = {
+                    "status": peer_resolution.get("status"),
+                    "reason": peer_resolution.get("reason"),
+                    "artifact": str(paths.peer_resolution),
+                }
+                _write_full_manifest(paths, manifest)
                 reason = peer_resolution.get("reason") or "selected peer stock code is missing"
                 raise CompanyResolutionError(f"Naver peer resolution failed: {reason}.")
             peer = resolve_company_identity_by_stock_code(
@@ -308,10 +328,6 @@ def run_full_pipeline(args: argparse.Namespace) -> dict[str, Any]:
                 "usage_policy": {"purpose": "ablation", "point_in_time_financial_evidence": False},
             }
 
-        canonical_run_key = build_run_key(target.company_name, selected_date)
-        if canonical_run_key != paths.run_key:
-            paths = FullPipelinePaths(output_root, canonical_run_key, execution_id)
-            paths.ensure_directories()
         peer_run_key = build_run_key(peer.company_name, selected_date) if peer else ""
         _write_resolved_inputs(
             args=args,

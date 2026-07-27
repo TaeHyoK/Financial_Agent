@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import json
+
 from orchestration.end_to_end_loop import build_parser, file_sha256, hash_source_trees, load_fingerprint_state
+from orchestration.config import RunConfig
+from orchestration.manifest import infer_overall_status, is_pipeline_completed, write_run_files
 from orchestration.paths import RunPaths
+from orchestration.run_state import FAILED, RUNNING, SUCCESS, StepRecord
 from orchestration.validators import collect_token_usage
 
 
@@ -72,6 +77,66 @@ def test_invalid_fingerprint_state_is_ignored(tmp_path) -> None:
     path.write_text('{"version":"old","steps":{"x":{}}}', encoding="utf-8")
 
     assert load_fingerprint_state(path)["steps"] == {}
+
+
+def test_incomplete_successful_steps_remain_running() -> None:
+    steps = [StepRecord(name="first", status=SUCCESS)]
+
+    assert infer_overall_status(steps, expected_step_count=2) == RUNNING
+    assert is_pipeline_completed(steps, expected_step_count=2) is False
+
+
+def test_all_expected_successful_steps_complete_the_pipeline() -> None:
+    steps = [
+        StepRecord(name="first", status=SUCCESS),
+        StepRecord(name="second", status=SUCCESS),
+    ]
+
+    assert infer_overall_status(steps, expected_step_count=2) == SUCCESS
+    assert is_pipeline_completed(steps, expected_step_count=2) is True
+
+
+def test_failure_status_is_visible_before_remaining_steps_are_recorded() -> None:
+    steps = [StepRecord(name="first", status=FAILED)]
+
+    assert infer_overall_status(steps, expected_step_count=2) == FAILED
+    assert is_pipeline_completed(steps, expected_step_count=2) is False
+
+
+def test_run_status_file_marks_incomplete_successful_steps_as_running(tmp_path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}", encoding="utf-8")
+    config = RunConfig(
+        config_path=config_path,
+        company_code="sample",
+        company_name="sample",
+        ticker="000000.KS",
+        corp_code="00000000",
+        date_range="20251001-20251030",
+        selected_date="20251031",
+        raw={},
+    )
+    paths = RunPaths(
+        project_root=tmp_path,
+        output_root=tmp_path,
+        run_key="sample_20251031",
+        selected_date="20251031",
+    )
+    paths.ensure_directories()
+
+    manifest = write_run_files(
+        paths,
+        config,
+        [StepRecord(name="first", status=SUCCESS)],
+        dry_run=False,
+        expected_step_count=2,
+    )
+    persisted_status = json.loads(paths.run_status.read_text(encoding="utf-8"))
+
+    assert manifest["status"] == RUNNING
+    assert manifest["pipeline_completed"] is False
+    assert persisted_status["status"] == RUNNING
+    assert persisted_status["pipeline_completed"] is False
 
 
 

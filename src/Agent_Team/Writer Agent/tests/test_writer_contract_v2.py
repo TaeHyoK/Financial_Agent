@@ -187,6 +187,48 @@ def test_writer_provenance_detects_editorial_card_change() -> None:
         )
 
 
+def test_writer_input_rejects_strategy_bridge_internal_metadata() -> None:
+    strategy_packet, strategy_decision, provenance = _strategy_artifacts()
+    packet, _writer_provenance = build_writer_editorial_packet(
+        strategy_packet=strategy_packet,
+        strategy_decision=strategy_decision,
+        strategy_provenance=provenance,
+    )
+    packet["recommendation_bridge"]["forward_support"] += (
+        " forward_support_card_keys는 financial.same_period_trend를 사용한다."
+    )
+
+    with pytest.raises(ValueError, match="Internal metadata leaked"):
+        validate_writer_editorial_packet(packet)
+
+
+def test_claim_unit_reader_text_replaces_semantic_card_keys() -> None:
+    strategy_packet, strategy_decision, provenance = _strategy_artifacts()
+    packet, _writer_provenance = build_writer_editorial_packet(
+        strategy_packet=strategy_packet,
+        strategy_decision=strategy_decision,
+        strategy_provenance=provenance,
+    )
+    raw = _writer_payload(packet)
+    item = raw["sections"]["business_market_context"]["section_analysis"]
+    item["paragraphs"] = ["valuation.selected_date 근거를 확인했다."]
+    item["_claim_units"] = [
+        {
+            "claim": "valuation.selected_date 근거를 확인했다.",
+            "card_keys": [],
+            "limitation_categories": [],
+        }
+    ]
+
+    payload = normalize_report_payload(raw, writer_handoff=packet)
+    normalized = payload["sections"]["business_market_context"]["section_analysis"]
+    serialized = json.dumps(normalized, ensure_ascii=False)
+
+    assert "valuation.selected_date" not in serialized
+    assert "밸류에이션 근거를 확인했다" in serialized
+    assert normalized["paragraphs"] == [normalized["_claim_units"][0]["claim"]]
+
+
 def test_gate_c_accepts_exact_strategy_meaning_and_hides_card_metadata() -> None:
     strategy_packet, strategy_decision, provenance = _strategy_artifacts()
     packet, _writer_provenance = build_writer_editorial_packet(

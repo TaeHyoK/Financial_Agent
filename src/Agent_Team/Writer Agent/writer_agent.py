@@ -42,7 +42,7 @@ REQUIRED_STRATEGY_INPUT_FILES = (
     "strategy_packet_provenance_v2.json",
     "strategy_decision_output_v2.json",
 )
-WRITER_NORMALIZATION_VERSION = "6"
+WRITER_NORMALIZATION_VERSION = "7"
 WRITER_VALIDATOR_VERSION = "2"
 
 

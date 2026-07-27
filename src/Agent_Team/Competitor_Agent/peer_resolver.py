@@ -18,6 +18,7 @@ from bs4 import BeautifulSoup
 NAVER_COINFO_URL = "https://finance.naver.com/item/coinfo.naver"
 NAVER_ITEM_MAIN_URL = "https://finance.naver.com/item/main.naver"
 DEFAULT_TIMEOUT = 20
+MAX_MARKET_CAP_FALLBACK_ITEMS = 20
 
 
 def resolve_naver_peer(
@@ -47,42 +48,42 @@ def resolve_naver_peer(
         )
         payload = json.loads(payload_text)
         result = select_peer_from_fg000(payload, target_stock_code=normalized_code)
-        fallback: dict[str, Any] | None = None
-        if result.get("reason") == "target_market_cap_missing":
-            # WiseReport occasionally returns a valid FG000 candidate set with an
-            # empty target MKT_VAL.  Use Naver's own item page only for the missing
-            # target value; candidate values still come from the same FG000 set.
-            item_main_url = (
-                f"{NAVER_ITEM_MAIN_URL}?"
-                f"{urllib.parse.urlencode({'code': normalized_code})}"
+        if result.get("reason") in {
+            "target_market_cap_missing",
+            "comparable_peer_market_caps_missing",
+        }:
+            fallback_values, fallback_attempts = _fetch_missing_market_caps(
+                payload,
+                timeout=timeout,
             )
-            try:
-                item_main_html = _fetch_text(
-                    item_main_url,
-                    timeout=timeout,
-                    encoding="euc-kr",
+            result = select_peer_from_fg000(
+                payload,
+                target_stock_code=normalized_code,
+                market_cap_100m_krw_by_stock_code=fallback_values,
+            )
+            target_attempt = next(
+                (
+                    item
+                    for item in fallback_attempts
+                    if item.get("stock_code") == normalized_code
+                ),
+                None,
+            )
+            if target_attempt is not None:
+                result["target_market_cap_fallback"] = _target_fallback_summary(
+                    target_attempt,
+                    result=result,
                 )
-                fallback_market_cap = extract_naver_market_cap_100m_krw(item_main_html)
-            except (OSError, TimeoutError, ValueError) as exc:
-                fallback = {
-                    "status": "failed",
-                    "provider": "Naver Finance item main",
-                    "reason": "target_market_cap_fallback_failed",
-                    "error_type": type(exc).__name__,
-                }
-            else:
-                result = select_peer_from_fg000(
-                    payload,
-                    target_stock_code=normalized_code,
-                    target_market_cap_100m_krw=fallback_market_cap,
+            candidate_attempts = [
+                item
+                for item in fallback_attempts
+                if item.get("stock_code") != normalized_code
+            ]
+            if candidate_attempts:
+                result["candidate_market_cap_fallback"] = _candidate_fallback_summary(
+                    candidate_attempts,
+                    result=result,
                 )
-                fallback = {
-                    "status": "used" if result.get("status") == "selected" else "available",
-                    "provider": "Naver Finance item main",
-                    "url": item_main_url,
-                }
-        if fallback is not None:
-            result["target_market_cap_fallback"] = fallback
     except (OSError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
         return peer_unavailable(
             stock_code=normalized_code,
@@ -205,6 +206,7 @@ def select_peer_from_fg000(
     *,
     target_stock_code: str,
     target_market_cap_100m_krw: float | None = None,
+    market_cap_100m_krw_by_stock_code: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Normalize FG000 rows and choose one candidate by market-cap distance."""
 
@@ -212,18 +214,34 @@ def select_peer_from_fg000(
     if not isinstance(rows, list) or not rows:
         return peer_unavailable(stock_code=target_stock_code, reason="fg000_candidates_not_available")
 
-    normalized_rows = [candidate for row in rows if (candidate := _normalize_candidate(row)) is not None]
     target_code = _stock_code(target_stock_code)
+    fallback_values = {
+        _stock_code(code): value
+        for code, raw_value in (market_cap_100m_krw_by_stock_code or {}).items()
+        if (value := _number(raw_value)) is not None and value > 0
+    }
+    explicit_target_fallback = _number(target_market_cap_100m_krw)
+    if explicit_target_fallback is not None and explicit_target_fallback > 0:
+        fallback_values.setdefault(target_code, explicit_target_fallback)
+
+    normalized_rows = [
+        candidate
+        for row in rows
+        if (candidate := _normalize_candidate(row)) is not None
+    ]
+    for candidate in normalized_rows:
+        if candidate.get("market_cap_100m_krw") is not None:
+            candidate["market_cap_source"] = "fg000_header"
+            continue
+        fallback_market_cap = fallback_values.get(candidate["stock_code"])
+        if fallback_market_cap is not None:
+            candidate["market_cap_100m_krw"] = fallback_market_cap
+            candidate["market_cap_source"] = "naver_item_main"
+
     target = next((candidate for candidate in normalized_rows if candidate["stock_code"] == target_code), None)
     candidates = [candidate for candidate in normalized_rows if candidate["stock_code"] != target_code]
     if target is None:
         return peer_unavailable(stock_code=target_code, reason="target_missing_from_fg000_response")
-    target_market_cap_source = "fg000_header"
-    if target.get("market_cap_100m_krw") is None:
-        fallback_market_cap = _number(target_market_cap_100m_krw)
-        if fallback_market_cap is not None and fallback_market_cap > 0:
-            target["market_cap_100m_krw"] = fallback_market_cap
-            target_market_cap_source = "naver_item_main"
     if target.get("market_cap_100m_krw") is None:
         return peer_unavailable(stock_code=target_code, reason="target_market_cap_missing")
     comparable = [candidate for candidate in candidates if candidate.get("market_cap_100m_krw") is not None]
@@ -249,8 +267,108 @@ def select_peer_from_fg000(
             "candidate_count": len(candidates),
             "comparable_candidate_count": len(comparable),
             "market_cap_unit": "100m_KRW",
-            "target_market_cap_source": target_market_cap_source,
+            "target_market_cap_source": target.get("market_cap_source") or "fg000_header",
+            "selected_peer_market_cap_source": (
+                selected.get("market_cap_source") or "fg000_header"
+            ),
         },
+    }
+
+
+def _fetch_missing_market_caps(
+    payload: dict[str, Any],
+    *,
+    timeout: int,
+) -> tuple[dict[str, float], list[dict[str, Any]]]:
+    """Fetch bounded Naver item-page fallbacks for FG000 rows with no market cap."""
+
+    rows = payload.get("oDt_header") if isinstance(payload, dict) else None
+    normalized_rows = [
+        candidate
+        for row in (rows if isinstance(rows, list) else [])
+        if (candidate := _normalize_candidate(row)) is not None
+    ]
+    missing = [
+        candidate
+        for candidate in normalized_rows
+        if candidate.get("market_cap_100m_krw") is None
+    ][:MAX_MARKET_CAP_FALLBACK_ITEMS]
+    values: dict[str, float] = {}
+    attempts: list[dict[str, Any]] = []
+    for candidate in missing:
+        stock_code = candidate["stock_code"]
+        item_main_url = (
+            f"{NAVER_ITEM_MAIN_URL}?"
+            f"{urllib.parse.urlencode({'code': stock_code})}"
+        )
+        attempt: dict[str, Any] = {
+            "stock_code": stock_code,
+            "company_name": candidate["company_name"],
+            "provider": "Naver Finance item main",
+            "url": item_main_url,
+        }
+        try:
+            item_main_html = _fetch_text(
+                item_main_url,
+                timeout=timeout,
+                encoding="euc-kr",
+            )
+            values[stock_code] = extract_naver_market_cap_100m_krw(item_main_html)
+        except (OSError, TimeoutError, ValueError) as exc:
+            attempt.update(
+                {
+                    "status": "failed",
+                    "error_type": type(exc).__name__,
+                }
+            )
+        else:
+            attempt["status"] = "available"
+        attempts.append(attempt)
+    return values, attempts
+
+
+def _target_fallback_summary(
+    attempt: dict[str, Any],
+    *,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    summary = dict(attempt)
+    if attempt.get("status") == "available":
+        summary["status"] = (
+            "used"
+            if (result.get("target") or {}).get("market_cap_source") == "naver_item_main"
+            else "available"
+        )
+    else:
+        summary["reason"] = "target_market_cap_fallback_failed"
+    return summary
+
+
+def _candidate_fallback_summary(
+    attempts: list[dict[str, Any]],
+    *,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    available_codes = {
+        str(item.get("stock_code") or "")
+        for item in attempts
+        if item.get("status") == "available"
+    }
+    selected_code = str((result.get("selected_peer") or {}).get("stock_code") or "")
+    if selected_code and selected_code in available_codes:
+        status = "used"
+    elif available_codes:
+        status = "available"
+    else:
+        status = "failed"
+    return {
+        "status": status,
+        "provider": "Naver Finance item main",
+        "attempted_count": len(attempts),
+        "available_count": len(available_codes),
+        "failed_count": len(attempts) - len(available_codes),
+        "selected_peer_used_fallback": status == "used",
+        "items": attempts,
     }
 
 

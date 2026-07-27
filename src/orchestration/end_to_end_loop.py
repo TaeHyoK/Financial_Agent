@@ -608,6 +608,7 @@ class AgentTeamOrchestrator:
             llm_usage_manifest=self.args.llm_usage_manifest,
             llm_execution_id=self.args.llm_execution_id,
             llm_run_id=self.args.llm_run_id or self.paths.run_key,
+            expected_step_count=len(STEP_SPECS),
         )
 
     def _write_financial_pipeline_manifest(self) -> None:

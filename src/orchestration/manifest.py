@@ -9,7 +9,16 @@ from typing import Any
 
 from .config import RunConfig
 from .paths import RunPaths
-from .run_state import FAILED, PARTIAL_SUCCESS, SKIPPED, SUCCESS, StepRecord, utc_now
+from .run_state import (
+    FAILED,
+    PARTIAL_SUCCESS,
+    PENDING,
+    RUNNING,
+    SKIPPED,
+    SUCCESS,
+    StepRecord,
+    utc_now,
+)
 from .validators import collect_token_usage, validate_outputs
 
 
@@ -133,17 +142,37 @@ def sync_final_aliases(paths: RunPaths) -> dict[str, Any]:
     return result
 
 
-def infer_overall_status(steps: list[StepRecord]) -> str:
+def infer_overall_status(
+    steps: list[StepRecord],
+    *,
+    expected_step_count: int | None = None,
+) -> str:
     statuses = [step.status for step in steps]
     if any(status == FAILED for status in statuses):
         if any(status == SUCCESS for status in statuses):
             return PARTIAL_SUCCESS
         return FAILED
+    if any(status in {PENDING, RUNNING} for status in statuses) or (
+        expected_step_count is not None and len(steps) < expected_step_count
+    ):
+        return RUNNING
     if any(status == SKIPPED for status in statuses):
         if any(status == SUCCESS for status in statuses):
             return PARTIAL_SUCCESS
         return SKIPPED
     return SUCCESS
+
+
+def is_pipeline_completed(
+    steps: list[StepRecord],
+    *,
+    expected_step_count: int | None = None,
+) -> bool:
+    if any(step.status in {PENDING, RUNNING} for step in steps):
+        return False
+    if expected_step_count is not None and len(steps) < expected_step_count:
+        return False
+    return bool(steps)
 
 
 def write_run_files(
@@ -155,8 +184,13 @@ def write_run_files(
     llm_usage_manifest: str | Path | None = None,
     llm_execution_id: str = "",
     llm_run_id: str = "",
+    expected_step_count: int | None = None,
 ) -> dict[str, Any]:
-    status = infer_overall_status(steps)
+    status = infer_overall_status(steps, expected_step_count=expected_step_count)
+    pipeline_completed = is_pipeline_completed(
+        steps,
+        expected_step_count=expected_step_count,
+    )
     step_dicts = [step.as_dict() for step in steps]
     final_aliases = sync_final_aliases(paths)
     validations = validate_outputs(paths)
@@ -177,6 +211,7 @@ def write_run_files(
         "requested_date_range": config.date_range,
         "effective_date_range": config.effective_date_range,
         "status": status,
+        "pipeline_completed": pipeline_completed,
         "dry_run": dry_run,
         "created_at": utc_now(),
         "outputs": build_outputs_manifest(paths),
@@ -188,6 +223,7 @@ def write_run_files(
     status_payload = {
         "run_key": paths.run_key,
         "status": status,
+        "pipeline_completed": pipeline_completed,
         "dry_run": dry_run,
         "updated_at": utc_now(),
         "steps": [{"name": step.name, "status": step.status, "returncode": step.returncode} for step in steps],

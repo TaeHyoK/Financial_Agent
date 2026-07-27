@@ -55,10 +55,11 @@ Gate B는 다음을 검사한다.
 - point-in-time, period comparison과 event materiality의 의사결정 사용 범위
 - risk basis card와 reader summary의 의미 일치
 - opaque raw ID 누출 여부
+- 독자용 문장에 JSON field명이나 semantic card key가 노출되는지 여부
 
 Gate B의 hard fail은 출처·card reference·비교 가능성·typed field 내부 일관성 같은 무결성 위반에만 적용한다. 사용 가능한 가격/valuation/forward card를 반드시 채택해야 한다는 규칙, Buy/Sell의 독립 evidence family 2개 규칙, evidence sufficiency 권고와 파생 family 목록 차이는 `advisories`에 기록하되 분석 실행을 중단하지 않는다.
 
-Gate B는 card key, comparison scope, peer company, 관측 기준처럼 구조화된 필드로 검증한다. `동종`, `업종`, 특정 회사명이나 고정 문구가 자유문장에 포함됐는지는 실패 조건으로 사용하지 않는다. 무결성 검증 실패 시에만 Review 또는 Repair LLM을 추가 호출하지 않고 실행을 실패시킨다.
+Gate B는 card key, comparison scope, peer company, 관측 기준처럼 구조화된 필드로 검증한다. 독자용 문장의 내부 JSON field명과 semantic card key 노출은 무결성 위반으로 차단하지만, `동종`, `업종`, 특정 회사명 같은 일반 업무 문구 자체는 실패 조건으로 사용하지 않는다. 무결성 검증 실패 시에는 해당 산출물을 성공 cache로 인정하지 않으며 상위 실행기가 설정한 semantic attempt 범위에서 새 응답을 생성할 수 있다.
 
 ## 실행
 

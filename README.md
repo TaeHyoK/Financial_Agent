@@ -861,10 +861,8 @@ pytest -q src/orchestration/tests src/shared/tests
 │   │   ├── full_report_pipeline.py
 │   │   └── usage_summary.py
 │   └── shared/
-├── LLM_INPUT_SCHEMA_CLEANUP_PLAN.md
-├── LLM_PIPELINE_STRUCTURE_OPTIMIZATION_PLAN.md
-├── REPORT_QUALITY_GAP_ANALYSIS_AND_IMPROVEMENT_PLAN.md
-├── WRITER_AGENT_HOIN_MIGRATION_PLAN.md
+├── FINRPT_ADAPTED_FINAL_REPORT_EVALUATION_PLAN.md
+├── README.md
 └── pyproject.toml
 ```
 

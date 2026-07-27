@@ -5,6 +5,7 @@ import os
 import sys
 
 from orchestration.company_resolver import CompanyIdentity
+from orchestration.company_resolver import CompanyResolutionError
 from orchestration.full_report_pipeline import (
     _execute_stage,
     build_parser,
@@ -221,6 +222,65 @@ def test_dry_run_does_not_execute_subprocesses(tmp_path, monkeypatch) -> None:
     assert manifest["status"] == "dry_run"
     assert all(step["status"] == "planned" for step in manifest["steps"])
     assert manifest["llm_usage"]["cache_suppressed_calls"] is None
+
+
+def test_peer_resolution_failure_persists_target_and_diagnostic_artifact(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    target = _identity("Canonical Target", "00000001", "111111", "KOSPI")
+    args = build_parser().parse_args(
+        [
+            "--company-name",
+            "Alias Target",
+            "--selected-date",
+            "20250102",
+            "--output-root",
+            str(tmp_path),
+            "--execution-id",
+            "peer-failure-test",
+        ]
+    )
+    monkeypatch.setenv("DART_API_KEY", "test-key")
+    monkeypatch.setattr("orchestration.full_report_pipeline.fetch_dart_company_directory", lambda _key: [])
+    monkeypatch.setattr("orchestration.full_report_pipeline.resolve_company_identity", lambda *_a, **_k: target)
+    monkeypatch.setattr(
+        "orchestration.full_report_pipeline._resolve_peer_selection",
+        lambda *_a, **_k: {
+            "status": "peer_unavailable",
+            "reason": "comparable_peer_market_caps_missing",
+            "target": {"stock_code": target.stock_code},
+            "candidates": [],
+            "selected_peer": {},
+        },
+    )
+
+    try:
+        run_full_pipeline(args)
+    except CompanyResolutionError as exc:
+        assert "comparable_peer_market_caps_missing" in str(exc)
+    else:
+        raise AssertionError("peer resolution failure must stop the full pipeline")
+
+    run_dir = tmp_path / "runs" / "Canonical_Target_20250102"
+    diagnostic = json.loads(
+        (tmp_path / "Competitor" / "Canonical_Target_20250102" / "peer_resolution.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    manifest = json.loads(
+        (
+            run_dir
+            / "executions"
+            / "peer-failure-test"
+            / "full_pipeline_manifest.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert diagnostic["reason"] == "comparable_peer_market_caps_missing"
+    assert manifest["status"] == "failed"
+    assert manifest["target"]["stock_code"] == target.stock_code
+    assert manifest["peer_resolution_failure"]["reason"] == diagnostic["reason"]
 
 
 def test_no_competitor_ablation_skips_peer_stages_and_records_scope(tmp_path, monkeypatch) -> None:

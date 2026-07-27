@@ -68,6 +68,8 @@ Strategy v2 산출물 3개 로드
 
 각 text item은 component별 `card_keys`와 문장별 `_claim_units`를 hidden metadata로 가진다. 핵심 근거표의 `확인된 수치·사실`, `투자 해석`, `영향`과 risk의 독자용 요약은 Strategy typed field에서 생성한다. renderer는 metadata와 semantic card key를 HTML에 표시하지 않는다.
 
+Writer handoff를 만들 때 Strategy의 recommendation bridge, assessment 해석, peer finding과 risk 문장을 사전 검사한다. 내부 JSON field명이나 semantic card key가 문장에 들어 있으면 LLM을 호출하기 전에 거부한다. `_claim_units.claim`은 나중에 독자용 문단으로 복원될 수 있으므로 card label 치환 대상에 포함하고, 실제 `card_keys` 배열은 hidden identifier로 유지한다.
+
 ## Gate C
 
 - 완결된 HTML, 필수 section ID와 핵심 표 존재 여부 확인

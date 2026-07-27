@@ -12,6 +12,7 @@ from typing import Any
 from shared.evidence_cards import (
     PRODUCT_DISCLOSURE_SCOPE_LABEL,
     SECONDARY_CONTEXT_USAGE,
+    assert_no_internal_references_in_reader_text,
     assert_no_opaque_ids,
     card_content_sha256,
     validate_provenance_map,
@@ -725,6 +726,11 @@ def validate_strategy_decision_v2(
             if not isinstance(card, dict) or section not in (card.get("allowed_sections") or []):
                 raise ValueError(f"Invalid section card reference: {section} -> {card_key}")
 
+    assert_no_internal_references_in_reader_text(
+        _strategy_reader_text(output),
+        card_keys=cards,
+        location="strategy_decision_output_v2.reader_text",
+    )
     assert_no_opaque_ids(output, location="strategy_decision_output_v2")
     return {
         "gate": "B",
@@ -739,6 +745,41 @@ def validate_strategy_decision_v2(
         "blocking_failures": [],
         "advisory_count": len(advisories),
         "advisories": advisories,
+    }
+
+
+def _strategy_reader_text(output: dict[str, Any]) -> dict[str, Any]:
+    """Select only prose that can be projected into the reader-facing report."""
+
+    bridge = _dict(output.get("recommendation_bridge"))
+    return {
+        "recommendation_bridge": {
+            key: bridge.get(key)
+            for key in (
+                "current_price_rationale",
+                "forward_support",
+                "valuation_counterweight",
+                "residual_uncertainty",
+            )
+        },
+        "evidence_assessments": [
+            {"interpretation": item.get("interpretation")}
+            for item in _list(output.get("evidence_assessments"))
+            if isinstance(item, dict)
+        ],
+        "peer_findings": [
+            {"finding": item.get("finding")}
+            for item in _list(output.get("peer_findings"))
+            if isinstance(item, dict)
+        ],
+        "decision_risk_factors": [
+            {
+                key: item.get(key)
+                for key in ("risk_summary", "reader_summary", "monitoring_point")
+            }
+            for item in _list(output.get("decision_risk_factors"))
+            if isinstance(item, dict)
+        ],
     }
 
 

@@ -1629,7 +1629,19 @@ def _replace_visible_card_keys(payload: dict[str, Any], writer_packet: dict[str,
             return {
                 key: replace(
                     child,
-                    hidden=hidden or str(key).startswith("_") or key in {"card_keys", "grounding_refs"},
+                    hidden=(
+                        hidden
+                        or (
+                            str(key).startswith("_")
+                            and key != "_claim_units"
+                        )
+                        or key
+                        in {
+                            "card_keys",
+                            "grounding_refs",
+                            "limitation_categories",
+                        }
+                    ),
                 )
                 for key, child in value.items()
             }

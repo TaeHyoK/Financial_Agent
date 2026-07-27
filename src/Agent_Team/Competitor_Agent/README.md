@@ -10,7 +10,7 @@ This package contains deterministic peer identity and pairwise comparison compon
 - Target and peer `Y_Finance/market_full_dataset.csv`
 - Target and peer `Y_Finance/final_report.json`
 
-Naver values are used only to select one peer identity. Financial and market comparison values are rebuilt from local DART and Yahoo Finance outputs.
+Naver values are used only to select one peer identity. When the FG000 header omits `MKT_VAL`, the resolver fetches current market caps from the Naver item pages for that same bounded FG000 candidate set and keeps the same absolute-distance selection rule. Financial and market comparison values are rebuilt from local DART and Yahoo Finance outputs.
 
 ## Commands
 

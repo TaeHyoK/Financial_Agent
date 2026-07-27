@@ -125,6 +125,57 @@ def test_resolver_fetches_item_page_only_for_missing_target_market_cap(monkeypat
     assert sum("item/main.naver" in url for url in requested_urls) == 1
 
 
+def test_resolver_fetches_all_missing_fg000_market_caps_and_selects_closest_peer(
+    monkeypatch,
+) -> None:
+    fixtures = Path(__file__).resolve().parent / "fixtures"
+    payload = json.loads(
+        (fixtures / "naver_fg000_326030.json").read_text(encoding="utf-8")
+    )
+    for row in payload["oDt_header"]:
+        row["MKT_VAL"] = None
+    payload_text = json.dumps(payload, ensure_ascii=False)
+    market_caps = {
+        "326030": "64,139",
+        "330350": "846",
+        "299170": "521",
+        "204840": "631",
+        "003120": "2,780",
+    }
+    requested_item_codes: list[str] = []
+
+    def fake_fetch(url: str, **_kwargs) -> str:
+        if "coinfo.naver" in url:
+            return (
+                '<iframe id="coinfo_cp" '
+                'src="https://navercomp.wisereport.co.kr/v2/company/c1010001.aspx?cmp_cd=326030">'
+                "</iframe>"
+            )
+        if url.endswith("c1060001.aspx?cmp_cd=326030"):
+            return '<select id="finGubun"><option value="MAIN" selected>main</option></select>'
+        if "cF6001.aspx" in url:
+            return payload_text
+        if "item/main.naver" in url:
+            code = url.split("code=", 1)[1].split("&", 1)[0]
+            requested_item_codes.append(code)
+            return f'<em id="_market_sum">{market_caps[code]}</em>'
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr("Agent_Team.Competitor_Agent.peer_resolver._fetch_text", fake_fetch)
+
+    result = resolve_naver_peer("326030")
+
+    assert result["status"] == "selected"
+    assert result["selected_peer"]["stock_code"] == "003120"
+    assert result["selection_basis"]["target_market_cap_source"] == "naver_item_main"
+    assert result["selection_basis"]["selected_peer_market_cap_source"] == "naver_item_main"
+    assert result["target_market_cap_fallback"]["status"] == "used"
+    assert result["candidate_market_cap_fallback"]["status"] == "used"
+    assert result["candidate_market_cap_fallback"]["attempted_count"] == 4
+    assert result["candidate_market_cap_fallback"]["available_count"] == 4
+    assert requested_item_codes == ["326030", "330350", "299170", "204840", "003120"]
+
+
 def test_no_peer_is_selected_when_both_target_market_cap_sources_are_missing(monkeypatch) -> None:
     fixtures = Path(__file__).resolve().parent / "fixtures"
     payload_text = (fixtures / "naver_fg000_326030_missing_target_cap.json").read_text(

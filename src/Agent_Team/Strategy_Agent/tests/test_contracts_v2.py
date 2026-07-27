@@ -288,6 +288,43 @@ def test_gate_b_rejects_required_horizon_mismatch() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "leaked_text"),
+    [
+        (
+            "forward_support",
+            "재무 개선을 반영했다. forward_support_card_keys는 "
+            "financial.same_period_trend를 사용한다.",
+        ),
+        (
+            "current_price_rationale",
+            "현재 가격 판단은 valuation.selected_date를 근거로 한다.",
+        ),
+    ],
+)
+def test_gate_b_rejects_internal_metadata_in_reader_bridge(
+    field: str,
+    leaked_text: str,
+) -> None:
+    packet, provenance, _telemetry, _gate_a = build_compact_strategy_packet_v2(_bundle())
+    output = _decision_output(packet)
+    output["recommendation_bridge"][field] = leaked_text
+
+    with pytest.raises(ValueError, match="Internal metadata leaked"):
+        validate_strategy_decision_v2(output, packet=packet, provenance=provenance)
+
+
+def test_gate_b_rejects_card_key_in_reader_assessment() -> None:
+    packet, provenance, _telemetry, _gate_a = build_compact_strategy_packet_v2(_bundle())
+    output = _decision_output(packet)
+    output["evidence_assessments"][0]["interpretation"] += (
+        " financial.same_period_trend를 사용했다."
+    )
+
+    with pytest.raises(ValueError, match="Internal metadata leaked"):
+        validate_strategy_decision_v2(output, packet=packet, provenance=provenance)
+
+
 def test_strategy_gate_b_rejects_incomparable_peer_finding() -> None:
     bundle = _bundle()
     bundle["peer_comparison"]["metrics"][1]["valuation_metrics"]["calculated_as_of_date"] = "2025-10-29"

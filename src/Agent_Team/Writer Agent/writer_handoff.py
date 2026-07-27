@@ -8,7 +8,11 @@ import copy
 from copy import deepcopy
 from typing import Any
 
-from shared.evidence_cards import assert_no_opaque_ids, card_content_sha256
+from shared.evidence_cards import (
+    assert_no_internal_references_in_reader_text,
+    assert_no_opaque_ids,
+    card_content_sha256,
+)
 
 
 HANDOFF_VERSION = "1.0"
@@ -250,6 +254,19 @@ def validate_writer_editorial_packet(
         unknown = sorted(set(_text_list(limitation.get("basis_card_keys"))) - set(cards))
         if unknown:
             raise ValueError(f"Writer limitation references omitted cards: {unknown}")
+    assert_no_internal_references_in_reader_text(
+        _writer_reader_text(packet),
+        card_keys={
+            *cards,
+            *(
+                card_key
+                for key, values in bridge.items()
+                if str(key).endswith("_card_keys")
+                for card_key in _text_list(values)
+            ),
+        },
+        location="writer_editorial_packet_v2.reader_text",
+    )
     assert_no_opaque_ids(packet, location="writer_editorial_packet_v2")
 
     if provenance is None:
@@ -266,6 +283,41 @@ def validate_writer_editorial_packet(
             source_card = _dict(source_cards.get(card_key))
             if not source_card or entry.get("source_strategy_card_sha256") != card_content_sha256(source_card):
                 raise ValueError(f"Writer source Strategy card hash mismatch: {card_key}")
+
+
+def _writer_reader_text(packet: dict[str, Any]) -> dict[str, Any]:
+    """Select Strategy prose that Writer may render without changing its meaning."""
+
+    bridge = _dict(packet.get("recommendation_bridge"))
+    return {
+        "recommendation_bridge": {
+            key: bridge.get(key)
+            for key in (
+                "current_price_rationale",
+                "forward_support",
+                "valuation_counterweight",
+                "residual_uncertainty",
+            )
+        },
+        "cards": [
+            {"strategy_interpretation": card.get("strategy_interpretation")}
+            for card in _dict(packet.get("cards")).values()
+            if isinstance(card, dict)
+        ],
+        "peer_findings": [
+            {"finding": item.get("finding")}
+            for item in _list(packet.get("peer_findings"))
+            if isinstance(item, dict)
+        ],
+        "risk_factors": [
+            {
+                key: item.get(key)
+                for key in ("risk_summary", "reader_summary", "monitoring_point")
+            }
+            for item in _list(packet.get("risk_factors"))
+            if isinstance(item, dict)
+        ],
+    }
 
 
 def _writer_card(source: dict[str, Any], assessment: dict[str, Any]) -> dict[str, Any]:

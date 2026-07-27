@@ -15,6 +15,13 @@ RAW_EVIDENCE_ID_PATTERN = re.compile(
     r"^(?:E\d{3,}|F\d{3,}|NCLAIM_\d+|NEWS_RAW_|OP\d+|PEER_METRIC_\d+|LIMIT_\d+)",
     flags=re.IGNORECASE,
 )
+INTERNAL_READER_FIELD_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_])(?:"
+    r"recommendation_bridge|evidence_assessments|"
+    r"card_keys?|_card_keys?|[A-Za-z][A-Za-z0-9_]*_card_keys?"
+    r")(?![A-Za-z0-9_])",
+    flags=re.IGNORECASE,
+)
 EVIDENCE_ROLES = frozenset({"primary", "reference"})
 ELIGIBILITY_VALUES = frozenset({"eligible", "reference_only", "incomparable"})
 SECONDARY_CONTEXT_USAGE = "framing_only"
@@ -111,6 +118,36 @@ def assert_no_opaque_ids(value: Any, *, location: str = "payload") -> None:
             raise ValueError(f"Opaque evidence ID leaked into {path}: {item}")
 
 
+def assert_no_internal_references_in_reader_text(
+    value: Any,
+    *,
+    card_keys: Iterable[str],
+    location: str = "reader_text",
+) -> None:
+    """Reject schema field names and semantic card keys from reader-facing prose."""
+
+    known_card_keys = tuple(
+        sorted(
+            {str(card_key).strip() for card_key in card_keys if str(card_key).strip()},
+            key=len,
+            reverse=True,
+        )
+    )
+    for path, item in _walk_strings(value, location):
+        leaked_fields = sorted(set(INTERNAL_READER_FIELD_PATTERN.findall(item)))
+        leaked_card_keys = [card_key for card_key in known_card_keys if card_key in item]
+        if leaked_fields or leaked_card_keys:
+            details = []
+            if leaked_fields:
+                details.append(f"schema_fields={leaked_fields}")
+            if leaked_card_keys:
+                details.append(f"card_keys={leaked_card_keys}")
+            raise ValueError(
+                f"Internal metadata leaked into reader-facing text at {path}: "
+                + ", ".join(details)
+            )
+
+
 def _walk_strings(value: Any, path: str) -> Iterable[tuple[str, str]]:
     if isinstance(value, str):
         yield path, value
@@ -126,6 +163,7 @@ __all__ = [
     "ELIGIBILITY_VALUES",
     "EVIDENCE_ROLES",
     "SECONDARY_CONTEXT_USAGE",
+    "assert_no_internal_references_in_reader_text",
     "assert_no_opaque_ids",
     "card_content_sha256",
     "validate_card_key",

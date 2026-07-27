@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from shared.evidence_cards import (
+    assert_no_internal_references_in_reader_text,
     card_content_sha256,
     validate_provenance_map,
     validate_self_contained_card,
@@ -58,6 +59,23 @@ def test_llm_card_rejects_raw_evidence_id() -> None:
 
     with pytest.raises(ValueError, match="Opaque evidence ID leaked"):
         validate_self_contained_card(card, allowed_section_names=SECTIONS)
+
+
+@pytest.mark.parametrize(
+    "reader_text",
+    [
+        "forward_support_card_keys는 배열에 기록했다.",
+        "근거는 financial.same_period_trend입니다.",
+    ],
+)
+def test_reader_text_rejects_internal_schema_and_card_references(
+    reader_text: str,
+) -> None:
+    with pytest.raises(ValueError, match="Internal metadata leaked"):
+        assert_no_internal_references_in_reader_text(
+            {"claim": reader_text},
+            card_keys=["financial.same_period_trend"],
+        )
 
 
 def test_provenance_rejects_changed_card_content() -> None:

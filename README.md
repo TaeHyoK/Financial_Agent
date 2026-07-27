@@ -187,7 +187,7 @@ Writer editorial packet은 Strategy packet 전체를 다시 전달하지 않고 
 | Gate | 실행 시점 | 주요 검증 |
 | --- | --- | --- |
 | Gate A | Strategy 호출 전 | card budget, 날짜·기간·단위, eligibility, section routing, opaque ID 제거, provenance hash |
-| Gate B | Strategy 호출 후 | card 전수 assessment, factor family 중복, Buy/Sell forward family 수, KOSPI·peer 비교 범위, recommendation bridge, risk 근거 |
+| Gate B | Strategy 호출 후 | card 전수 assessment, factor family 중복, Buy/Sell forward family 수, KOSPI·peer 비교 범위, recommendation bridge, risk 근거, 독자용 문장의 내부 field/card key 누출 |
 | Gate C | Writer 호출 후 | component card coverage, 문장별 grounding, Strategy 의미·시간 의미 보존, 필수 limitation, 내부 ID 유출, 표 순서 |
 | HTML Validator | 렌더링 후 | 필수 section/table, A4 print layout, 숫자 표시, 숨김 metadata, 금지 콘텐츠와 문서 구조 |
 
@@ -485,7 +485,7 @@ Naver Finance `coinfo.naver`의 WiseReport 업종분석 FG000 표는 **peer iden
 4. 양사에 같은 DART·News·YFinance 파이프라인을 실행합니다.
 5. 최종 비교 수치는 로컬 검증 산출물에서 다시 구성합니다.
 
-Naver 표의 시가총액과 period label은 `peer_resolution.json` 감사 파일에만 남고 LLM config나 금융 근거로 전달되지 않습니다. 현재 SK바이오팜 사례에서는 `일성아이에스(003120.KS)`가 선택됩니다.
+FG000 응답의 `MKT_VAL`이 비어 있으면 해당 FG000 종목들의 Naver item 페이지에서 현재 시가총액을 제한적으로 보완한 뒤 같은 절대 차이 규칙을 적용합니다. 후보 집합 자체를 다른 출처로 확장하지는 않습니다. Naver 시가총액, period label과 fallback 기록은 `peer_resolution.json` 감사 파일에만 남고 LLM config나 금융 근거로 전달되지 않습니다. 현재 SK바이오팜 사례에서는 `일성아이에스(003120.KS)`가 선택됩니다.
 
 ### LLM 투입 전 공통 변환
 
@@ -617,23 +617,24 @@ Output_total/runs/{run_key}/executions/{execution_id}/
 
 이 수치는 **고정된 역사적 기준선**입니다. 이후 comparison scope, evidence family, recommendation bridge, 필수 limitation과 결정론적 표 계약을 보완했지만 전체 데이터 수집을 다시 cold-cache로 실행하지 않았으므로, 위 token 합계를 현재 final-stage 산출물의 신규 end-to-end 계측값으로 해석해서는 안 됩니다.
 
-### 현재 final-stage semantic regression
+### 현재 1개월 full-pipeline semantic regression
 
-기존 검증 upstream data를 사용해 최신 Strategy/Writer 계약을 다시 실행한 현재 상태입니다.
+실행 ID `fix_strategy_writer_gate_1m_warm2`로 SK바이오팜 2025-10-31 데이터 1개월·Strategy 1개월 일반 파이프라인을 자동 peer 선택부터 최종 HTML까지 다시 실행한 상태입니다. 자동 선택된 peer는 일성아이에스(003120)였고 14개 논리 호출과 transport가 모두 첫 시도에 성공했습니다.
 
 | 지표 | 현재 값 |
 | --- | ---: |
-| Strategy card | 21개: Financial 6, News 5, Market 3, Valuation 2, Peer 5 |
-| Strategy packet telemetry | 38,012 bytes, estimated 9,729 tokens |
-| Writer editorial card | 16개 |
+| Strategy card | 22개: Financial 6, News 6, Market 3, Valuation 2, Peer 5 |
+| Strategy packet telemetry | 39,609 bytes, estimated 10,754 tokens |
+| Writer editorial card | 21개 |
 | 핵심 근거표 | 8개 행 |
 | risk matrix | 5개 행 |
-| 최종 의견 | Hold, 6~12개월 |
-| data coverage / decision confidence | high / medium |
+| 최종 의견 | Hold, 1개월 |
+| data coverage / decision confidence | medium / medium |
 | Gate B | pass |
 | Gate C + HTML validator | pass, notes 0건 |
+| 내부 field / semantic card key HTML 노출 | 0건 / 0건 |
 
-현재 결과는 최신 의미 계약의 회귀 결과이지만 신규 cold-cache token benchmark는 아닙니다. 이 구분을 위해 token 재현값은 execution ID와 함께 보고하고, final-stage 품질값은 현재 Strategy/Writer artifact에서 읽습니다.
+이번 실행의 target, peer, Strategy, Writer 소요 시간은 각각 221.267초, 200.177초, 22.992초, 14.216초였습니다. LLM usage는 input 137,897, output 26,264, total 164,161 tokens입니다. 수집 계층의 기존 로컬 artifact가 존재한 상태에서 실행했으므로 위의 2025-10-31 cold-cache 수집 시간 기준선과는 구분합니다.
 
 ### Hold 편향 평가
 

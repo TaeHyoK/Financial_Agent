@@ -219,7 +219,7 @@ def _peer_return_insights(peer_return_df: pd.DataFrame, company_name: str) -> di
             "what_is_visible": [
                 f"비교군 {peer_count}개 중 대상 회사의 20일 수익률 순위는 {_fmt_rank(rank_20d, peer_count)}, 60일 상대강도 순위는 {_fmt_rank(rank_relative, peer_count)}로 표시된다.",
                 f"20일 초과수익률은 {_fmt_pct(target.get('stock_excess_return_20d_pct'))}, 60일 상대강도는 {_fmt_pct(target.get('stock_relative_strength_60_pct'))}로 시장 대비 성과 부담이 남아 있다.",
-                f"단기·중기 수익률을 함께 보면 절대 수익률보다 peer 안에서의 선호도 회복 여부가 더 중요한 관찰 포인트다.",
+                "단기·중기 수익률을 함께 보면 절대 수익률보다 peer 안에서의 선호도 회복 여부가 더 중요한 관찰 포인트다.",
             ],
             "investment_debate": "peer 대비 상대 선호도 회복 여부",
             "report_commentary": (

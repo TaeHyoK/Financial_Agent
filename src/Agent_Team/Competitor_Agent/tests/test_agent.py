@@ -1,189 +1,232 @@
-"""Tests for competitor report aggregation."""
+"""Tests for deterministic peer resolution and comparison."""
 
 from __future__ import annotations
 
 import json
-import unittest
 from pathlib import Path
-from tempfile import TemporaryDirectory
-from unittest.mock import patch
 
-from Agent_Team.Competitor_Agent.agent import (
-    RunIdentity,
-    discover_competitor_identities,
-    generate_competitor_report,
+from Agent_Team.Competitor_Agent.identity import RunIdentity
+from Agent_Team.Competitor_Agent.peer_comparison import _valuation_metrics, generate_peer_comparison
+from Agent_Team.Competitor_Agent.peer_resolver import (
+    build_fg000_ajax_request,
+    build_industry_analysis_url,
+    extract_company_iframe_url,
+    extract_naver_market_cap_100m_krw,
+    resolve_naver_peer,
+    select_peer_from_fg000,
 )
 
 
-class CompetitorAgentTests(unittest.TestCase):
-    def test_generate_competitor_report_writes_one_company_report(self) -> None:
-        with TemporaryDirectory() as tmp:
-            output_root = Path(tmp)
-            run_key = "경쟁기업A_20251031"
-            _write_source_reports(output_root, run_key, company_name="경쟁기업A")
+def test_discovers_wisereport_industry_and_ajax_urls() -> None:
+    iframe = extract_company_iframe_url(
+        '<iframe id="coinfo_cp" src="https://navercomp.wisereport.co.kr/v2/company/c1010001.aspx?cmp_cd=326030"></iframe>',
+        page_url="https://finance.naver.com/item/coinfo.naver?code=326030",
+    )
+    industry = build_industry_analysis_url(iframe, stock_code="326030")
+    ajax_url, params = build_fg000_ajax_request(
+        '<select id="finGubun"><option value="MAIN" selected>main</option></select>',
+        industry_url=industry,
+        stock_code="326030",
+    )
 
-            target = RunIdentity(run_key="타깃기업_20251031", company_name="타깃기업", selected_date="20251031")
-            competitor = RunIdentity(run_key=run_key, company_name="경쟁기업A", selected_date="20251031")
-            with patch("Agent_Team.Competitor_Agent.agent.call_openai", return_value=_llm_response()):
-                paths = generate_competitor_report(
-                    target=target,
-                    competitors=[competitor],
-                    output_root=output_root,
-                    llm_provider="openai",
-                    llm_model="test-model",
-                )
+    assert industry == "https://navercomp.wisereport.co.kr/v2/company/c1060001.aspx?cmp_cd=326030"
+    assert ajax_url == "https://navercomp.wisereport.co.kr/v2/company/ajax/cF6001.aspx"
+    assert params["sec_cd"] == "FG000"
+    assert params["finGubun"] == "MAIN"
 
-            self.assertEqual(len(paths), 1)
-            self.assertEqual(paths[0].run_key, run_key)
-            self.assertTrue(paths[0].json.exists())
-            self.assertTrue(paths[0].markdown.exists())
-            self.assertEqual(paths[0].json.parent.name, run_key)
-            payload = json.loads(paths[0].json.read_text(encoding="utf-8"))
-            self.assertEqual(payload["agent_name"], "Competitor Agent")
-            self.assertTrue(payload["llm_synthesis"]["requested"])
-            self.assertTrue(payload["llm_synthesis"]["used"])
-            self.assertEqual(payload["company"]["company_name"], "경쟁기업A")
-            self.assertTrue(payload["source_reports"]["news"]["available"])
-            self.assertTrue(payload["source_reports"]["dart"]["available"])
-            self.assertTrue(payload["source_reports"]["yfinance"]["available"])
-            self.assertIn("LLM 종합 요약", payload["summary"])
-            self.assertIn("PICC", json.dumps(payload["strengths"], ensure_ascii=False))
-            self.assertIn("EPS", json.dumps(payload["risks"], ensure_ascii=False))
-            self.assertNotIn("_llm_source_reports", payload)
-            self.assertNotIn("competitors", payload)
 
-            markdown = paths[0].markdown.read_text(encoding="utf-8")
-            self.assertIn("Company: 경쟁기업A", markdown)
-            self.assertIn("## Strengths", markdown)
-            self.assertIn("## Risks", markdown)
+def test_fg000_fixture_selects_only_ilsung_is() -> None:
+    fixture = Path(__file__).resolve().parent / "fixtures" / "naver_fg000_326030.json"
+    payload = json.loads(fixture.read_text(encoding="utf-8"))
 
-    def test_discovery_excludes_target_and_requires_complete_sources_by_default(self) -> None:
-        with TemporaryDirectory() as tmp:
-            output_root = Path(tmp)
-            _write_source_reports(output_root, "타깃기업_20251031", company_name="타깃기업")
-            _write_source_reports(output_root, "경쟁기업A_20251031", company_name="경쟁기업A")
-            _write_json(
-                output_root / "News" / "부분데이터기업_20251031" / "final_report.json",
-                _news_report("부분데이터기업"),
+    result = select_peer_from_fg000(payload, target_stock_code="326030")
+
+    assert result["status"] == "selected"
+    assert result["selected_peer"]["stock_code"] == "003120"
+    assert result["selected_peer"]["company_name"] == "일성아이에스"
+    assert len(result["candidates"]) == 4
+
+
+def test_formatted_fg000_market_caps_are_parsed() -> None:
+    fixture = Path(__file__).resolve().parent / "fixtures" / "naver_fg000_326030.json"
+    payload = json.loads(fixture.read_text(encoding="utf-8"))
+    payload["oDt_header"][0]["MKT_VAL"] = "63,120.4795"
+
+    result = select_peer_from_fg000(payload, target_stock_code="326030")
+
+    assert result["status"] == "selected"
+    assert result["target"]["market_cap_100m_krw"] == 63_120.4795
+    assert result["selection_basis"]["target_market_cap_source"] == "fg000_header"
+
+
+def test_nonpositive_target_market_cap_is_treated_as_missing() -> None:
+    fixture = Path(__file__).resolve().parent / "fixtures" / "naver_fg000_326030.json"
+    payload = json.loads(fixture.read_text(encoding="utf-8"))
+    payload["oDt_header"][0]["MKT_VAL"] = 0
+
+    result = select_peer_from_fg000(payload, target_stock_code="326030")
+
+    assert result["status"] == "peer_unavailable"
+    assert result["reason"] == "target_market_cap_missing"
+    assert result["selected_peer"] == {}
+
+
+def test_missing_fg000_target_market_cap_uses_naver_item_fixture() -> None:
+    fixtures = Path(__file__).resolve().parent / "fixtures"
+    payload = json.loads(
+        (fixtures / "naver_fg000_326030_missing_target_cap.json").read_text(encoding="utf-8")
+    )
+    item_html = (fixtures / "naver_item_main_326030.html").read_text(encoding="utf-8")
+    target_market_cap = extract_naver_market_cap_100m_krw(item_html)
+
+    result = select_peer_from_fg000(
+        payload,
+        target_stock_code="326030",
+        target_market_cap_100m_krw=target_market_cap,
+    )
+
+    assert target_market_cap == 63_120
+    assert result["status"] == "selected"
+    assert result["selected_peer"]["stock_code"] == "003120"
+    assert result["selection_basis"]["target_market_cap_source"] == "naver_item_main"
+
+
+def test_resolver_fetches_item_page_only_for_missing_target_market_cap(monkeypatch) -> None:
+    fixtures = Path(__file__).resolve().parent / "fixtures"
+    payload_text = (fixtures / "naver_fg000_326030_missing_target_cap.json").read_text(
+        encoding="utf-8"
+    )
+    item_html = (fixtures / "naver_item_main_326030.html").read_text(encoding="utf-8")
+    requested_urls: list[str] = []
+
+    def fake_fetch(url: str, **_kwargs) -> str:
+        requested_urls.append(url)
+        if "coinfo.naver" in url:
+            return (
+                '<iframe id="coinfo_cp" '
+                'src="https://navercomp.wisereport.co.kr/v2/company/c1010001.aspx?cmp_cd=326030">'
+                "</iframe>"
             )
+        if url.endswith("c1060001.aspx?cmp_cd=326030"):
+            return '<select id="finGubun"><option value="MAIN" selected>main</option></select>'
+        if "cF6001.aspx" in url:
+            return payload_text
+        if "item/main.naver" in url:
+            return item_html
+        raise AssertionError(f"Unexpected URL: {url}")
 
-            target = RunIdentity(run_key="타깃기업_20251031", company_name="타깃기업", selected_date="20251031")
-            identities = discover_competitor_identities(output_root=output_root, target=target)
+    monkeypatch.setattr("Agent_Team.Competitor_Agent.peer_resolver._fetch_text", fake_fetch)
 
-            self.assertEqual([identity.run_key for identity in identities], ["경쟁기업A_20251031"])
+    result = resolve_naver_peer("326030")
+
+    assert result["status"] == "selected"
+    assert result["selected_peer"]["stock_code"] == "003120"
+    assert result["target_market_cap_fallback"]["status"] == "used"
+    assert sum("item/main.naver" in url for url in requested_urls) == 1
 
 
-def _write_source_reports(output_root: Path, run_key: str, *, company_name: str) -> None:
-    _write_json(output_root / "News" / run_key / "final_report.json", _news_report(company_name))
-    _write_json(output_root / "Financial" / run_key / "final_report.json", _dart_report(company_name))
-    _write_json(output_root / "Y_Finance" / run_key / "final_report.json", _yfinance_report(company_name))
+def test_no_peer_is_selected_when_both_target_market_cap_sources_are_missing(monkeypatch) -> None:
+    fixtures = Path(__file__).resolve().parent / "fixtures"
+    payload_text = (fixtures / "naver_fg000_326030_missing_target_cap.json").read_text(
+        encoding="utf-8"
+    )
+
+    def fake_fetch(url: str, **_kwargs) -> str:
+        if "coinfo.naver" in url:
+            return (
+                '<iframe id="coinfo_cp" '
+                'src="https://navercomp.wisereport.co.kr/v2/company/c1010001.aspx?cmp_cd=326030">'
+                "</iframe>"
+            )
+        if url.endswith("c1060001.aspx?cmp_cd=326030"):
+            return '<select id="finGubun"><option value="MAIN" selected>main</option></select>'
+        if "cF6001.aspx" in url:
+            return payload_text
+        if "item/main.naver" in url:
+            return "<html><body>market cap unavailable</body></html>"
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr("Agent_Team.Competitor_Agent.peer_resolver._fetch_text", fake_fetch)
+
+    result = resolve_naver_peer("326030")
+
+    assert result["status"] == "peer_unavailable"
+    assert result["reason"] == "target_market_cap_missing"
+    assert result["selected_peer"] == {}
+    assert result["target_market_cap_fallback"]["status"] == "failed"
+
+
+def test_missing_target_returns_explicit_unavailable_status() -> None:
+    result = select_peer_from_fg000(
+        {"oDt_header": [{"SEQ": 1, "CMP_CD": "003120", "CMP_KOR": "일성아이에스", "MKT_VAL": 100}]},
+        target_stock_code="326030",
+    )
+
+    assert result["status"] == "peer_unavailable"
+    assert result["reason"] == "target_missing_from_fg000_response"
+
+
+def test_peer_valuation_uses_calculated_date_and_keeps_direct_date() -> None:
+    result = _valuation_metrics(
+        {
+            "valuation_snapshot": {
+                "calculated_from_close_and_dart": {
+                    "as_of_date": "2025-10-30",
+                    "metrics": {
+                        "market_cap": {"value": 9_000_000_000_000},
+                        "trailing_pe": {"value": 27.5},
+                        "price_to_book": {"value": 13.4},
+                        "price_to_sales": {"value": 14.7},
+                    },
+                },
+                "direct_yfinance": {
+                    "latest_period": {
+                        "valuation_date": "2025-09-30",
+                        "metrics": {
+                            "enterprise_value": {"value": 7_700_000_000_000},
+                            "enterprise_value_to_revenue": {"value": 11.45},
+                            "enterprise_value_to_ebitda": {"value": 44.16},
+                        },
+                    }
+                },
+            }
+        }
+    )
+
+    assert result["calculated_as_of_date"] == "2025-10-30"
+    assert result["market_cap_100m_krw"] == 90_000
+    assert result["trailing_pe"] == 27.5
+    assert result["direct_valuation_date"] == "2025-09-30"
+
+
+def test_peer_comparison_writes_only_structured_dataset(tmp_path) -> None:
+    target_run = "target_20251031"
+    peer_run = "peer_20251031"
+    for run_key in (target_run, peer_run):
+        _write_json(tmp_path / "Financial" / run_key / "final_report.json", {"detailed_analysis": {}})
+        market = tmp_path / "Y_Finance" / run_key / "market_full_dataset.csv"
+        market.parent.mkdir(parents=True, exist_ok=True)
+        market.write_text(
+            "date,stock_return_5d,stock_return_20d,stock_return_60d,stock_excess_return_20d,stock_relative_strength_60,stock_volume_ratio_20\n"
+            "2025-10-30,0.01,0.02,0.03,0.01,0.02,1.1\n",
+            encoding="utf-8",
+        )
+        _write_json(tmp_path / "Y_Finance" / run_key / "final_report.json", {})
+
+    paths = generate_peer_comparison(
+        target=RunIdentity(run_key=target_run, company_name="target", selected_date="20251031"),
+        peer_run_keys=[peer_run],
+        output_root=tmp_path,
+    )
+
+    assert paths.dataset_json.exists()
+    assert not (paths.dataset_json.parent / "peer_positioning_summary.json").exists()
+    assert not (paths.dataset_json.parent / "peer_comparison_summary.md").exists()
+    payload = json.loads(paths.dataset_json.read_text(encoding="utf-8"))
+    assert [row["peer_group"] for row in payload["metrics"]] == ["target", "domestic_peer"]
+    assert "created_at" not in payload
 
 
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-
-
-def _llm_response() -> dict:
-    return {
-        "text": json.dumps(
-            {
-                "run_key": "경쟁기업A_20251031",
-                "company_name": "경쟁기업A",
-                "summary": "LLM 종합 요약: 뉴스, DART, YFinance를 모두 반영했다.",
-                "strengths": ["PICC 계약 기반 사업 확장"],
-                "risks": ["EPS -62원에 따른 수익성 부담"],
-            },
-            ensure_ascii=False,
-        ),
-        "usage": {"total_tokens": 123},
-    }
-
-
-def _news_report(company_name: str) -> dict:
-    return {
-        "output": {
-            "target_entity": {
-                "company_name": company_name,
-                "ticker": "000000.KQ",
-                "corp_code": "00000000",
-                "as_of_date": "2025-10-31",
-            },
-            "analysis_blocks": {
-                "news_only": {
-                    "summary": f"{company_name}는 PICC 계약과 로봇 워크숍 뉴스가 확인된다.",
-                    "positive_signals": ["키말과 PICC 합작개발 및 생산 계약"],
-                    "negative_signals": ["동종 섹터 내 주가 변동성"],
-                    "key_risks": ["경쟁 심화에 따른 시장 지위 변동"],
-                    "uncertainties": ["자회사 사업 확장성 미확정"],
-                },
-                "news_plus_financial_plus_market": {
-                    "summary": "뉴스와 주가 반응은 긍정적이나 재무 수익성은 확인이 필요하다.",
-                    "integrated_risks": ["뉴스와 EPS 사이 괴리"],
-                },
-            },
-        }
-    }
-
-
-def _dart_report(company_name: str) -> dict:
-    return {
-        "target_company": company_name,
-        "ticker": "000000.KQ",
-        "corp_code": "00000000",
-        "as_of_date": "2025-10-31",
-        "main_view": {
-            "summary": f"{company_name}는 DART 기준 EPS -62원이 확인된다.",
-            "direction": "mixed",
-            "primary_basis": ["영업활동현금흐름 26억원", "부채비율 51.4%"],
-            "main_cautions": ["EPS는 마이너스이며 기간 기준 차이에 주의"],
-        },
-        "financial_statement_view": {
-            "capital_structure": {
-                "stance": "자본 비중이 높고 부채 부담은 제한적인 구조",
-                "reasoning": "자본비율과 부채비율을 함께 확인한다.",
-                "key_features": ["부채비율 51.4%"],
-            },
-            "eps": {
-                "stance": "적자 또는 EPS 부담",
-                "reasoning": "2025 Q3 YTD EPS는 -62원이다.",
-                "key_features": ["EPS -62원"],
-            },
-        },
-    }
-
-
-def _yfinance_report(company_name: str) -> dict:
-    return {
-        "target_company": company_name,
-        "ticker": "000000.KQ",
-        "as_of_date": "2025-10-31",
-        "main_view": {
-            "summary": f"{company_name}는 최근 20일 주가 상승세가 확인된다.",
-            "direction": "상승 우위",
-            "primary_basis": ["20일 주가 수익률 22.6%", "거래량 증가"],
-        },
-        "time_horizon_view": {
-            "short_term": {
-                "stance": "긍정적",
-                "reasoning": "최근 수익률과 거래량이 개선됐다.",
-                "key_features": ["20일 주가 수익률 22.6%"],
-            },
-            "long_term": {
-                "stance": "조건부 긍정",
-                "reasoning": "성장 전략은 있으나 재무 확인이 필요하다.",
-                "key_features": ["의료기기 사업 확대"],
-                "data_limitation": "장기 재무 트렌드 분석 한계",
-            },
-        },
-        "cross_data_reconciliation": {
-            "news_plus_market": {
-                "summary": "뉴스와 시장 반응은 대체로 같은 방향이다.",
-                "divergences": [{"point": "단기 급등", "cross_analysis": "지속성은 확인 필요"}],
-            }
-        },
-    }
-
-
-if __name__ == "__main__":
-    unittest.main()

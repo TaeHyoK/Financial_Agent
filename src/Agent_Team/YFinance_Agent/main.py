@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from pipeline import DEFAULT_FX_TICKER, DEFAULT_KOSPI_TICKER, PipelineInput, load_pipeline_input, run_pipeline
@@ -63,6 +63,11 @@ def main() -> None:
         help="Supporting news period summary JSON used for cross analysis. Required with --report-only.",
     )
     parser.add_argument(
+        "--valuation-json",
+        default=None,
+        help="Point-in-time valuation JSON used for the analyst report.",
+    )
+    parser.add_argument(
         "--report-md",
         default=str(DEFAULT_REPORT_MD),
         help="Markdown report output path.",
@@ -98,6 +103,7 @@ def main() -> None:
             market_json=Path(args.market_json).expanduser().resolve(),
             dart_json=Path(args.dart_json).expanduser().resolve(),
             news_json=Path(args.news_json).expanduser().resolve(),
+            valuation_json=Path(args.valuation_json).expanduser().resolve() if args.valuation_json else None,
             report_md=Path(args.report_md).expanduser().resolve(),
             report_json=Path(args.report_json).expanduser().resolve(),
             company_name=args.company_name,
@@ -143,8 +149,9 @@ def _apply_date_overrides(
     new_selected = _parse_override(selected_date) if selected_date else pipeline_input.selected_date
     if new_start > new_end:
         raise ValueError("start_date must be before or equal to end_date.")
-    if new_selected < new_start or new_selected > new_end:
-        raise ValueError("selected_date must be within start_date..end_date.")
+    new_end = min(new_end, new_selected - timedelta(days=1))
+    if new_selected <= new_start or new_end < new_start:
+        raise ValueError("date range must contain data before selected_date.")
 
     return PipelineInput(
         ticker=pipeline_input.ticker,
@@ -153,6 +160,7 @@ def _apply_date_overrides(
         end_date=new_end,
         selected_date=new_selected,
         source_path=pipeline_input.source_path,
+        selected_date_policy="before_market_open",
     )
 
 

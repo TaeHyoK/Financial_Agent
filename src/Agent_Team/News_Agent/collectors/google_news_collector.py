@@ -15,7 +15,6 @@ import logging
 import random
 import re
 import time
-from dataclasses import asdict
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 from urllib.parse import quote, quote_plus, urlencode, urlparse, parse_qs, unquote

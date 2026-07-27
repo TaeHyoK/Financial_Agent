@@ -1,57 +1,37 @@
 #!/usr/bin/env python3
 import argparse
+import copy
 import json
-import os
+import math
 from pathlib import Path
 from typing import Any, Dict, List, TypedDict
-from urllib import error, request
 
 from langgraph.graph import END, START, StateGraph
+from shared.evidence_contracts import (
+    canonical_evidence_id,
+    validate_evidence_catalog,
+)
 
-try:
-    from . import AGENT_DIR, DEFAULT_ENV_FILE, PROJECT_ROOT
-except ImportError:  # pragma: no cover - supports direct script execution
-    AGENT_DIR = Path(__file__).resolve().parent
-    PROJECT_ROOT = AGENT_DIR.parents[2]
-    DEFAULT_ENV_FILE = PROJECT_ROOT / "configs" / ".env"
-
-
-DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
+SECONDARY_MARKET_METRICS = (
+    "stock_return_5d",
+    "stock_return_20d",
+    "stock_return_60d",
+    "stock_excess_return_20d",
+    "stock_relative_strength_60",
+    "stock_volume_ratio_20",
+    "stock_volatility_20",
+    "stock_rsi_14",
+)
 
 
 class FinancialAnalystGraphState(TypedDict, total=False):
     manifest_path: str
-    env_file: str
-    llm_provider: str
-    llm_model: str
-    llm_timeout: int
-    use_llm: bool
     manifest: Dict[str, Any]
     inputs: Dict[str, Any]
     transcript: List[Dict[str, str]]
-    llm_calls: List[Dict[str, Any]]
     financial_analysis_output: Dict[str, Any]
-    pending_cross_data_reconciliation: Dict[str, Any]
-    cross_data_reconciliation: Dict[str, Any]
-    cross_analysis_questions: Dict[str, str]
     report_output: Dict[str, Any]
     schema_validation: Dict[str, Any]
-
-
-CROSS_ANALYSIS_QUESTIONS = {
-    "news_plus_dart": (
-        "왜 News context와 DART 실적 요약이 정합적이라고 판단했는가? "
-        "뉴스 내용이 DART 기반 재무 claim을 보조하거나 약화하는 지점을 설명하라."
-    ),
-    "market_plus_dart": (
-        "왜 DART 실적 요약과 시장 데이터 해석이 정합적이라고 판단했는가? "
-        "매출 성장, 이익률, EPS 정보가 가격 반등 해석과 어떻게 연결되는지 설명하라."
-    ),
-    "market_plus_news_plus_dart": (
-        "왜 DART 메인지표, 뉴스 요약, 시장 지표를 함께 비교했을 때 정합 또는 괴리 판단이 가능한가? "
-        "메인지표 1개와 보조지표 2개를 한 번에 연결해서 설명하라."
-    ),
-}
 
 
 def load_json(path: str) -> Dict[str, Any]:
@@ -60,186 +40,6 @@ def load_json(path: str) -> Dict[str, Any]:
 
 def load_input_file(path: str) -> Any:
     return json.loads(Path(path).read_text())
-
-
-def load_env_file(path: str) -> None:
-    env_path = Path(path)
-    if not env_path.exists():
-        return
-    for raw_line in env_path.read_text().splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
-            os.environ[key] = value
-
-
-def resolve_llm_provider(provider: str) -> str:
-    if provider == "none":
-        return "none"
-    if provider not in {"auto", "openai"}:
-        raise RuntimeError(f"Unsupported LLM provider: {provider}. Only openai is supported.")
-    if provider == "openai":
-        return "openai"
-    if os.getenv("OPENAI_API_KEY"):
-        return "openai"
-    return "none"
-
-
-def resolve_llm_model(provider: str, model: str) -> str:
-    if model and model != "auto":
-        return model
-    if provider == "openai":
-        return os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
-    return model or DEFAULT_OPENAI_MODEL
-
-
-def call_openai(prompt: str, model: str, timeout: int) -> Dict[str, Any]:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is not set")
-    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-    payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.2,
-        "max_tokens": 2048,
-    }
-    req = request.Request(
-        f"{base_url}/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    try:
-        with request.urlopen(req, timeout=timeout) as response:
-            raw = response.read().decode("utf-8")
-    except error.HTTPError as exc:
-        body = exc.read().decode("utf-8", "ignore")
-        raise RuntimeError(f"OpenAI HTTP {exc.code}: {body[:500]}") from exc
-    result = json.loads(raw)
-    choices = result.get("choices") or []
-    if not choices:
-        raise RuntimeError(f"OpenAI returned no choices: {result}")
-    text = choices[0].get("message", {}).get("content", "").strip()
-    if not text:
-        raise RuntimeError("OpenAI returned empty text")
-    return {"text": text, "usage": result.get("usage", {})}
-
-
-def summarize_llm_usage(calls: List[Dict[str, Any]]) -> Dict[str, Any]:
-    usage_keys = [
-        "promptTokenCount",
-        "candidatesTokenCount",
-        "thoughtsTokenCount",
-        "cachedContentTokenCount",
-        "totalTokenCount",
-        "prompt_tokens",
-        "completion_tokens",
-        "total_tokens",
-    ]
-    summary: Dict[str, Any] = {
-        "api_call_count": 0,
-        "adopted_llm_call_count": 0,
-        "fallback_call_count": 0,
-        "by_field": {key: 0 for key in usage_keys},
-    }
-    for call in calls:
-        usage = call.get("usage") or {}
-        if usage:
-            summary["api_call_count"] += 1
-            for key in usage_keys:
-                summary["by_field"][key] += int(usage.get(key) or 0)
-        if call.get("used_llm"):
-            summary["adopted_llm_call_count"] += 1
-        elif call.get("status", "").startswith("fallback"):
-            summary["fallback_call_count"] += 1
-    return summary
-
-
-def is_complete_korean_text(text: str) -> bool:
-    stripped = text.strip()
-    if len(stripped) < 12:
-        return False
-    return stripped[-1] in {".", "?", "!", "다", "요", "함", "음", "라", "됨", "임"}
-
-
-def clean_llm_text(text: str) -> str:
-    lines = []
-    for raw_line in text.replace("```", "").splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        if line.startswith("**") and line.endswith("**"):
-            continue
-        lowered = line.lower()
-        if lowered.startswith("validation.summary_ko"):
-            continue
-        lines.append(line)
-    return "\n".join(lines).strip()
-
-
-def llm_generate(
-    state: FinancialAnalystGraphState,
-    node: str,
-    prompt: str,
-    fallback: str,
-) -> str:
-    state.setdefault("llm_calls", [])
-    provider = state.get("llm_provider", "none")
-    if not state.get("use_llm") or provider == "none":
-        state["llm_calls"].append(
-            {"node": node, "provider": provider, "used_llm": False, "status": "fallback"}
-        )
-        return fallback
-    try:
-        if provider != "openai":
-            raise RuntimeError(f"Unsupported LLM provider: {provider}")
-        response = call_openai(prompt, state.get("llm_model", DEFAULT_OPENAI_MODEL), state.get("llm_timeout", 60))
-        text = response["text"]
-        usage = response.get("usage", {})
-    except Exception as exc:
-        state["llm_calls"].append(
-            {
-                "node": node,
-                "provider": provider,
-                "used_llm": False,
-                "status": "fallback_after_error",
-                "error": str(exc),
-            }
-        )
-        return fallback
-    text = clean_llm_text(text)
-    if not is_complete_korean_text(text):
-        state["llm_calls"].append(
-            {
-                "node": node,
-                "provider": provider,
-                "model": state.get("llm_model"),
-                "used_llm": False,
-                "status": "fallback_after_incomplete_text",
-                "raw_length": len(text),
-                "usage": usage,
-            }
-        )
-        return fallback
-    state["llm_calls"].append(
-        {
-            "node": node,
-            "provider": provider,
-            "model": state.get("llm_model"),
-            "used_llm": True,
-            "status": "ok",
-            "usage": usage,
-        }
-    )
-    return text
 
 
 def metric_period(dart: Dict[str, Any], key: str, period_key: str = "current_fiscal_year") -> Dict[str, Any]:
@@ -260,18 +60,6 @@ def pct1(value: float | None) -> str:
     if value is None:
         return "N/A"
     return f"{value:.1%}"
-
-
-def ratio1(value: float | None) -> str:
-    if value is None:
-        return "N/A"
-    return f"{value:.1f}배"
-
-
-def ratio2(value: float | None) -> str:
-    if value is None:
-        return "N/A"
-    return f"{value:.2f}배"
 
 
 def krw_eok(value: int | float | None) -> str:
@@ -362,38 +150,6 @@ def resolve_dart_master_path(paths: Dict[str, str]) -> Path | None:
     return candidate if candidate.exists() else None
 
 
-def latest_news_period(news: Dict[str, Any]) -> Dict[str, Any]:
-    periods = news.get("output", {}).get("periods", [])
-    return periods[0] if periods else {"period": "", "period_summary": "", "issues": []}
-
-
-def issue_names(news_period: Dict[str, Any], limit: int = 3, keywords: tuple[str, ...] | None = None) -> List[str]:
-    names: List[str] = []
-    for issue in news_period.get("issues", []):
-        name = str(issue.get("issue") or "").strip()
-        if not name:
-            continue
-        if keywords:
-            searchable = f"{name} {issue.get('rationale', '')}".lower()
-            if not any(keyword.lower() in searchable for keyword in keywords):
-                continue
-        names.append(name)
-        if len(names) >= limit:
-            break
-    return names
-
-
-def join_or_default(items: List[str], default: str) -> str:
-    return ", ".join(item for item in items if item) or default
-
-
-def short_text(text: str, limit: int = 220) -> str:
-    text = " ".join(str(text or "").split())
-    if len(text) <= limit:
-        return text
-    return text[: limit - 1].rstrip() + "..."
-
-
 def format_period(period: Dict[str, Any] | None) -> str:
     if not period:
         return "확인 기간"
@@ -432,6 +188,69 @@ def metric_comparison_value(dart: Dict[str, Any], key: str, comparison_key: str 
     return value if isinstance(value, (int, float)) else None
 
 
+def build_financial_trends(dart: Dict[str, Any]) -> Dict[str, Any]:
+    """Preserve comparable period values for downstream Strategy and Writer."""
+
+    metric_keys = (
+        "revenue",
+        "revenue_growth",
+        "contribution_margin",
+        "sga_margin",
+        "operating_profit",
+        "net_income",
+        "operating_cash_flow",
+        "eps",
+    )
+    periods = dart.get("periods") or {}
+    comparison_pairs = dart.get("comparison_pairs") or []
+
+    def values_for_period(period_key: str) -> Dict[str, Any]:
+        values: Dict[str, Any] = {}
+        for metric_key in metric_keys:
+            metric = (dart.get("metrics_by_key") or {}).get(metric_key) or {}
+            value = (metric.get("values_by_period") or {}).get(period_key)
+            if isinstance(value, dict):
+                values[metric_key] = value.get("value")
+        return values
+
+    same_period_pair = next(
+        (
+            pair
+            for pair in comparison_pairs
+            if pair.get("current_period_key") == "current_fiscal_year"
+            and pair.get("previous_period_key") == "same_period_previous_year"
+        ),
+        {},
+    )
+    annual_keys = [
+        key
+        for key in ("previous_fiscal_year", "previous_fiscal_year_2", "previous_fiscal_year_3")
+        if key in periods
+    ]
+    return {
+        "current_vs_same_period": {
+            "comparison": same_period_pair,
+            "current_period": periods.get("current_fiscal_year", {}),
+            "previous_period": periods.get("same_period_previous_year", {}),
+            "current_values": values_for_period("current_fiscal_year"),
+            "previous_values": values_for_period("same_period_previous_year"),
+        },
+        "annual_history": [
+            {
+                "period_key": period_key,
+                "period": periods.get(period_key, {}),
+                "values": values_for_period(period_key),
+            }
+            for period_key in annual_keys
+        ],
+        "ttm": {
+            "period": periods.get("ttm", {}),
+            "values": values_for_period("ttm"),
+        },
+        "comparison_pairs": comparison_pairs,
+    }
+
+
 def signal_from_delta(current: int | float | None, previous: int | float | None, higher_is_better: bool = True) -> int:
     if current is None or previous is None:
         return 0
@@ -452,37 +271,12 @@ def signal_from_value(value: int | float | None, threshold: int | float = 0) -> 
     return 0
 
 
-def movement_ko(current: int | float | None, previous: int | float | None, lower_is_better: bool = False) -> str:
-    if current is None or previous is None:
-        return "비교 제한"
-    delta = current - previous
-    if abs(delta) < 1e-12:
-        return "유지"
-    improved = delta < 0 if lower_is_better else delta > 0
-    direction = "하락" if delta < 0 else "상승"
-    return f"{direction}해 {'개선' if improved else '부담 확대'} 방향"
-
-
 def basis_caution(current_period: Dict[str, Any], previous_period: Dict[str, Any]) -> str:
     current_label = format_period(current_period)
     previous_label = format_period(previous_period)
     if current_period.get("basis") and previous_period.get("basis") and current_period.get("basis") != previous_period.get("basis"):
         return f"{current_label}와 {previous_label}는 집계 기준이 달라 동일 기간 YoY로 단정하지 않는다."
     return f"{current_label}와 {previous_label}는 동일 집계 기준일 때만 직접 비교한다."
-
-
-def market_metric(yf: Dict[str, Any], key: str) -> float | None:
-    value = yf.get(key)
-    return value if isinstance(value, (int, float)) else None
-
-
-def market_context_sentence(yf: Dict[str, Any], market_date: str) -> str:
-    return (
-        f"{market_date} 기준 20일 주가수익률 {pct(market_metric(yf, 'stock_return_20d'))}, "
-        f"60일 주가수익률 {pct(market_metric(yf, 'stock_return_60d'))}, "
-        f"20일 초과수익률 {pct(market_metric(yf, 'stock_excess_return_20d'))}, "
-        f"60일 상대강도 {pct(market_metric(yf, 'stock_relative_strength_60'))}가 확인된다."
-    )
 
 
 def cash_flow_stance(position: Dict[str, Any]) -> str:
@@ -522,68 +316,258 @@ def liquidity_stance(position: Dict[str, Any]) -> str:
     return f"단기 유동성 부담 점검 필요{cash_text}"
 
 
+def build_financial_secondary_context(inputs: Dict[str, Any]) -> Dict[str, Any]:
+    """Build verified News and raw market context without cross-domain prose."""
+
+    return {
+        "news": _verified_news_context(
+            inputs.get("news_validation") or {},
+            inputs.get("news_evidence_map") or {},
+        ),
+        "market": _market_secondary_context(inputs.get("yfinance_market_summary")),
+    }
+
+
+def _verified_news_context(
+    validation: Dict[str, Any],
+    evidence_map: Dict[str, Any],
+) -> Dict[str, Any]:
+    validations = validation.get("claim_validations") or []
+    candidates = sorted(
+        (
+            item
+            for item in validations
+            if isinstance(item, dict)
+            and item.get("evidence_use") in {"strong", "context_only"}
+            and str(item.get("claim") or "").strip()
+        ),
+        key=lambda item: (0 if item.get("evidence_use") == "strong" else 1, str(item.get("claim_id") or "")),
+    )
+    claims: List[Dict[str, Any]] = []
+    selected_ids: set[str] = set()
+    seen_evidence_sets: set[tuple[str, ...]] = set()
+    for item in candidates:
+        ids = tuple(
+            dict.fromkeys(
+                str(value)
+                for value in item.get("evidence_ids", [])
+                if _raw_news_item(evidence_map.get(str(value)))
+            )
+        )
+        if not ids or ids in seen_evidence_sets:
+            continue
+        seen_evidence_sets.add(ids)
+        selected_ids.update(ids)
+        claims.append(
+            {
+                "claim_id": str(item.get("claim_id") or ""),
+                "statement": str(item.get("claim") or "").strip(),
+                "evidence_use": item.get("evidence_use"),
+                "evidence_ids": list(ids),
+                "limitations": [
+                    str(value)
+                    for value in item.get("limitations", [])
+                    if str(value).strip()
+                ],
+            }
+        )
+        if len(claims) >= 6:
+            break
+
+    catalog: Dict[str, Dict[str, Any]] = {}
+    for evidence_id in sorted(selected_ids):
+        raw = evidence_map.get(evidence_id) or {}
+        catalog[evidence_id] = {
+            "evidence_id": evidence_id,
+            "domain": "news",
+            "origin_type": "raw_source",
+            "source_ref": str(raw.get("source_ref") or f"news_evidence_map.{evidence_id}"),
+            "source_date": str(raw.get("source_date") or raw.get("time") or raw.get("period") or "")[:10],
+            "period": str(raw.get("period") or ""),
+            "metric": "news_event",
+            "text": str(raw.get("title") or ""),
+            "relation_type": raw.get("relation_type"),
+        }
+    validate_evidence_catalog(catalog, allowed_domains={"news"})
+    status = "available" if claims and catalog else "unavailable"
+    return {
+        "status": status,
+        "claims": claims if status == "available" else [],
+        "evidence_catalog": catalog,
+    }
+
+
+def _market_secondary_context(payload: Any) -> Dict[str, Any]:
+    row = payload[0] if isinstance(payload, list) and payload else payload
+    if not isinstance(row, dict):
+        return {"status": "unavailable", "evidence_catalog": {}}
+    source_date = str(row.get("date") or "")
+    catalog: Dict[str, Dict[str, Any]] = {}
+    for metric in SECONDARY_MARKET_METRICS:
+        value = row.get(metric)
+        if not _finite_number(value):
+            continue
+        evidence_id = canonical_evidence_id("market", metric)
+        catalog[evidence_id] = {
+            "evidence_id": evidence_id,
+            "domain": "market",
+            "origin_type": "raw_source",
+            "source_ref": f"market_full_dataset.latest.{metric}",
+            "source_date": source_date,
+            "period": "",
+            "metric": metric,
+            "value": value,
+            "unit": "index" if "rsi" in metric or "volume_ratio" in metric else "ratio",
+        }
+    validate_evidence_catalog(catalog, allowed_domains={"market"})
+    return {"status": "available" if catalog else "unavailable", "evidence_catalog": catalog}
+
+
+def _raw_news_item(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    domain = value.get("domain") or value.get("source_domain")
+    return domain == "news" and value.get("source_type") == "recent_raw_event"
+
+
+def _finite_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+
+
+def infer_statement_scope(dart_master: Dict[str, Any]) -> str:
+    """Infer the statement scope from canonical DART table titles."""
+
+    titles = [
+        str(table.get("table_title") or "")
+        for section_key in ("4-1", "4-2", "4-4")
+        for table in (dart_master.get(section_key) or {}).get("tables", [])
+        if isinstance(table, dict)
+    ]
+    if any("연결" in title for title in titles):
+        return "consolidated"
+    if any(title for title in titles):
+        return "separate"
+    return "unknown"
+
+
+def reconcile_revenue_breakdown(
+    revenue_breakdown: Dict[str, Any],
+    *,
+    financial_statement_revenue_krw: int | float | None,
+    statement_scope: str,
+) -> Dict[str, Any]:
+    """Attach a typed scope and total reconciliation to a disclosed breakdown."""
+
+    result = copy.deepcopy(revenue_breakdown) if isinstance(revenue_breakdown, dict) else {}
+    result["breakdown_scope"] = str(result.get("breakdown_scope") or "unknown")
+    result["statement_scope"] = statement_scope
+    result["scope_source_text"] = str(
+        result.get("scope_source_text")
+        or result.get("section_title")
+        or (result.get("source") or {}).get("report_name")
+        or ""
+    )
+    current_key = str(result.get("current_period_key") or "")
+    current_total = (result.get("totals_by_period") or {}).get(current_key) or {}
+    breakdown_total = current_total.get("revenue_krw")
+    coverage_ratio = safe_div(breakdown_total, financial_statement_revenue_krw)
+    if breakdown_total is None or financial_statement_revenue_krw in (None, 0):
+        status = "incomparable"
+    elif result["breakdown_scope"] not in {"unknown", statement_scope}:
+        status = "scope_mismatch"
+    elif coverage_ratio is not None and abs(coverage_ratio - 1.0) <= 0.02:
+        status = "matched"
+    elif coverage_ratio is not None and 0 < coverage_ratio < 1.0:
+        status = "partial"
+    else:
+        status = "scope_mismatch"
+    validation = copy.deepcopy(result.get("validation") or {})
+    validation["financial_statement_reconciliation"] = {
+        "breakdown_total_krw": breakdown_total,
+        "financial_statement_revenue_krw": financial_statement_revenue_krw,
+        "coverage_ratio": coverage_ratio,
+        "reconciliation_status": status,
+        "tolerance_ratio": 0.02,
+    }
+    result["validation"] = validation
+    return result
+
+
+def normalized_financial_metrics(financial_trends: Dict[str, Any]) -> Dict[str, Any]:
+    """Return scale-neutral margins for target/peer comparison."""
+
+    comparison = financial_trends.get("current_vs_same_period") or {}
+
+    def metrics(values: Any) -> Dict[str, Any]:
+        row = values if isinstance(values, dict) else {}
+        revenue = row.get("revenue")
+        return {
+            "operating_margin": safe_div(row.get("operating_profit"), revenue),
+            "net_margin": safe_div(row.get("net_income"), revenue),
+            "operating_cash_flow_margin": safe_div(row.get("operating_cash_flow"), revenue),
+        }
+
+    return {
+        "current_period": copy.deepcopy(comparison.get("current_period") or {}),
+        "previous_period": copy.deepcopy(comparison.get("previous_period") or {}),
+        "current_values": metrics(comparison.get("current_values")),
+        "previous_values": metrics(comparison.get("previous_values")),
+    }
+
+
 def build_financial_analyst_output(manifest: Dict[str, Any], inputs: Dict[str, Any]) -> Dict[str, Any]:
     dart = inputs["dart_main"]
     dart_master = inputs.get("dart_master", {})
+    collection_context = copy.deepcopy(dart.get("collection_context") or {})
+    financial_trends = build_financial_trends(dart)
+    statement_scope = infer_statement_scope(dart_master)
+    collection_context["statement_scope"] = statement_scope
+    current_statement_revenue = (
+        (financial_trends.get("current_vs_same_period") or {}).get("current_values") or {}
+    ).get("revenue")
+    revenue_breakdown = reconcile_revenue_breakdown(
+        dart.get("revenue_breakdown") or {},
+        financial_statement_revenue_krw=current_statement_revenue,
+        statement_scope=statement_scope,
+    )
+    financial_trends["normalized_metrics"] = normalized_financial_metrics(financial_trends)
+    share_information = dart.get("share_information") or {}
     position = build_financial_position_summary(dart_master)
-    yf_source = inputs.get("yfinance_market_summary") or []
-    if isinstance(yf_source, list):
-        yf = yf_source[0] if yf_source else {}
-    elif isinstance(yf_source, dict):
-        yf = yf_source
-    else:
-        yf = {}
-    news_period = latest_news_period(inputs.get("news_llm_period_summaries", {}))
-    news_summary = news_period.get("period_summary", "")
+
     current_period = dart.get("periods", {}).get("current_fiscal_year", {})
     comparison_pair = current_comparison_pair(dart)
+    has_previous_period = bool(comparison_pair)
     previous_period_key = comparison_pair.get("previous_period_key", "previous_fiscal_year")
     previous_period = dart.get("periods", {}).get(previous_period_key, {})
     comparison_key = comparison_pair.get("comparison_key")
     period_label = format_period(current_period)
     previous_period_label = format_period(previous_period)
-    period_caution = basis_caution(current_period, previous_period)
     period_basis = str(current_period.get("basis") or "period")
+    period_caution = (
+        basis_caution(current_period, previous_period)
+        if has_previous_period
+        else f"{period_label} 단일 보고서만 사용해 기간 간 비교는 수행하지 않는다."
+    )
+
     target = manifest.get("target_entity", {})
     company_name = str(target.get("company_name") or "분석 대상 기업")
     ticker = str(target.get("ticker") or "")
     corp_code = str(target.get("corp_code") or target.get("company_code") or "")
-    as_of_date = str(target.get("as_of_date") or yf.get("date") or current_period.get("period_end") or "")
-    market_date = str(yf.get("date") or as_of_date or "시장 기준일")
+    as_of_date = str(target.get("as_of_date") or current_period.get("period_end") or "")
 
     revenue = metric_period_value(dart, "revenue")
-    previous_revenue = metric_period_value(dart, "revenue", previous_period_key)
+    previous_revenue = metric_period_value(dart, "revenue", previous_period_key) if has_previous_period else None
     revenue_growth = metric_comparison_value(dart, "revenue_growth", comparison_key)
     if revenue_growth is None and revenue is not None and previous_revenue not in (None, 0):
         revenue_growth = (revenue - previous_revenue) / previous_revenue
     contribution_margin = metric_period_value(dart, "contribution_margin")
-    previous_contribution_margin = metric_period_value(dart, "contribution_margin", previous_period_key)
+    previous_contribution_margin = (
+        metric_period_value(dart, "contribution_margin", previous_period_key) if has_previous_period else None
+    )
     sga_margin = metric_period_value(dart, "sga_margin")
-    previous_sga_margin = metric_period_value(dart, "sga_margin", previous_period_key)
+    previous_sga_margin = metric_period_value(dart, "sga_margin", previous_period_key) if has_previous_period else None
     eps = metric_period_value(dart, "eps")
-    previous_eps = metric_period_value(dart, "eps", previous_period_key)
-
-    news_issue_list = issue_names(news_period, limit=3)
-    news_issue_summary = join_or_default(news_issue_list, "뉴스 주요 이슈가 제한적으로 확인됨")
-    news_growth_summary = join_or_default(
-        issue_names(
-            news_period,
-            limit=3,
-            keywords=("성장", "확대", "승인", "수주", "호조", "개선", "협력", "진출", "매출", "기대", "개발", "투자"),
-        )
-        or news_issue_list,
-        "뉴스 기반 성장/사업 이슈가 제한적으로 확인됨",
-    )
-    news_risk_summary = join_or_default(
-        issue_names(
-            news_period,
-            limit=3,
-            keywords=("리스크", "위험", "우려", "규제", "소송", "특허", "관세", "경고", "부진", "하락", "불확실", "경쟁", "감소", "손실", "적자", "약가"),
-        ),
-        "뉴스 기반 리스크 이슈가 제한적으로 확인됨",
-    )
-    news_summary_short = short_text(news_summary, 260) or news_issue_summary
-    market_context = market_context_sentence(yf, market_date)
+    previous_eps = metric_period_value(dart, "eps", previous_period_key) if has_previous_period else None
 
     revenue_stance = (
         "증가" if signal_from_value(revenue_growth) > 0
@@ -596,11 +580,17 @@ def build_financial_analyst_output(manifest: Dict[str, Any], inputs: Dict[str, A
         else "공헌이익률 비교 제한 또는 유지"
     )
     cost_stance = (
-        "판관비율 하락으로 비용 효율성 개선" if signal_from_delta(sga_margin, previous_sga_margin, higher_is_better=False) > 0
-        else "판관비율 상승으로 비용 부담 확대" if signal_from_delta(sga_margin, previous_sga_margin, higher_is_better=False) < 0
+        "판관비율 하락으로 비용 효율성 개선"
+        if signal_from_delta(sga_margin, previous_sga_margin, higher_is_better=False) > 0
+        else "판관비율 상승으로 비용 부담 확대"
+        if signal_from_delta(sga_margin, previous_sga_margin, higher_is_better=False) < 0
         else "판관비율 비교 제한 또는 유지"
     )
-    eps_stance = "흑자 기조" if signal_from_value(eps) > 0 else "적자 또는 EPS 부담" if signal_from_value(eps) < 0 else "확인 제한 또는 손익분기 수준"
+    eps_stance = (
+        "흑자 기조" if signal_from_value(eps) > 0
+        else "적자 또는 EPS 부담" if signal_from_value(eps) < 0
+        else "확인 제한 또는 손익분기 수준"
+    )
     overall_score = (
         signal_from_value(revenue_growth)
         + signal_from_delta(contribution_margin, previous_contribution_margin)
@@ -613,181 +603,115 @@ def build_financial_analyst_output(manifest: Dict[str, Any], inputs: Dict[str, A
     direction_ko = {"positive": "개선 신호 우세", "negative": "부담 신호 우세", "mixed": "혼재된 신호"}[direction]
 
     revenue_anchor = (
-        f"DART 기준 {period_label} 매출은 {krw_eok(revenue)}이고, "
-        f"비교 기준인 {previous_period_label} 매출은 {krw_eok(previous_revenue)}이다. "
-        f"증감률은 {pct(revenue_growth)}이며, {period_caution}"
+        f"DART 기준 {period_label} 매출은 {krw_eok(revenue)}이고 "
+        f"{previous_period_label} 매출은 {krw_eok(previous_revenue)}이다. "
+        f"증감률은 {pct(revenue_growth)}다. {period_caution}"
+        if has_previous_period
+        else f"DART 기준 {period_label} 매출은 {krw_eok(revenue)}이다. {period_caution}"
     )
     profitability_anchor = (
-        f"DART 기준 공헌이익률은 {pct(contribution_margin)}이고 {previous_period_label} 공헌이익률은 "
-        f"{pct(previous_contribution_margin)}이다. 판관비율은 {pct(sga_margin)}이고 "
-        f"{previous_period_label} 판관비율은 {pct(previous_sga_margin)}이다."
+        f"공헌이익률은 {pct(contribution_margin)}, 비교 기간은 {pct(previous_contribution_margin)}이고 "
+        f"판관비율은 {pct(sga_margin)}, 비교 기간은 {pct(previous_sga_margin)}다."
     )
     eps_anchor = (
-        f"DART 기준 {period_label} EPS는 {won(eps)}이고, "
-        f"{previous_period_label} EPS는 {won(previous_eps)}이다. {period_caution}"
+        f"DART 기준 {period_label} EPS는 {won(eps)}이고 "
+        f"{previous_period_label} EPS는 {won(previous_eps)}다. {period_caution}"
     )
     financial_position_anchor = (
-        f"DART 기준 영업활동현금흐름 {krw_eok(position['operating_cash_flow'])}, "
-        f"현금및현금성자산 {krw_eok(position['cash_and_cash_equivalents'])}, "
+        f"영업활동현금흐름 {krw_eok(position['operating_cash_flow'])}, "
         f"자산총계 {krw_eok(position['total_assets'])}, 부채총계 {krw_eok(position['total_liabilities'])}, "
         f"자본총계 {krw_eok(position['total_equity'])}, 유동비율 {pct1(position['current_ratio'])}, "
-        f"부채비율 {pct1(position['debt_to_equity'])}가 확인된다."
+        f"부채비율 {pct1(position['debt_to_equity'])}가 DART에서 확인된다."
     )
+
     claims = [
         {
             "claim_id": "F001",
-            "claim_ko": f"{period_label} 기준 {company_name}의 매출 흐름은 {revenue_stance}로 해석된다.",
+            "claim_ko": f"{period_label} 매출 및 전년 동기 성장률",
             "financial_dimension": "growth",
             "status": "active",
             "dart_anchor_summary_ko": revenue_anchor,
-            "context_summary_ko": f"News 주요 사업/성장 이슈는 {news_growth_summary}이다. {market_context}",
             "caution_ko": period_caution,
             "action_for_sy": "use_with_caution",
         },
         {
             "claim_id": "F002",
-            "claim_ko": f"{period_label} 기준 {company_name}의 수익성과 비용 효율성은 공헌이익률 측면({profitability_stance})과 비용 측면({cost_stance})을 나눠 판단하되, 연간 확정 개선으로 단정하지 않는다.",
+            "claim_ko": f"{period_label} 공헌이익률 및 판관비율",
             "financial_dimension": "profitability",
             "status": "active",
             "dart_anchor_summary_ko": profitability_anchor,
-            "context_summary_ko": f"News context는 {news_issue_summary}를 제공하며, 수익성 claim의 직접 근거는 DART 마진과 비용 지표로 제한한다.",
-            "caution_ko": f"마진과 비용 지표도 {period_basis} 기준이므로 비교 기간 차이를 함께 표시한다.",
+            "caution_ko": f"마진과 비용 지표는 {period_basis} 기준이다.",
             "action_for_sy": "use_normally",
         },
         {
             "claim_id": "F003",
-            "claim_ko": f"{company_name}의 EPS는 {eps_stance}로 해석하되 비교 기간 차이를 함께 반영해야 한다.",
+            "claim_ko": f"{period_label} 주당순이익(EPS)",
             "financial_dimension": "eps",
             "status": "caution",
             "dart_anchor_summary_ko": eps_anchor,
-            "context_summary_ko": f"{market_context} 가격 데이터는 EPS claim의 보조 context이며 직접 회계 근거는 아니다.",
             "caution_ko": period_caution,
             "action_for_sy": "use_with_caution",
         },
         {
             "claim_id": "F004",
-            "claim_ko": f"{company_name}의 현금흐름, 재무상태표, 자본 구조, 부채, 유동성은 DART 재무상태표와 현금흐름표 기준으로 함께 검토해야 한다.",
-            "financial_dimension": "financial_position",
+            "claim_ko": f"{period_label} 영업현금흐름",
+            "financial_dimension": "cash_flow",
             "status": "conditional",
-            "dart_anchor_summary_ko": financial_position_anchor,
-            "context_summary_ko": f"{cash_flow_stance(position)}, {capital_structure_stance(position)}, {liquidity_stance(position)}으로 요약된다.",
-            "caution_ko": "재무상태표는 특정 시점 기준이고 현금흐름표는 누적 기간 기준이므로 서로 같은 의미의 기간 지표로 혼용하지 않는다.",
+            "dart_anchor_summary_ko": f"영업활동현금흐름 {krw_eok(position['operating_cash_flow'])}가 DART에서 확인된다.",
+            "caution_ko": f"현금흐름표는 {period_basis} 누적 기간 기준이다.",
             "action_for_sy": "use_normally",
         },
         {
             "claim_id": "F005",
-            "claim_ko": f"{company_name}의 재무 claim은 DART를 기준으로 하되 News와 시장 데이터의 지속성 리스크를 보조적으로 반영해야 한다.",
-            "financial_dimension": "risk",
+            "claim_ko": "기준일 재무상태와 유동성",
+            "financial_dimension": "balance_sheet",
             "status": "conditional",
-            "dart_anchor_summary_ko": "DART 수치는 재무 claim의 primary anchor이며, News와 Y-Finance는 재무 수치를 대체하지 않는다.",
-            "context_summary_ko": f"News 주요 리스크/주의 이슈는 {news_risk_summary}이다. {market_context}",
-            "caution_ko": "News 리스크나 주가 반응만으로 DART 기반 재무 claim을 단독 기각하거나 확정하지 않는다.",
-            "action_for_sy": "use_with_caution",
+            "dart_anchor_summary_ko": financial_position_anchor,
+            "caution_ko": "재무상태표는 시점 기준이며 손익·현금흐름 누적값과 같은 기간 지표로 혼용하지 않는다.",
+            "action_for_sy": "use_normally",
         },
     ]
     evidence = [
         {
-            "evidence_id": "E001",
-            "claim_id": "F001",
-            "source": "DART",
-            "metric_or_event": f"{period_label} revenue",
-            "period": period_label,
-            "value": revenue,
-            "period_basis": period_basis,
-            "interpretation_ko": "최신연도 매출 방향성 개선의 핵심 anchor다.",
+            "evidence_id": "E001", "claim_id": "F001", "source": "DART",
+            "metric_or_event": "revenue", "period": period_label, "value": revenue,
+            "period_basis": period_basis, "interpretation_ko": "현재 기간 매출 원값",
         },
         {
-            "evidence_id": "E002",
-            "claim_id": "F001",
-            "source": "DART",
-            "metric_or_event": "revenue growth",
-            "period": comparison_key or f"{period_label}_vs_{previous_period_label}",
-            "value": revenue_growth,
-            "period_basis": period_basis,
-            "interpretation_ko": f"{period_caution} 따라서 성장률은 기간 기준을 함께 표시해야 한다.",
+            "evidence_id": "E002", "claim_id": "F001", "source": "DART",
+            "metric_or_event": "revenue growth", "period": comparison_key or period_label,
+            "value": revenue_growth, "period_basis": period_basis,
+            "interpretation_ko": "비교 기간과 함께 사용하는 매출 증감률",
         },
         {
-            "evidence_id": "E003",
-            "claim_id": "F002",
-            "source": "DART",
-            "metric_or_event": "contribution margin",
-            "period": period_label,
-            "value": contribution_margin,
-            "period_basis": period_basis,
-            "interpretation_ko": "수익성 개선 방향의 직접 근거다.",
+            "evidence_id": "E003", "claim_id": "F002", "source": "DART",
+            "metric_or_event": "contribution margin", "period": period_label,
+            "value": contribution_margin, "period_basis": period_basis,
+            "interpretation_ko": "현재 기간 공헌이익률 원값",
         },
         {
-            "evidence_id": "E004",
-            "claim_id": "F002",
-            "source": "DART",
-            "metric_or_event": "SG&A margin",
-            "period": period_label,
-            "value": sga_margin,
-            "period_basis": period_basis,
-            "interpretation_ko": "비용 효율성 개선 방향의 직접 근거다.",
+            "evidence_id": "E004", "claim_id": "F002", "source": "DART",
+            "metric_or_event": "SG&A margin", "period": period_label, "value": sga_margin,
+            "period_basis": period_basis, "interpretation_ko": "현재 기간 판관비율 원값",
         },
         {
-            "evidence_id": "E005",
-            "claim_id": "F003",
-            "source": "DART",
-            "metric_or_event": "EPS",
-            "period": period_label,
-            "value": eps,
-            "period_basis": period_basis,
-            "interpretation_ko": "흑자 기조는 확인되나 연간 확정 비교는 아니다.",
+            "evidence_id": "E005", "claim_id": "F003", "source": "DART",
+            "metric_or_event": "EPS", "period": period_label, "value": eps,
+            "period_basis": period_basis, "interpretation_ko": "현재 기간 EPS 원값",
         },
         {
-            "evidence_id": "E006",
-            "claim_id": "F001",
-            "source": "News",
-            "metric_or_event": news_growth_summary,
-            "period": str(news_period.get("period") or "latest_news_period"),
-            "value": None,
-            "period_basis": "context_only",
-            "interpretation_ko": "매출 개선의 배경 context다.",
-        },
-        {
-            "evidence_id": "E007",
-            "claim_id": "F005",
-            "source": "News",
-            "metric_or_event": news_risk_summary,
-            "period": str(news_period.get("period") or "latest_news_period"),
-            "value": None,
-            "period_basis": "context_only",
-            "interpretation_ko": "재무 개선 지속성에 대한 주의 context다.",
-        },
-        {
-            "evidence_id": "E008",
-            "claim_id": "F005",
-            "source": "Y-Finance",
-            "metric_or_event": "relative performance",
-            "period": market_date,
-            "value": {
-                "20d_excess": market_metric(yf, "stock_excess_return_20d"),
-                "60d_relative_strength": market_metric(yf, "stock_relative_strength_60"),
-            },
-            "period_basis": "context_only",
-            "interpretation_ko": "상대성과 혼재로 가격 확인 강도를 낮춘다.",
-        },
-        {
-            "evidence_id": "E009",
-            "claim_id": "F004",
-            "source": "DART",
-            "metric_or_event": "cash flow snapshot",
-            "period": period_label,
+            "evidence_id": "E009", "claim_id": "F004", "source": "DART",
+            "metric_or_event": "cash flow snapshot", "period": period_label,
             "value": {
                 "operating_cash_flow": position["operating_cash_flow"],
                 "investing_cash_flow": position["investing_cash_flow"],
                 "financing_cash_flow": position["financing_cash_flow"],
                 "net_cash_change": position["net_cash_change"],
             },
-            "period_basis": period_basis,
-            "interpretation_ko": "영업현금흐름과 현금 증감 방향을 확인하는 보조 DART anchor다.",
+            "period_basis": period_basis, "interpretation_ko": "현금흐름표 원값 묶음",
         },
         {
-            "evidence_id": "E010",
-            "claim_id": "F004",
-            "source": "DART",
+            "evidence_id": "E010", "claim_id": "F005", "source": "DART",
             "metric_or_event": "balance sheet and liquidity snapshot",
             "period": current_period.get("period_end") or period_label,
             "value": {
@@ -798,396 +722,158 @@ def build_financial_analyst_output(manifest: Dict[str, Any], inputs: Dict[str, A
                 "cash_ratio": position["cash_ratio"],
                 "debt_to_equity": position["debt_to_equity"],
             },
-            "period_basis": "POINT_IN_TIME",
-            "interpretation_ko": "재무상태표 안정성, 부채 부담, 단기 유동성을 확인하는 DART anchor다.",
+            "period_basis": "POINT_IN_TIME", "interpretation_ko": "재무상태표 원값 묶음",
         },
     ]
 
-    return {
+    def statement_view(stance: str, reasoning: str, key_features: List[str]) -> Dict[str, Any]:
+        return {"stance": stance, "reasoning": reasoning, "key_features": key_features}
+
+    def detailed_item(interpretation: str, features: Dict[str, Any], caution: str = "") -> Dict[str, Any]:
+        item: Dict[str, Any] = {"interpretation": interpretation, "supporting_features": features}
+        if caution:
+            item["caution"] = caution
+        return item
+
+    report = {
         "agent_name": "Financial Analyst Agent",
         "role": "DART-based Financial Statement Analyst",
         "target_company": company_name,
         "ticker": ticker,
         "corp_code": corp_code,
         "as_of_date": as_of_date,
+        "collection_context": collection_context,
+        "financial_trends": financial_trends,
+        "revenue_breakdown": revenue_breakdown,
+        "share_information": share_information,
         "main_view": {
             "summary": (
-                f"{company_name}은 {period_label} 기준 DART에서 매출 {krw_eok(revenue)}, "
-                f"공헌이익률 {pct(contribution_margin)}, 판관비율 {pct(sga_margin)}가 확인된다. EPS는 {won(eps)}이다. "
-                f"종합 신호는 {direction_ko}이며, News와 Y-Finance는 재무 수치의 직접 근거가 아닌 보조 검증 context로만 사용한다."
+                f"{company_name}은 {period_label} DART 기준 매출 {krw_eok(revenue)}, "
+                f"공헌이익률 {pct(contribution_margin)}, 판관비율 {pct(sga_margin)}, EPS {won(eps)}가 확인되며 "
+                f"종합 신호는 {direction_ko}다."
             ),
             "direction": direction,
             "primary_basis": [
-                f"DART 기준 {period_label} 매출 {krw_eok(revenue)}, {previous_period_label} 매출 {krw_eok(previous_revenue)}, 증감률 {pct(revenue_growth)}",
-                f"공헌이익률 {pct(contribution_margin)}, {previous_period_label} 대비 {movement_ko(contribution_margin, previous_contribution_margin)}",
-                f"판관비율 {pct(sga_margin)}, {previous_period_label} 대비 {movement_ko(sga_margin, previous_sga_margin, lower_is_better=True)}",
-                f"EPS는 {won(eps)}이며 {previous_period_label} EPS {won(previous_eps)}와 기간 기준을 함께 확인",
-                f"영업활동현금흐름은 {krw_eok(position['operating_cash_flow'])}, 현금및현금성자산은 {krw_eok(position['cash_and_cash_equivalents'])}",
-                f"자산총계 {krw_eok(position['total_assets'])}, 부채총계 {krw_eok(position['total_liabilities'])}, 자본총계 {krw_eok(position['total_equity'])}",
-                f"부채비율 {pct1(position['debt_to_equity'])}, 유동비율 {pct1(position['current_ratio'])}로 재무상태표 안정성도 함께 확인"
+                f"매출 {krw_eok(revenue)}, 증감률 {pct(revenue_growth)}",
+                f"공헌이익률 {pct(contribution_margin)}, 판관비율 {pct(sga_margin)}",
+                f"EPS {won(eps)}",
+                f"영업활동현금흐름 {krw_eok(position['operating_cash_flow'])}",
+                f"유동비율 {pct1(position['current_ratio'])}, 부채비율 {pct1(position['debt_to_equity'])}",
             ],
             "main_cautions": [
                 period_caution,
-                "News 촉매는 재무 수치의 직접 증거가 아니다.",
-                "주가 상승만으로 펀더멘털 개선을 주장하지 않는다.",
-                f"News 주요 리스크/주의 이슈({news_risk_summary})는 재무 claim의 지속성 검토 요인으로만 사용한다."
+                "재무상태표는 시점 기준이고 손익·현금흐름은 누적 기간 기준이다.",
             ],
             "not_investment_decision": True,
         },
         "financial_statement_view": {
-            "revenue_growth": {
-                "stance": revenue_stance,
-                "reasoning": f"{period_label} 매출은 {krw_eok(revenue)}이고 {previous_period_label} 매출은 {krw_eok(previous_revenue)}이다. {period_caution}",
-                "key_features": [f"{period_label} 매출 {krw_eok(revenue)}", f"{comparison_key or 'current_vs_previous'} 매출 증감률 {pct(revenue_growth)}", f"{period_label}와 {previous_period_label} 비교"]
-            },
-            "profitability": {
-                "stance": profitability_stance,
-                "reasoning": f"공헌이익률은 {pct(contribution_margin)}로 {previous_period_label} {pct(previous_contribution_margin)} 대비 {movement_ko(contribution_margin, previous_contribution_margin)}이다.",
-                "key_features": [f"공헌이익률 {pct(contribution_margin)}", f"{previous_period_label} 공헌이익률 {pct(previous_contribution_margin)}", "DART 직접 근거"]
-            },
-            "cost_efficiency": {
-                "stance": cost_stance,
-                "reasoning": f"판관비율은 {pct(sga_margin)}로 {previous_period_label} {pct(previous_sga_margin)} 대비 {movement_ko(sga_margin, previous_sga_margin, lower_is_better=True)}이다.",
-                "key_features": [f"판관비율 {pct(sga_margin)}", f"{previous_period_label} 판관비율 {pct(previous_sga_margin)}", f"{period_label} 기준"]
-            },
-            "eps": {
-                "stance": eps_stance,
-                "reasoning": f"{period_label} EPS는 {won(eps)}이고 {previous_period_label} EPS는 {won(previous_eps)}이다. {period_caution}",
-                "key_features": [f"{period_label} EPS {won(eps)}", f"{previous_period_label} EPS {won(previous_eps)}", "기간 기준 확인 필요"]
-            },
-            "risk_context": {
-                "stance": "News·시장 context는 보수적 가중치 요인",
-                "reasoning": f"News 주요 이슈는 {news_issue_summary}이며, 시장 데이터는 {market_context} DART 기반 재무 개선을 대체하지 않고 지속성 및 가격 확인 강도를 조정하는 보조 context로만 사용한다.",
-                "key_features": [news_risk_summary, f"20일 초과수익률 {pct(market_metric(yf, 'stock_excess_return_20d'))}", f"60일 상대강도 {pct(market_metric(yf, 'stock_relative_strength_60'))}"]
-            },
-            "cash_flow": {
-                "stance": cash_flow_stance(position),
-                "reasoning": f"{period_label} 영업활동현금흐름, 투자활동현금흐름, 재무활동현금흐름과 현금 순증감을 함께 확인한다.",
-                "key_features": [
-                    f"영업활동현금흐름 {krw_eok(position['operating_cash_flow'])}",
-                    f"투자활동현금흐름 {krw_eok(position['investing_cash_flow'])}",
-                    f"재무활동현금흐름 {krw_eok(position['financing_cash_flow'])}",
-                    f"현금및현금성자산 순증감 {krw_eok(position['net_cash_change'])}"
-                ]
-            },
-            "balance_sheet": {
-                "stance": "자산 구성과 현금 보유 규모 확인",
-                "reasoning": "재무상태표 기준 자산총계, 유동자산, 비유동자산, 현금및현금성자산을 함께 확인해 자산 구성과 단기 대응 여력을 판단한다.",
-                "key_features": [
-                    f"자산총계 {krw_eok(position['total_assets'])}",
-                    f"유동자산 {krw_eok(position['current_assets'])}",
-                    f"비유동자산 {krw_eok(position['non_current_assets'])}",
-                    f"현금및현금성자산 {krw_eok(position['cash_and_cash_equivalents'])}"
-                ]
-            },
-            "capital_structure": {
-                "stance": capital_structure_stance(position),
-                "reasoning": "자본총계, 부채총계, 자본비율, 부채비율을 함께 보며 자본 구조의 안정성과 레버리지 부담을 판단한다.",
-                "key_features": [
-                    f"자본총계 {krw_eok(position['total_equity'])}",
-                    f"부채총계 {krw_eok(position['total_liabilities'])}",
-                    f"자본비율 {pct1(position['equity_ratio'])}",
-                    f"부채비율 {pct1(position['debt_to_equity'])}"
-                ]
-            },
-            "debt": {
-                "stance": "총부채와 유동부채 부담 확인",
-                "reasoning": "총부채/총자산, 부채비율, 유동부채, 비유동부채를 함께 보며 단기·중장기 부채 부담을 분리해 판단한다.",
-                "key_features": [
-                    f"총부채/총자산 {pct1(position['liabilities_to_assets'])}",
-                    f"부채비율 {pct1(position['debt_to_equity'])}",
-                    f"유동부채 {krw_eok(position['current_liabilities'])}",
-                    f"비유동부채 {krw_eok(position['non_current_liabilities'])}"
-                ]
-            },
-            "liquidity": {
-                "stance": liquidity_stance(position),
-                "reasoning": "유동비율과 현금비율을 중심으로 유동자산 및 현금성자산이 유동부채를 어느 정도 커버하는지 확인한다.",
-                "key_features": [
-                    f"유동비율 {pct1(position['current_ratio'])}",
-                    f"현금비율 {pct1(position['cash_ratio'])}",
-                    f"유동자산 {krw_eok(position['current_assets'])}",
-                    f"유동부채 {krw_eok(position['current_liabilities'])}"
-                ]
-            }
+            "revenue_growth": statement_view(revenue_stance, revenue_anchor, ["revenue", "revenue_growth"]),
+            "profitability": statement_view(profitability_stance, profitability_anchor, ["contribution_margin"]),
+            "cost_efficiency": statement_view(cost_stance, profitability_anchor, ["sga_margin"]),
+            "eps": statement_view(eps_stance, eps_anchor, ["eps"]),
+            "cash_flow": statement_view(
+                cash_flow_stance(position), financial_position_anchor,
+                ["operating_cash_flow", "investing_cash_flow", "financing_cash_flow", "net_cash_change"],
+            ),
+            "balance_sheet": statement_view(
+                "자산 구성과 현금 보유 규모 확인", financial_position_anchor,
+                ["total_assets", "current_assets", "non_current_assets", "cash_and_cash_equivalents"],
+            ),
+            "capital_structure": statement_view(
+                capital_structure_stance(position), financial_position_anchor,
+                ["total_equity", "total_liabilities", "equity_ratio", "debt_to_equity"],
+            ),
+            "debt": statement_view(
+                "총부채와 유동부채 부담 확인", financial_position_anchor,
+                ["liabilities_to_assets", "debt_to_equity", "current_liabilities", "non_current_liabilities"],
+            ),
+            "liquidity": statement_view(
+                liquidity_stance(position), financial_position_anchor,
+                ["current_ratio", "cash_ratio", "current_assets", "current_liabilities"],
+            ),
         },
         "detailed_analysis": {
-            "revenue": {
-                "interpretation": f"매출은 {revenue_stance}로 해석되지만, 비교 기간의 집계 기준을 함께 표시해야 한다.",
-                "supporting_features": {
-                    "revenue": revenue,
-                    "revenue_growth": revenue_growth,
-                    "period": period_label
-                },
-                "caution": period_caution
-            },
-            "margin": {
-                "interpretation": f"공헌이익률은 {profitability_stance}으로 해석된다.",
-                "supporting_features": {
-                    "contribution_margin": contribution_margin,
-                    "previous_contribution_margin": previous_contribution_margin,
-                    "period": period_label
-                }
-            },
-            "expense_efficiency": {
-                "interpretation": f"판관비율은 {cost_stance}으로 해석된다.",
-                "supporting_features": {
-                    "sga_margin": sga_margin,
-                    "previous_sga_margin": previous_sga_margin,
-                    "period": period_label
-                }
-            },
-            "eps": {
-                "interpretation": f"EPS는 {eps_stance}로 해석하되 기간 기준 차이를 함께 반영한다.",
-                "supporting_features": {
-                    "eps": eps,
-                    "previous_eps": previous_eps,
-                    "period": period_label
-                },
-                "caution": period_caution
-            },
-            "risk_and_context": {
-                "interpretation": "뉴스 리스크와 상대성과 혼재는 DART 기반 개선 claim의 지속성 검증 요인이다.",
-                "supporting_features": {
-                    "news_issues": news_issue_list,
-                    "news_summary": news_summary_short,
-                    "stock_excess_return_20d": market_metric(yf, "stock_excess_return_20d"),
-                    "stock_relative_strength_60": market_metric(yf, "stock_relative_strength_60")
-                },
-                "caution": "시장 데이터와 뉴스는 primary financial evidence가 아니다."
-            },
-            "cash_flow": {
-                "interpretation": cash_flow_stance(position),
-                "supporting_features": {
+            "revenue": detailed_item(
+                revenue_stance,
+                {"revenue": revenue, "previous_revenue": previous_revenue, "revenue_growth": revenue_growth, "period": period_label},
+                period_caution,
+            ),
+            "margin": detailed_item(
+                profitability_stance,
+                {"contribution_margin": contribution_margin, "previous_contribution_margin": previous_contribution_margin, "period": period_label},
+            ),
+            "expense_efficiency": detailed_item(
+                cost_stance,
+                {"sga_margin": sga_margin, "previous_sga_margin": previous_sga_margin, "period": period_label},
+            ),
+            "eps": detailed_item(
+                eps_stance,
+                {"eps": eps, "previous_eps": previous_eps, "period": period_label},
+                period_caution,
+            ),
+            "cash_flow": detailed_item(
+                cash_flow_stance(position),
+                {
                     "operating_cash_flow": position["operating_cash_flow"],
                     "investing_cash_flow": position["investing_cash_flow"],
                     "financing_cash_flow": position["financing_cash_flow"],
                     "net_cash_change": position["net_cash_change"],
-                    "period": period_label
+                    "period": period_label,
                 },
-                "caution": f"현금흐름표도 {period_basis} 기준이므로 연간 확정 현금창출력으로 단정하지 않는다."
-            },
-            "balance_sheet": {
-                "interpretation": "재무상태표는 자산 구성, 현금 보유, 부채와 자본의 균형을 시점 기준으로 보여준다.",
-                "supporting_features": {
+                f"현금흐름표는 {period_basis} 기준이다.",
+            ),
+            "balance_sheet": detailed_item(
+                "재무상태표 시점 값",
+                {
                     "total_assets": position["total_assets"],
                     "current_assets": position["current_assets"],
                     "non_current_assets": position["non_current_assets"],
                     "cash_and_cash_equivalents": position["cash_and_cash_equivalents"],
-                    "period_basis": "POINT_IN_TIME"
-                }
-            },
-            "capital_structure": {
-                "interpretation": capital_structure_stance(position),
-                "supporting_features": {
+                    "period_basis": "POINT_IN_TIME",
+                },
+            ),
+            "capital_structure": detailed_item(
+                capital_structure_stance(position),
+                {
                     "total_equity": position["total_equity"],
                     "total_liabilities": position["total_liabilities"],
                     "equity_ratio": position["equity_ratio"],
                     "debt_to_equity": position["debt_to_equity"],
-                    "period_basis": "POINT_IN_TIME"
-                }
-            },
-            "debt": {
-                "interpretation": "총부채와 유동부채는 자산, 자본, 유동성 대비 부담 수준을 함께 보며 판단한다.",
-                "supporting_features": {
+                    "period_basis": "POINT_IN_TIME",
+                },
+            ),
+            "debt": detailed_item(
+                "부채 구조 시점 값",
+                {
                     "total_liabilities": position["total_liabilities"],
                     "current_liabilities": position["current_liabilities"],
                     "non_current_liabilities": position["non_current_liabilities"],
                     "liabilities_to_assets": position["liabilities_to_assets"],
-                    "period_basis": "POINT_IN_TIME"
-                }
-            },
-            "liquidity": {
-                "interpretation": liquidity_stance(position),
-                "supporting_features": {
+                    "period_basis": "POINT_IN_TIME",
+                },
+            ),
+            "liquidity": detailed_item(
+                liquidity_stance(position),
+                {
                     "current_ratio": position["current_ratio"],
                     "cash_ratio": position["cash_ratio"],
                     "current_assets": position["current_assets"],
                     "current_liabilities": position["current_liabilities"],
                     "cash_and_cash_equivalents": position["cash_and_cash_equivalents"],
-                    "period_basis": "POINT_IN_TIME"
-                }
-            }
+                    "period_basis": "POINT_IN_TIME",
+                },
+            ),
         },
-        "cross_data_reconciliation": {
-            "main_analysis": {
-                "summary": (
-                    f"DART 메인 분석 기준으로 {period_label} 매출은 {krw_eok(revenue)}이고 공헌이익률은 {pct(contribution_margin)}, "
-                    f"판관비율은 {pct(sga_margin)}, EPS는 {won(eps)}이다. 종합 신호는 {direction_ko}이나, "
-                    f"{period_caution}"
-                ),
-                "reaction_points": [
-                    {
-                        "point": "매출 규모와 성장 방향",
-                        "cross_analysis": (
-                            f"DART 기준 {period_label} 매출은 {krw_eok(revenue)}이며, {previous_period_label} 매출은 {krw_eok(previous_revenue)}이다. "
-                            f"증감률은 {pct(revenue_growth)}이고, {period_caution}"
-                        ),
-                        "reaction_interpretation": "Financial Analyst의 성장성 판단은 DART가 primary anchor이며, 연간 확정 성장으로 과장하지 않는 조건에서 유지 가능하다."
-                    },
-                    {
-                        "point": "수익성과 비용 효율성",
-                        "cross_analysis": (
-                            f"공헌이익률은 {pct(contribution_margin)}, 판관비율은 {pct(sga_margin)}로 확인된다. "
-                            f"{previous_period_label} 대비 공헌이익률은 {movement_ko(contribution_margin, previous_contribution_margin)}, "
-                            f"판관비율은 {movement_ko(sga_margin, previous_sga_margin, lower_is_better=True)}으로 확인된다."
-                        ),
-                        "reaction_interpretation": f"마진 개선 claim은 DART 기반으로 설명 가능하지만, {period_label} 기준이라는 기간 주석이 필요하다."
-                    }
-                ],
-                "divergences": [
-                    {
-                        "point": "비교 기간 기준 차이",
-                        "cross_analysis": period_caution,
-                        "reaction_interpretation": "메인 분석은 개선 방향을 말할 수 있으나 연간 확정 개선, 연간 성장률 확정 같은 표현은 제한해야 한다."
-                    },
-                    {
-                        "point": "EPS 개선 단정 제한",
-                        "cross_analysis": f"{period_label} EPS는 {won(eps)}이고 {previous_period_label} EPS는 {won(previous_eps)}이다. {period_caution}",
-                        "reaction_interpretation": "EPS는 흑자 기조 확인에는 사용할 수 있지만 연간 EPS 개선 claim으로 확장하지 않는다."
-                    }
-                ]
-            },
-            "news_plus_dart": {
-                "summary": (
-                    f"DART에서는 {period_label} 기준 매출 {krw_eok(revenue)}, 공헌이익률 {pct(contribution_margin)}, "
-                    f"판관비율 {pct(sga_margin)}, EPS {won(eps)}가 확인된다. News context에서는 {news_issue_summary} 등이 "
-                    "핵심 이슈로 확인되며, DART 기반 재무 개선 claim의 배경 설명과 지속성 리스크를 함께 제공한다."
-                ),
-                "reaction_points": [
-                    {
-                        "point": "News 주요 사업 이슈와 DART 매출 흐름",
-                        "cross_analysis": (
-                            f"DART 매출은 {period_label} 기준 {krw_eok(revenue)}로 확인된다. "
-                            f"뉴스에서는 {news_growth_summary} 등이 주요 사업/성장 context로 확인된다."
-                        ),
-                        "reaction_interpretation": "뉴스는 매출 개선 방향의 사업 배경을 보조하지만, 재무 claim의 primary evidence는 DART 수치로 제한한다."
-                    },
-                    {
-                        "point": "News 이슈와 DART 수익성 claim 범위",
-                        "cross_analysis": (
-                            f"뉴스 요약은 '{news_summary_short}'로 정리된다. "
-                            f"DART에서는 공헌이익률 {pct(contribution_margin)}와 판관비율 {pct(sga_margin)}가 확인된다."
-                        ),
-                        "reaction_interpretation": "신사업 뉴스는 향후 성장 context로만 사용하고, 현재 수익성 claim은 DART의 마진·비용 지표로만 설명한다."
-                    }
-                ],
-                "divergences": [
-                    {
-                        "point": "긍정 뉴스와 DART 기간 기준 차이",
-                        "cross_analysis": (
-                            f"뉴스는 {news_growth_summary}를 강조하지만, DART 최신 수치는 {period_label} 기준이다."
-                        ),
-                        "reaction_interpretation": "뉴스 기대를 연간 확정 실적으로 확장하지 않고, YTD 기준 개선 방향으로만 제한한다."
-                    },
-                    {
-                        "point": "News 리스크와 DART claim 지속성",
-                        "cross_analysis": f"뉴스에는 {news_risk_summary}가 확인되며, DART claim은 회계 수치 기준으로만 유지한다.",
-                        "reaction_interpretation": "DART 기반 개선 claim은 유지하되, 뉴스 리스크는 지속성 caution으로 반영한다."
-                    }
-                ]
-            },
-            "market_plus_dart": {
-                "summary": (
-                    f"DART에서는 {period_label} 매출 {krw_eok(revenue)}, 공헌이익률 {pct(contribution_margin)}, "
-                    f"판관비율 {pct(sga_margin)}, EPS {won(eps)}가 확인된다. 시장 데이터에서는 주가가 20일 {pct(market_metric(yf, 'stock_return_20d'))}, "
-                    f"60일 {pct(market_metric(yf, 'stock_return_60d'))} 움직였고 20일 초과수익률 {pct(market_metric(yf, 'stock_excess_return_20d'))}, "
-                    f"60일 상대강도 {pct(market_metric(yf, 'stock_relative_strength_60'))}가 확인된다."
-                ),
-                "reaction_points": [
-                    {
-                        "point": "매출 및 마진 개선과 가격 반등",
-                        "cross_analysis": (
-                            f"DART의 매출 규모와 공헌이익률 {pct(contribution_margin)}는 재무 개선 방향을 보여준다. "
-                            f"동시에 주가는 20일 {pct(market_metric(yf, 'stock_return_20d'))}, 60일 {pct(market_metric(yf, 'stock_return_60d'))} 움직였다."
-                        ),
-                        "reaction_interpretation": "절대 가격 반등은 재무 개선 기대와 방향상 부합하지만, 가격 데이터만으로 펀더멘털 개선을 확정하지 않는다."
-                    },
-                    {
-                        "point": "비용 효율성 개선과 거래량 확대",
-                        "cross_analysis": (
-                            f"DART 판관비율은 {pct(sga_margin)}이고, 시장에서는 거래량 비율이 {ratio2(market_metric(yf, 'stock_volume_ratio_20'))}다."
-                        ),
-                        "reaction_interpretation": "비용 효율성 개선과 거래 활성화가 함께 나타나지만, 거래량은 관심도 지표이며 재무 수치의 직접 증거는 아니다."
-                    }
-                ],
-                "divergences": [
-                    {
-                        "point": "재무 개선 방향과 상대성과 약세",
-                        "cross_analysis": (
-                            f"DART 재무 지표는 {direction_ko}이나 20일 초과수익률은 {pct(market_metric(yf, 'stock_excess_return_20d'))}, "
-                            f"60일 상대강도는 {pct(market_metric(yf, 'stock_relative_strength_60'))}로 확인된다."
-                        ),
-                        "reaction_interpretation": "재무 개선 기대가 절대 가격에는 반영되었지만, 시장 대비 강한 확신으로 이어졌다고 보기는 어렵다."
-                    },
-                    {
-                        "point": "YTD 재무 데이터와 가격 반응의 시점 차이",
-                        "cross_analysis": f"DART는 {period_label} 기준 누적 또는 기간 실적이고 시장 가격은 {market_date} 기준 반응이다.",
-                        "reaction_interpretation": "가격 반응은 실적뿐 아니라 뉴스, 수급, 시장지수 움직임을 함께 반영하므로 DART 수치와 1:1로 대응시키지 않는다."
-                    }
-                ]
-            },
-            "market_plus_news_plus_dart": {
-                "summary": (
-                    "DART 기준 3축 교차분석은 DART 메인지표, News context, Market context를 동시에 연결한다. "
-                    f"DART는 {direction_ko}를 제공하고, 뉴스는 {news_issue_summary}를 제공하며, 시장 데이터는 {market_context}"
-                ),
-                "reaction_points": [
-                    {
-                        "point": "DART 매출 흐름 + News 주요 이슈 + 주가 반응",
-                        "cross_analysis": (
-                            f"DART 매출은 {period_label} 기준 {krw_eok(revenue)}이고, 뉴스는 {news_growth_summary}를 언급한다. "
-                            f"시장에서는 20일 주가수익률 {pct(market_metric(yf, 'stock_return_20d'))}가 확인된다."
-                        ),
-                        "reaction_interpretation": "세 축은 모두 성장 기대라는 방향에서는 정합적이나, DART가 primary anchor이고 뉴스·시장 데이터는 보조 검증으로 제한한다."
-                    },
-                    {
-                        "point": "마진 개선 + 실적 기대 뉴스 + 거래량 확대",
-                        "cross_analysis": (
-                            f"DART 공헌이익률은 {pct(contribution_margin)}이고 판관비율은 {pct(sga_margin)}다. "
-                            f"뉴스 주요 이슈는 {news_issue_summary}이며, 시장 거래량 비율은 {ratio2(market_metric(yf, 'stock_volume_ratio_20'))}다."
-                        ),
-                        "reaction_interpretation": "수익성 개선 기대가 시장 관심을 높였을 가능성은 있으나, 거래량 확대 자체를 재무 개선 증거로 사용하지 않는다."
-                    }
-                ],
-                "divergences": [
-                    {
-                        "point": "성장·실적 뉴스와 상대성과 부진의 동시 존재",
-                        "cross_analysis": (
-                            f"DART와 뉴스는 {direction_ko} 및 {news_issue_summary}를 제시하지만, 시장 대비 20일 초과수익률은 {pct(market_metric(yf, 'stock_excess_return_20d'))}로 확인된다."
-                        ),
-                        "reaction_interpretation": "DART·News·Market 교차분석에서는 긍정 모멘텀과 상대성과 약세를 모두 반영해 claim 가중치를 보수적으로 둔다."
-                    },
-                    {
-                        "point": "News 리스크와 재무 claim 지속성",
-                        "cross_analysis": f"뉴스에는 {news_risk_summary}가 확인되며, DART claim은 회계 수치 기준으로만 유지한다.",
-                        "reaction_interpretation": "DART·뉴스·시장 축을 동시에 보더라도 개선 claim은 유지하되 지속성 리스크를 별도 caution으로 남긴다."
-                    }
-                ]
-            }
-        },
+        "secondary_context": build_financial_secondary_context(inputs),
         "sy_handoff": {
             "financial_claims": claims,
             "key_evidence": evidence,
             "reconciliation_flags": [
-                {
-                    "flag_ko": period_caution,
-                    "severity": "high",
-                    "action_for_sy": "use_with_caution"
-                },
-                {
-                    "flag_ko": "주가 절대 상승은 긍정적이나 상대성과 혼재로 가격 확인 강도는 낮출 것",
-                    "severity": "medium",
-                    "action_for_sy": "use_with_caution"
-                },
-                {
-                    "flag_ko": f"News 주요 리스크/주의 이슈({news_risk_summary})는 보수적으로 검증할 것",
-                    "severity": "medium",
-                    "action_for_sy": "use_with_caution"
-                }
-            ]
-        }
+                {"flag_ko": period_caution, "severity": "high", "action_for_sy": "use_with_caution"}
+            ],
+        },
     }
+    return report
 
 
 def append_message(state: FinancialAnalystGraphState, node: str, role: str, content: str) -> None:
@@ -1198,10 +884,6 @@ def report_claims(report: Dict[str, Any]) -> List[Dict[str, Any]]:
     return report.get("sy_handoff", {}).get("financial_claims", report.get("financial_claims", []))
 
 
-def report_evidence(report: Dict[str, Any]) -> List[Dict[str, Any]]:
-    return report.get("sy_handoff", {}).get("key_evidence", report.get("key_evidence", []))
-
-
 def input_state_node(state: FinancialAnalystGraphState) -> FinancialAnalystGraphState:
     manifest = load_json(state["manifest_path"])
     paths = manifest["input_paths"]
@@ -1209,59 +891,39 @@ def input_state_node(state: FinancialAnalystGraphState) -> FinancialAnalystGraph
     inputs = {
         "dart_main": load_input_file(paths["dart_main"]),
         "dart_master": load_input_file(str(dart_master_path)) if dart_master_path else {},
-        "yfinance_market_summary": load_input_file(paths["yfinance_market_summary"]),
-        "news_llm_period_summaries": load_input_file(paths["news_llm_period_summaries"]),
+        "yfinance_market_summary": load_input_file(paths["yfinance_market_summary"])
+        if paths.get("yfinance_market_summary") and Path(paths["yfinance_market_summary"]).exists()
+        else {},
+        "news_verified_report": load_input_file(paths["news_verified_report"])
+        if paths.get("news_verified_report") and Path(paths["news_verified_report"]).exists()
+        else {},
+        "news_validation": load_input_file(paths["news_validation"])
+        if paths.get("news_validation") and Path(paths["news_validation"]).exists()
+        else {},
+        "news_evidence_map": load_input_file(paths["news_evidence_map"])
+        if paths.get("news_evidence_map") and Path(paths["news_evidence_map"]).exists()
+        else {},
     }
     state["manifest"] = manifest
     state["inputs"] = inputs
-    append_message(state, "Input State", "system", "입력 manifest와 DART/Y-Finance/News 데이터를 로드했다.")
+    append_message(state, "Input State", "system", "financial_dart_inputs_loaded")
     return state
 
 
 def financial_agent_execution_node(state: FinancialAnalystGraphState) -> FinancialAnalystGraphState:
     report = build_financial_analyst_output(state["manifest"], state["inputs"])
-    cross_data_reconciliation = report.pop("cross_data_reconciliation")
     state["financial_analysis_output"] = report
-    state["pending_cross_data_reconciliation"] = cross_data_reconciliation
-    fallback = "DART anchor를 기준으로 financial statement view, detailed analysis, SY handoff claim/evidence를 생성했다."
-    prompt = (
-        "너는 Financial Analyst Agent다. DART 기반 재무 분석을 수행한 직후의 짧은 상태 메시지를 한국어 한 문장으로 작성하라. "
-        "매수/매도/보유 판단은 쓰지 말고, 아직 SY 검증은 수행하지 않았다고 명확히 하라.\n\n"
-        f"financial_claims={json.dumps(report_claims(report), ensure_ascii=False)}"
-    )
-    message = llm_generate(state, "Financial Agent Execution Node", prompt, fallback)
     append_message(
         state,
         "Financial Agent Execution Node",
-        "analyst",
-        message,
+        "system",
+        "financial_analysis_built",
     )
-    return state
-
-
-def cross_data_reconciliation_node(state: FinancialAnalystGraphState) -> FinancialAnalystGraphState:
-    reconciliation = state["pending_cross_data_reconciliation"]
-    state["cross_data_reconciliation"] = reconciliation
-    state["cross_analysis_questions"] = {
-        section: question
-        for section, question in CROSS_ANALYSIS_QUESTIONS.items()
-        if section in reconciliation
-    }
-    fallback = "News와 Y-Finance를 DART 재무 분석의 보조 context로만 교차 검증했다."
-    prompt = (
-        "너는 Financial Analyst Agent다. cross_data_reconciliation 확정 상태 메시지를 한국어 한 문장으로 작성하라. "
-        "통일된 교차분석 질문으로 News/Y-Finance가 primary financial evidence가 아니라 교차 검증 context임을 포함하라.\n\n"
-        f"cross_analysis_questions={json.dumps(state['cross_analysis_questions'], ensure_ascii=False)}\n"
-        f"cross_data_reconciliation={json.dumps(reconciliation, ensure_ascii=False)}"
-    )
-    message = llm_generate(state, "Cross Data Reconciliation Node", prompt, fallback)
-    append_message(state, "Cross Data Reconciliation Node", "analyst", message)
     return state
 
 
 def financial_report_output_node(state: FinancialAnalystGraphState) -> FinancialAnalystGraphState:
     output = dict(state["financial_analysis_output"])
-    output["cross_data_reconciliation"] = state["cross_data_reconciliation"]
     state["report_output"] = output
     required = [
         "agent_name",
@@ -1270,10 +932,14 @@ def financial_report_output_node(state: FinancialAnalystGraphState) -> Financial
         "ticker",
         "corp_code",
         "as_of_date",
+        "collection_context",
+        "financial_trends",
+        "revenue_breakdown",
+        "share_information",
         "main_view",
         "financial_statement_view",
         "detailed_analysis",
-        "cross_data_reconciliation",
+        "secondary_context",
         "sy_handoff",
     ]
     missing = [key for key in required if key not in output]
@@ -1291,13 +957,11 @@ def build_graph():
     graph = StateGraph(FinancialAnalystGraphState)
     graph.add_node("input_state", input_state_node)
     graph.add_node("financial_agent_execution", financial_agent_execution_node)
-    graph.add_node("cross_data_reconciliation", cross_data_reconciliation_node)
     graph.add_node("financial_report_output", financial_report_output_node)
 
     graph.add_edge(START, "input_state")
     graph.add_edge("input_state", "financial_agent_execution")
-    graph.add_edge("financial_agent_execution", "cross_data_reconciliation")
-    graph.add_edge("cross_data_reconciliation", "financial_report_output")
+    graph.add_edge("financial_agent_execution", "financial_report_output")
     graph.add_edge("financial_report_output", END)
     return graph.compile()
 
@@ -1307,27 +971,13 @@ def main() -> None:
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--trace-output")
-    parser.add_argument("--env-file", default=str(DEFAULT_ENV_FILE))
-    parser.add_argument("--use-llm", action="store_true")
-    parser.add_argument("--llm-provider", default="openai", choices=["auto", "none", "openai"])
-    parser.add_argument("--llm-model", default="auto")
-    parser.add_argument("--llm-timeout", type=int, default=60)
     args = parser.parse_args()
 
-    load_env_file(args.env_file)
-    provider = resolve_llm_provider(args.llm_provider)
-    llm_model = resolve_llm_model(provider, args.llm_model)
     app = build_graph()
     final_state = app.invoke(
         {
             "manifest_path": args.manifest,
-            "env_file": args.env_file,
-            "use_llm": args.use_llm,
-            "llm_provider": provider,
-            "llm_model": llm_model,
-            "llm_timeout": args.llm_timeout,
             "transcript": [],
-            "llm_calls": [],
         }
     )
 
@@ -1342,20 +992,11 @@ def main() -> None:
             "fixed_node_flow": [
                 "Input State",
                 "Financial Agent Execution Node",
-                "Cross Data Reconciliation Node",
                 "Financial Report Output Node",
             ],
             "schema_validation": final_state["schema_validation"],
-            "cross_analysis_questions": final_state.get("cross_analysis_questions", {}),
-            "llm": {
-                "enabled": args.use_llm,
-                "provider": provider,
-                "model": llm_model if args.use_llm else None,
-                "env_file": args.env_file,
-                "api_key_loaded": bool(os.getenv("OPENAI_API_KEY")) if provider == "openai" else False,
-            },
-            "llm_usage_summary": summarize_llm_usage(final_state.get("llm_calls", [])),
-            "llm_calls": final_state.get("llm_calls", []),
+            "execution_mode": "deterministic_dart_normalization",
+            "llm_call_count": 0,
             "transcript": final_state["transcript"],
         }
         trace_path.write_text(json.dumps(trace, ensure_ascii=False, indent=2) + "\n")

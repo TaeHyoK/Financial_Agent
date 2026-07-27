@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from pathlib import Path
 from typing import Any
 
 from ..dart.parser_adapter import extract_business_section
 from ..dart.section_extractor import extract_sections
 from ..dart.chunker import build_context_chunks
-from ..dart.schemas import CorporateContextChunk
 from ..io.storage import save_json, save_jsonl
 from ..ranking.embedding import EmbeddingModel
 from .utils import resolve_data_root

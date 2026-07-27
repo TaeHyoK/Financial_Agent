@@ -95,11 +95,11 @@ def main() -> None:
 
     market_json = output_dir / "market_full_dataset.json"
     market_summary = output_dir / "market_summary.json"
+    valuation_json = output_dir / "valuation_snapshot.json"
     report_md = output_dir / "yfinance_analyst_report.md"
     report_json = output_dir / "yfinance_analyst_report.json"
     sy_output = output_dir / "sy_verified_yfinance_report.json"
     strategy_verified_report = output_dir / "yfinance_verified_report.json"
-    sy_question_log = output_dir / "sy_question_answer_log.json"
     manifest_path = output_dir / "pipeline_manifest.json"
 
     dart_json = (
@@ -147,6 +147,8 @@ def main() -> None:
             str(dart_json),
             "--news-json",
             str(news_json),
+            "--valuation-json",
+            str(valuation_json),
             "--report-md",
             str(report_md),
             "--report-json",
@@ -173,8 +175,6 @@ def main() -> None:
                 str(sy_output),
                 "--strategy-output",
                 str(strategy_verified_report),
-                "--question-log",
-                str(sy_question_log),
                 "--env-file",
                 str(Path(args.env_file).expanduser().resolve()),
             ],
@@ -189,13 +189,13 @@ def main() -> None:
         "output_dir": str(output_dir),
         "market_full_dataset": str(market_json),
         "market_summary": str(market_summary),
+        "valuation_snapshot": str(valuation_json),
         "dart_json": str(dart_json),
         "news_json": str(news_json),
         "yfinance_analyst_report_md": str(report_md),
         "yfinance_analyst_report_json": str(report_json),
         "sy_verified_yfinance_report": str(sy_output),
         "yfinance_verified_report": str(strategy_verified_report),
-        "sy_question_answer_log": str(sy_question_log),
     }
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(manifest_path)

@@ -196,7 +196,10 @@ def test_enrich_chart_metadata_adds_strategy_aware_interpretation() -> None:
             "section_recommendation": "Financial Analysis",
             "caption": "caption",
             "writer_allowed_interpretation": "allowed",
-            "data_limitations": ["YTD 수치가 포함된 경우 연간 확정치가 아니다."],
+            "data_limitations": [
+                "YTD 수치가 포함된 경우 연간 확정치가 아니다.",
+                "P/E 비교 기준일이 다를 수 있다.",
+            ],
         },
         {
             "figure_id": "fig_stock_price_ma_volume_relative_strength",
@@ -230,6 +233,7 @@ def test_enrich_chart_metadata_adds_strategy_aware_interpretation() -> None:
     assert enriched[0]["strategy_support_fields"]
     assert enriched[0]["writer_priority_score"] > 0
     assert "Hold" in enriched[0]["analyst_takeaway"]
+    assert "P/E 비교 기준일" in enriched[0]["interpretation_limit"]
     assert enriched[1]["report_chart_role"] == "market_composite"
     assert "상대성과" in enriched[1]["analyst_takeaway"]
     assert enriched[0]["recommended_report_rank"] >= 1

@@ -22,7 +22,12 @@ def write_run_config_copy(paths: RunPaths, config: RunConfig) -> None:
     write_json(paths.run_config_copy, config.raw)
 
 
-def write_financial_runtime_manifest(paths: RunPaths, config: RunConfig) -> None:
+def write_financial_runtime_manifest(
+    paths: RunPaths,
+    config: RunConfig,
+    *,
+    primary_data_only: bool = False,
+) -> None:
     manifest = {
         "agent_name": "Financial Analyst Agent",
         "agent_version": "3.4",
@@ -35,17 +40,29 @@ def write_financial_runtime_manifest(paths: RunPaths, config: RunConfig) -> None
         "input_paths": {
             "dart_main": str(paths.dart_main),
             "dart_master": str(paths.dart_master),
-            "yfinance_market_summary": str(paths.market_summary),
-            "news_llm_period_summaries": str(paths.news_llm_period_summaries),
+            "yfinance_market_summary": "" if primary_data_only else str(paths.market_summary),
+            "news_llm_period_summaries": "" if primary_data_only else str(paths.news_llm_period_summaries),
+            "news_verified_report": "" if primary_data_only else str(paths.news_verified_report),
+            "news_validation": "" if primary_data_only else str(paths.news_sy_validations),
+            "news_evidence_map": "" if primary_data_only else str(paths.news_evidence_map),
         },
         "input_roles": {
             "dart_main": "primary_financial_anchor",
             "dart_master": "primary_detailed_statement_evidence",
             "yfinance_market_summary": "market_context",
             "news_llm_period_summaries": "news_context",
+            "news_verified_report": "verified_news_secondary_context",
+            "news_validation": "verified_news_claim_ledger",
+            "news_evidence_map": "raw_news_evidence_catalog",
         },
         "source_notes": {
-            "news_granularity": "month",
+            "news_granularity": "day",
+            "news_window": "Derived from config.date_range by default; latest day is used as raw sub data.",
+            "market_window": "Derived from config.date_range by default; market_summary is selected_date only.",
+            "dart_window": (
+                "Latest regular filing available by selected_date, prior-year same-period filing, "
+                "and up to three annual periods; future receipt dates are excluded."
+            ),
             "selected_date": config.selected_date_iso,
         },
         "output_contract": {
@@ -53,6 +70,10 @@ def write_financial_runtime_manifest(paths: RunPaths, config: RunConfig) -> None
             "mode": "financial_report_with_sy_handoff",
             "language": "ko",
             "investment_decision_allowed": False,
+        },
+        "ablation": {
+            "primary_data_only": primary_data_only,
+            "secondary_context_enabled": not primary_data_only,
         },
     }
     write_json(paths.financial_runtime_manifest, manifest)
@@ -81,6 +102,7 @@ def build_outputs_manifest(paths: RunPaths) -> dict[str, Any]:
         "yfinance": {
             "market_summary": str(paths.market_summary),
             "market_summary_dated": str(paths.market_summary_dated),
+            "valuation_snapshot": str(paths.valuation_snapshot),
             "analyst_report": str(paths.yfinance_analyst_report),
             "verified_report": str(paths.yfinance_verified_report),
             "strategy_verified_report": str(paths.yfinance_strategy_verified_report),
@@ -124,19 +146,36 @@ def infer_overall_status(steps: list[StepRecord]) -> str:
     return SUCCESS
 
 
-def write_run_files(paths: RunPaths, config: RunConfig, steps: list[StepRecord], *, dry_run: bool) -> dict[str, Any]:
+def write_run_files(
+    paths: RunPaths,
+    config: RunConfig,
+    steps: list[StepRecord],
+    *,
+    dry_run: bool,
+    llm_usage_manifest: str | Path | None = None,
+    llm_execution_id: str = "",
+    llm_run_id: str = "",
+) -> dict[str, Any]:
     status = infer_overall_status(steps)
     step_dicts = [step.as_dict() for step in steps]
     final_aliases = sync_final_aliases(paths)
     validations = validate_outputs(paths)
-    token_usage = collect_token_usage(paths)
+    token_usage = collect_token_usage(
+        paths,
+        manifest_path=llm_usage_manifest,
+        execution_id=llm_execution_id,
+        run_id=llm_run_id,
+    )
     manifest = {
         "run_key": paths.run_key,
         "company_name": config.company_name,
         "ticker": config.ticker,
         "corp_code": config.corp_code,
         "selected_date": config.selected_date,
-        "date_range": config.date_range,
+        "selected_date_policy": "before_market_open",
+        "information_cutoff_date": config.information_cutoff_date,
+        "requested_date_range": config.date_range,
+        "effective_date_range": config.effective_date_range,
         "status": status,
         "dry_run": dry_run,
         "created_at": utc_now(),

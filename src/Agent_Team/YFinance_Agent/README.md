@@ -2,7 +2,7 @@
 
 `configs/company_input.json` 또는 `--input`으로 넘긴 JSON의 `company_name`, `ticker`, `date_range`, `selected_date`를 사용해서 주가 OHLCV, KOSPI, USD/KRW 환율, 기술 지표, 시각화 파일, Y-Finance Agent 보고서, SY 검증 결과를 생성합니다.
 
-기본 출력 기간은 입력 파일의 `20241101-20251031`이며, `selected_date`인 `20251031` 하루 요약도 함께 만듭니다. 지표 계산용 원본 데이터는 `end_date` 기준 2년치로 내려받고, `market_full_dataset.csv/json`은 입력된 출력 기간만 저장합니다.
+기본 출력 기간은 입력 파일의 `20251018-20251031`이며, `selected_date`인 `20251031` 하루 요약도 함께 만듭니다. 지표 계산용 원본 데이터는 `end_date` 기준 2년치로 내려받고, `market_full_dataset.csv/json`은 입력된 출력 기간만 저장합니다.
 
 ## Setup
 
@@ -40,12 +40,12 @@ python src/Agent_Team/YFinance_Agent/run_pipeline.py \
   --output-dir /home/agent2/Financial_Agent_Final/Output_total/Y_Finance/SK바이오팜_20251031 \
   --env-file /home/agent2/Financial_Agent_Final/configs/.env \
   --dart-json /home/agent2/Financial_Agent_Final/Output_total/Financial/SK바이오팜_20251031/dart_lightweight.json \
-  --news-json /home/agent2/Financial_Agent_Final/Output_total/News/SK바이오팜_20251031/context_exports/month/llm_period_summaries.json
+  --news-json /home/agent2/Financial_Agent_Final_hyo/Output_total/News/SK바이오팜_20251031/output/sy_agent/news_agent_verified_handoff.json
 ```
 
 이미 시장 데이터가 있으면 `--skip-collect`, 이미 보고서가 있으면 `--skip-report`, SY 검증을 생략하려면 `--skip-sy`를 사용할 수 있습니다.
 
-SY 검증은 LangGraph 안에서 `Q1/A1 -> Q2/A2 -> SY evaluation`을 수행합니다. 모든 claim이 `keep`이 아니면 `Revision Brief`가 SY 질문/답변과 평가 이유를 재작성 지시로 정리하고, YFinance report를 한 번 자연스럽게 다시 작성합니다. 재작성된 report는 다시 SY 검증하지 않고 바로 최종 산출물로 저장합니다.
+SY 검증은 날짜·수치·source path를 코드로 검사한 뒤 정성 claim을 한 번의 semantic batch로 평가합니다. 결과는 근거 사용 ledger로 저장하며 YFinance report 본문을 재작성하지 않습니다.
 
 ## Individual Steps
 
@@ -84,9 +84,9 @@ python report.py
 python report.py --model gpt-5.4-mini
 ```
 
-보고서는 YFinance `market_full_dataset.json`을 전용 데이터로 사용하고, News 월간 요약과 DART lightweight JSON은 보조 데이터로 사용합니다.
+보고서는 YFinance `market_full_dataset.json`을 primary evidence로 사용하고, 검증된 News claim/원 이벤트와 DART lightweight 지표는 secondary context로 사용합니다.
 `/home/agent2/Financial_Agent_Final/Output_total/Y_Finance/yfinance_analyst_report.json`은 `Y-Finance Agent` 스키마로 생성되며, `score` 필드는 포함하지 않습니다.
-`cross_data_reconciliation`은 `news_plus_market`, `dart_plus_market`, `news_plus_dart_plus_market` 세 섹션으로 구성되며, 각 섹션은 `summary`, `reaction_points`, `divergences`를 포함합니다.
+`secondary_context_assessment`는 `corroborates`, `contradicts`, `neutral`, `insufficient`만 허용하며 primary 시장 claim의 근거 상태를 변경하지 않습니다.
 
 ## Outputs
 
@@ -104,8 +104,10 @@ python report.py --model gpt-5.4-mini
 - `yfinance_analyst_report.md`
 - `yfinance_analyst_report.json`
 - `sy_verified_yfinance_report.json`
-- `sy_question_answer_log.json`
+- `yfinance_verified_report.json`
 - `pipeline_manifest.json`
+
+YFinance SY는 시장 날짜·수치·source path를 결정론적으로 검사하고, 정성 claim만 한 번의 semantic batch로 평가합니다. 원 보고서를 재작성하지 않습니다.
 
 ## Included Columns
 

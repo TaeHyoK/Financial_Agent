@@ -280,9 +280,8 @@ Output_total/News/<run_key>/
     news_agent_evidence_map.json
     sy_agent/
       sy_claim_validations.json
-      sy_question_answer_log.json
       sy_audit_trace.json
-      critic_queue.json
+      news_agent_verified_handoff.json
 ```
 
 상위 통합 레이어가 읽을 핵심 파일:
@@ -309,7 +308,7 @@ Output_total/Y_Finance/<run_key>/
   yfinance_analyst_report.md
   yfinance_analyst_report.json
   sy_verified_yfinance_report.json
-  sy_question_answer_log.json
+  yfinance_verified_report.json
 ```
 
 현재 일부 YFinance output은 `Output_total/Y_Finance` 바로 아래에 생성될 수 있다. 통합 작업 시에는 run_key 단위 저장으로 정리하는 것을 우선한다.

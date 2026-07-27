@@ -46,7 +46,7 @@ METRIC_KEY_ORDER = [
 class FinancialIndexCalculatorTests(unittest.TestCase):
     """Verify metric extraction and calculation rules."""
 
-    def test_master_calculates_four_period_values_and_three_yoy_pairs(self) -> None:
+    def test_master_does_not_compare_ytd_with_full_year(self) -> None:
         result = calculate_financial_index(_canonical_payload(period_count=4), METRIC_ORDER, source_file="master")
 
         self.assertEqual(result["schema_name"], "dart_financial_index")
@@ -62,7 +62,7 @@ class FinancialIndexCalculatorTests(unittest.TestCase):
         ])
         self.assertEqual(
             [pair["comparison_key"] for pair in result["comparison_pairs"]],
-            ["2025_vs_2024", "2024_vs_2023", "2023_vs_2022"],
+            ["2024_ANNUAL_vs_2023_ANNUAL", "2023_ANNUAL_vs_2022_ANNUAL"],
         )
 
         revenue_metric = result["metrics_by_key"]["revenue"]
@@ -78,9 +78,8 @@ class FinancialIndexCalculatorTests(unittest.TestCase):
         self.assertEqual(growth_metric["source_metric_keys"], ["revenue"])
         self.assertEqual(growth_metric["comparison_method"], "YoY")
         growth = growth_metric["comparisons"]
-        self.assertEqual(growth["2025_vs_2024"]["value"], 0.25)
-        self.assertEqual(growth["2024_vs_2023"]["value"], 1.0)
-        self.assertEqual(growth["2023_vs_2022"]["value"], 1.0)
+        self.assertEqual(growth["2024_ANNUAL_vs_2023_ANNUAL"]["value"], 1.0)
+        self.assertEqual(growth["2023_ANNUAL_vs_2022_ANNUAL"]["value"], 1.0)
 
     def test_calculates_requested_period_metrics_from_available_items(self) -> None:
         result = calculate_financial_index(_canonical_payload(period_count=4), METRIC_ORDER)
@@ -100,18 +99,34 @@ class FinancialIndexCalculatorTests(unittest.TestCase):
         self.assertNotIn("ebitda_margin", metrics)
         self.assertNotIn("pe_ratio", metrics)
 
-    def test_handoff_calculates_only_current_vs_previous_pair(self) -> None:
+    def test_handoff_without_same_period_does_not_create_invalid_pair(self) -> None:
         result = calculate_financial_index(_canonical_payload(period_count=2), METRIC_ORDER, source_file="handoff")
 
         self.assertEqual(list(result["periods"].keys()), ["current_fiscal_year", "previous_fiscal_year"])
-        self.assertEqual(
-            [pair["comparison_key"] for pair in result["comparison_pairs"]],
-            ["2025_vs_2024"],
-        )
-        self.assertEqual(
-            list(result["metrics_by_key"]["revenue_growth"]["comparisons"].keys()),
-            ["2025_vs_2024"],
-        )
+        self.assertEqual(result["comparison_pairs"], [])
+        self.assertEqual(result["metrics_by_key"]["revenue_growth"]["comparisons"], {})
+
+    def test_total_equity_is_point_in_time_and_never_derives_ttm(self) -> None:
+        payload = _canonical_payload(period_count=2)
+        periods = payload["4-2"]["tables"][0]["periods"]
+        equity_item = _item("자본총계", list(periods), [675_000, 553_000])
+        payload["4-1"]["tables"] = [
+            {
+                "table_key": "balance_sheet_1",
+                "table_title": "재무상태표",
+                "unit": "원",
+                "periods": periods,
+                "items_by_key": {"total_equity": equity_item},
+                "item_order": ["total_equity"],
+            }
+        ]
+
+        result = calculate_financial_index(payload, ["Total Equity"])
+        values = result["metrics_by_key"]["total_equity"]["values_by_period"]
+
+        self.assertEqual(values["current_fiscal_year"]["value"], 675_000)
+        self.assertEqual(values["previous_fiscal_year"]["value"], 553_000)
+        self.assertNotIn("ttm", values)
 
     def test_unavailable_metrics_are_removed_from_requested_output(self) -> None:
         result = calculate_financial_index(_canonical_payload(period_count=2, include_depreciation=False), METRIC_ORDER)
@@ -149,8 +164,8 @@ class FinancialIndexCalculatorTests(unittest.TestCase):
             self.assertEqual(handoff_result["metric_order"], METRIC_KEY_ORDER)
             self.assertIn("metrics_by_key", master_result)
             self.assertNotIn("metrics", master_result)
-            self.assertEqual(len(master_result["comparison_pairs"]), 3)
-            self.assertEqual(len(handoff_result["comparison_pairs"]), 1)
+            self.assertEqual(len(master_result["comparison_pairs"]), 2)
+            self.assertEqual(len(handoff_result["comparison_pairs"]), 0)
 
 
 def _canonical_payload(*, period_count: int, include_depreciation: bool = True) -> dict:

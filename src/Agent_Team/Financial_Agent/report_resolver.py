@@ -84,6 +84,141 @@ def build_targets(selected_date: date) -> tuple[TargetReport, TargetReport]:
     return primary, secondary
 
 
+def build_primary_target(selected_date: date) -> TargetReport:
+    """Map selected_date to the closest available fiscal report target."""
+
+    primary, _ = build_targets(selected_date)
+    return primary
+
+
+def build_available_report_candidates(selected_date: date) -> list[TargetReport]:
+    """Return regular-report targets in descending fiscal-period order."""
+
+    candidates: list[TargetReport] = []
+    for fiscal_year in range(selected_date.year, selected_date.year - 3, -1):
+        for period_type, month, day, detail_type, keyword in (
+            ("annual", 12, 31, "A001", "사업보고서"),
+            ("q3", 9, 30, "A003", "분기보고서"),
+            ("half", 6, 30, "A002", "반기보고서"),
+            ("q1", 3, 31, "A003", "분기보고서"),
+        ):
+            period_end = date(fiscal_year, month, day)
+            if period_end > selected_date:
+                continue
+            candidates.append(
+                TargetReport(
+                    role="primary",
+                    fiscal_year=fiscal_year,
+                    period_type=period_type,  # type: ignore[arg-type]
+                    period_end=period_end,
+                    dart_detail_type=detail_type,
+                    report_keyword=keyword,
+                )
+            )
+    return sorted(candidates, key=lambda target: target.period_end, reverse=True)
+
+
+def build_same_period_previous_target(primary_target: TargetReport) -> TargetReport | None:
+    """Build the prior-year target with the same fiscal-period basis."""
+
+    if not primary_target.is_periodic:
+        return None
+    return replace(
+        primary_target,
+        role="same_period_previous",
+        fiscal_year=primary_target.fiscal_year - 1,
+        period_end=primary_target.period_end.replace(year=primary_target.period_end.year - 1),
+    )
+
+
+def resolve_report_set(
+    *,
+    client: DartClient,
+    company_code: str,
+    selected_date: date,
+) -> dict[str, tuple[TargetReport, Filing]]:
+    """Resolve the latest filing, its prior-year peer, and annual history."""
+
+    primary_target, primary_filing = resolve_latest_available_report(
+        client=client,
+        company_code=company_code,
+        selected_date=selected_date,
+    )
+    resolved: dict[str, tuple[TargetReport, Filing]] = {
+        "primary": (primary_target, primary_filing),
+    }
+
+    same_period_target = build_same_period_previous_target(primary_target)
+    if same_period_target is not None:
+        try:
+            resolved["same_period_previous"] = (
+                same_period_target,
+                resolve_single_report(
+                    client,
+                    company_code,
+                    same_period_target,
+                    as_of_date=selected_date,
+                ),
+            )
+        except LookupError:
+            pass
+
+    annual_target, annual_filing = resolve_latest_available_annual_report(
+        client=client,
+        company_code=company_code,
+        selected_date=selected_date,
+    )
+    if annual_filing.rcept_no != primary_filing.rcept_no:
+        resolved["annual_history"] = (annual_target, annual_filing)
+
+    return resolved
+
+
+def resolve_latest_available_report(
+    *,
+    client: DartClient,
+    company_code: str,
+    selected_date: date,
+) -> tuple[TargetReport, Filing]:
+    """Find the latest regular report actually filed by the selected date."""
+
+    for target in build_available_report_candidates(selected_date):
+        try:
+            filing = resolve_single_report(
+                client,
+                company_code,
+                target,
+                as_of_date=selected_date,
+            )
+        except LookupError:
+            continue
+        return target, filing
+    raise LookupError(f"No regular DART filing was available by {selected_date.isoformat()}.")
+
+
+def resolve_latest_available_annual_report(
+    *,
+    client: DartClient,
+    company_code: str,
+    selected_date: date,
+) -> tuple[TargetReport, Filing]:
+    """Find the latest annual report actually filed by the selected date."""
+
+    for fiscal_year in range(selected_date.year - 1, selected_date.year - 5, -1):
+        target = _annual_target("annual_history", fiscal_year)
+        try:
+            filing = resolve_single_report(
+                client,
+                company_code,
+                target,
+                as_of_date=selected_date,
+            )
+        except LookupError:
+            continue
+        return target, filing
+    raise LookupError(f"No annual DART filing was available by {selected_date.isoformat()}.")
+
+
 def resolve_reports(
     *,
     client: DartClient,
@@ -100,26 +235,41 @@ def resolve_reports(
     }
 
 
+def resolve_primary_report(
+    *,
+    client: DartClient,
+    company_code: str,
+    primary_target: TargetReport,
+    today: date | None = None,
+) -> dict[str, tuple[TargetReport, Filing]]:
+    """Resolve only the closest primary report."""
+
+    return {
+        "primary": (primary_target, resolve_single_report(client, company_code, primary_target, today=today)),
+    }
+
+
 def resolve_single_report(
     client: DartClient,
     company_code: str,
     target: TargetReport,
     *,
     today: date | None = None,
+    as_of_date: date | None = None,
 ) -> Filing:
     """Resolve one target report to a DART receipt number."""
 
     if not company_code:
         raise ValueError("company_code is required.")
-    today = today or date.today()
-    bgn_de, end_de = _search_window(target, today)
+    cutoff = as_of_date or today or date.today()
+    bgn_de, end_de = _search_window(target, cutoff)
     filings = client.list_filings(
         corp_code=company_code,
         bgn_de=bgn_de,
         end_de=end_de,
         pblntf_detail_ty=target.dart_detail_type,
     )
-    selected = select_latest_valid_filing(filings, target)
+    selected = select_latest_valid_filing(filings, target, as_of_date=cutoff)
     if not selected.corp_code:
         selected = replace(selected, corp_code=company_code)
     return selected

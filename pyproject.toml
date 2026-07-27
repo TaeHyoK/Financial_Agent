@@ -28,6 +28,7 @@ dependencies = [
   "altair>=6.0.0",
   "vega-datasets>=0.9.0",
   "openai>=1.0",
+  "tiktoken>=0.7",
   "tqdm>=4.66",
   "langgraph>=0.2",
   "pykrx>=1.0.48",
@@ -51,11 +52,18 @@ financial-index = "Agent_Team.Financial_Agent.financial_index_calculator:main"
 financial-analyst-agent = "Agent_Team.Financial_Agent.langgraph_flow:main"
 financial-sy-agent = "Agent_Team.Financial_Agent.SY_Agent.langgraph_flow:main"
 financial-sy-pipeline = "Agent_Team.Financial_Agent.SY_Agent.run_pipeline:main"
-competitor-agent = "Agent_Team.Competitor_Agent.cli:main"
 strategy-agent = "Agent_Team.Strategy_Agent.cli:main"
+financial-report = "orchestration.full_report_pipeline:main"
+financial-report-ablation = "orchestration.ablation_experiment:main"
+strategy-bias-evaluation = "Agent_Team.Strategy_Agent.evaluate_recommendation_bias:main"
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+addopts = ["--import-mode=importlib"]
+pythonpath = [
+  "src",
+  "src/Agent_Team/Visualization Agent",
+  "src/Agent_Team/Writer Agent",
+]
 
 [tool.setuptools.package-dir]
 "" = "src"

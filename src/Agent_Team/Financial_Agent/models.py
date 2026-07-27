@@ -7,7 +7,7 @@ from datetime import date
 from typing import Any, Literal, TypedDict
 
 
-ReportRole = Literal["primary", "secondary"]
+ReportRole = Literal["primary", "secondary", "same_period_previous", "annual_history"]
 PeriodType = Literal["q1", "half", "q3", "annual"]
 
 
@@ -80,4 +80,3 @@ class Filing:
             corp_code=str(item.get("corp_code") or "").strip(),
             corp_name=str(item.get("corp_name") or "").strip(),
         )
-

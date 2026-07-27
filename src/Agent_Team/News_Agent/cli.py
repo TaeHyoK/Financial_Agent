@@ -61,6 +61,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--as-of-date", default=None, help="News Agent as-of date. Defaults to --collect-date.")
     parser.add_argument("--dart-lightweight", default=None, help="DART lightweight JSON for News Agent cross-domain context.")
     parser.add_argument("--market-summary", default=None, help="YFinance market summary JSON for News Agent cross-domain context.")
+    parser.add_argument(
+        "--primary-data-only",
+        action="store_true",
+        help="Use News evidence only and omit DART/market secondary context.",
+    )
     parser.add_argument("--analysis-output-dir", default=None, help="News Agent output dir. Defaults to Output_total/News/{run_key}/output.")
     parser.add_argument("--analysis-model", default=None, help="News Agent LLM model. Defaults to NEWS_AGENT_LLM_MODEL or gpt-5.4-mini.")
     parser.add_argument("--max-raw-events-per-period", type=int, default=40, help="Raw events per recent period for News Agent.")
@@ -86,21 +91,6 @@ def _artifact_dirname(company_name: str, collect_date: date) -> str:
     return f"{safe_name or 'company'}_{collect_date.strftime('%Y%m%d')}"
 
 
-def _export_paths(project_root: Path, company_name: str, collect_date: date, granularity: str) -> tuple[Path, Path]:
-    artifact_dir = _artifact_dirname(company_name, collect_date)
-    report_context_path = project_root / "Output_total" / "News" / "artifacts" / "reports" / "packs" / artifact_dir / "report_context.json"
-    llm_request_path = (
-        project_root
-        / "Output_total"
-        / "News"
-        / artifact_dir
-        / "context_exports"
-        / granularity
-        / "llm_summary_request.json"
-    )
-    return report_context_path, llm_request_path
-
-
 def _context_export_dir(args: argparse.Namespace, project_root: Path, collect_date: date) -> Path:
     if args.context_export_dir:
         path = Path(args.context_export_dir).expanduser()
@@ -121,7 +111,9 @@ def _selected_phases(phase: str) -> list[str]:
 
 
 def _run_export_phase(args: argparse.Namespace, project_root: Path, collect_date: date) -> dict[str, str]:
-    report_context_path, _ = _export_paths(project_root, args.company_name, collect_date, args.granularity)
+    config_path = Path(args.config) if args.config else project_root / "configs" / "news_default.yaml"
+    workflow = NewsWorkflow.from_config_path(project_root, config_path)
+    report_context_path = workflow.layout.report_context_path(collect_date, args.company_name)
     context_export_dir = _context_export_dir(args, project_root, collect_date) / args.granularity
     return build_context_exports(
         report_context_path=report_context_path,
@@ -166,6 +158,7 @@ def _run_analysis_phase(args: argparse.Namespace, project_root: Path, collect_da
         env_path=args.env_path,
         timeout_seconds=args.timeout_seconds,
         max_raw_events_per_period=args.max_raw_events_per_period,
+        include_secondary_context=not args.primary_data_only,
         show_progress=True,
     )
 
@@ -200,9 +193,7 @@ def _run_sy_phase(args: argparse.Namespace, project_root: Path, collect_date: da
         output_dir=output_dir,
         verified_output=output_dir / "sy_claim_validations.json",
         verified_report=output_dir / "news_agent_verified_handoff.json",
-        question_answer_log=output_dir / "sy_question_answer_log.json",
         audit_trace=output_dir / "sy_audit_trace.json",
-        critic_queue=output_dir / "critic_queue.json",
     )
     model = args.sy_model or sy_module.os.getenv("NEWS_SY_AGENT_LLM_MODEL") or sy_module.os.getenv("NEWS_AGENT_LLM_MODEL") or sy_module.DEFAULT_MODEL
     return sy_module.run_sy_agent(

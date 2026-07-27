@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 _MODEL_CACHE: dict[tuple[str, str], "SentenceTransformer"] = {}
 FALLBACK_DIM = 384

@@ -129,14 +129,6 @@ def main() -> None:
         str(fa_output),
         "--trace-output",
         str(fa_trace),
-        "--env-file",
-        args.env_file,
-        "--llm-provider",
-        args.llm_provider,
-        "--llm-model",
-        args.llm_model,
-        "--llm-timeout",
-        str(args.llm_timeout),
     ]
     sy_cmd = [
         sys.executable,
@@ -161,7 +153,6 @@ def main() -> None:
         args.llm_model,
     ]
     if args.use_llm:
-        fa_cmd.append("--use-llm")
         sy_cmd.append("--use-llm")
 
     run_command(fa_cmd)

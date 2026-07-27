@@ -1,0 +1,19 @@
+{
+  "company_code": "00878696",
+  "corp_code": "00878696",
+  "company_name": "SK바이오팜",
+  "ticker": "326030.KS",
+  "report_type": "quarterly report",
+  "date_range": "20251001-20251031",
+  "selected_date": "20251031",
+  "llm_model": "gpt-5.4-mini",
+  "max_retries": 1,
+  "peer_resolution": {
+    "source_group": "Naver WiseReport FG000",
+    "selected_company_name": "일성아이에스",
+    "selected_stock_code": "003120",
+    "selected_ticker": "003120.KS",
+    "selected_corp_code": "00146214",
+    "usage": "single_peer_only"
+  }
+}

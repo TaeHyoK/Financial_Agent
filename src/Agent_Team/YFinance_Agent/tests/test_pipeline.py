@@ -72,6 +72,33 @@ class PipelineOutputTests(unittest.TestCase):
         self.assertFalse(pd.isna(result["stock_close_to_ma60"].iloc[0]))
         self.assertFalse(pd.isna(result["stock_relative_strength_60"].iloc[0]))
 
+    def test_returns_use_adjusted_close_while_display_keeps_raw_close(self) -> None:
+        index = pd.bdate_range("2024-01-02", periods=80)
+        stock = _make_market_frame(index, close_start=100.0, close_step=1.0, volume_start=1000.0)
+        stock["adj_close"] = pd.Series(
+            [50.0 + (2.0 * i) for i in range(len(index))],
+            index=index,
+        )
+        kospi = _make_market_frame(index, close_start=2000.0, close_step=2.0, volume_start=5000.0)
+        fx = _make_market_frame(index, close_start=1300.0, close_step=0.5, volume_start=0.0)
+
+        result = build_full_dataset(
+            {"stock": stock, "kospi": kospi, "fx_usdkrw": fx},
+            pipeline_input=PipelineInput(
+                ticker="TEST.KS",
+                company_name="Test",
+                start_date=index[60].date(),
+                end_date=index[-1].date(),
+                selected_date=(index[-1] + pd.Timedelta(days=1)).date(),
+                source_path=Path("/tmp/test_input.json"),
+            ),
+        )
+
+        expected = stock["adj_close"].pct_change(5).loc[index[-1]]
+        self.assertEqual(result["stock_close"].iloc[-1], stock["close"].iloc[-1])
+        self.assertEqual(result["stock_adjusted_close"].iloc[-1], stock["adj_close"].iloc[-1])
+        self.assertAlmostEqual(result["stock_return_5d"].iloc[-1], expected)
+
     def test_resolve_source_start_date_uses_two_year_source_window(self) -> None:
         self.assertEqual(resolve_source_start_date(date(2024, 11, 1), date(2025, 10, 31)), date(2023, 11, 1))
         self.assertEqual(resolve_source_start_date(date(2022, 1, 1), date(2025, 10, 31)), date(2022, 1, 1))
@@ -88,8 +115,21 @@ class PipelineOutputTests(unittest.TestCase):
 
         self.assertEqual(summary.requested_date, "2025-11-01")
         self.assertEqual(summary.actual_date, "2025-10-31")
-        self.assertEqual(summary.match_type, "previous_trading_day")
+        self.assertEqual(summary.match_type, "latest_trading_day_before_selected_date")
         self.assertEqual(summary.frame.columns.tolist(), OUTPUT_COLUMNS)
+
+    def test_build_summary_dataset_excludes_selected_date_row(self) -> None:
+        full = pd.DataFrame(
+            [
+                {"date": "2025-10-30", **{column: 1.0 for column in OUTPUT_COLUMNS if column != "date"}},
+                {"date": "2025-10-31", **{column: 2.0 for column in OUTPUT_COLUMNS if column != "date"}},
+            ]
+        )[OUTPUT_COLUMNS]
+
+        summary = build_summary_dataset(full, selected_date=date(2025, 10, 31))
+
+        self.assertEqual(summary.actual_date, "2025-10-30")
+        self.assertEqual(summary.frame.iloc[0]["stock_close"], 1.0)
 
     def test_write_dataframe_outputs_serializes_missing_values_as_null_in_json(self) -> None:
         frame = pd.DataFrame(

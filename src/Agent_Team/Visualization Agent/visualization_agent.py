@@ -71,7 +71,7 @@ def run_visualization_agent(config: VisualizationAgentConfig | dict[str, Any]) -
     """Run the Visualization Agent and write all chart, manifest, and report outputs."""
 
     resolved_config = _coerce_config(config)
-    env_status = load_project_env(resolved_config.env_file)
+    load_project_env(resolved_config.env_file)
     output_dir = Path(resolved_config.output_dir).expanduser().resolve()
     figures_dir = output_dir / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)

@@ -39,6 +39,7 @@ class StepRecord:
     stderr_tail: str = ""
     reason: str | None = None
     outputs: dict[str, str] = field(default_factory=dict)
+    input_fingerprint: str = ""
 
     def start(self, command: list[str]) -> float:
         self.status = RUNNING
@@ -83,4 +84,5 @@ class StepRecord:
             "stderr_tail": self.stderr_tail,
             "reason": self.reason,
             "outputs": self.outputs,
+            "input_fingerprint": self.input_fingerprint,
         }

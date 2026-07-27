@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -42,7 +42,26 @@ class RunConfig:
 
     @property
     def end_date(self) -> str:
+        requested = datetime.strptime(date_range_bounds(self.date_range)[1], "%Y%m%d").date()
+        selected = datetime.strptime(self.selected_date, "%Y%m%d").date()
+        return min(requested, selected - timedelta(days=1)).strftime("%Y%m%d")
+
+    @property
+    def requested_end_date(self) -> str:
         return date_range_bounds(self.date_range)[1]
+
+    @property
+    def information_cutoff_date(self) -> str:
+        selected = datetime.strptime(self.selected_date, "%Y%m%d").date()
+        return (selected - timedelta(days=1)).strftime("%Y%m%d")
+
+    @property
+    def information_cutoff_date_iso(self) -> str:
+        return date_to_iso(self.information_cutoff_date)
+
+    @property
+    def effective_date_range(self) -> str:
+        return f"{self.start_date}-{self.end_date}"
 
     @property
     def run_key(self) -> str:
@@ -67,7 +86,7 @@ def load_run_config(path: str | Path) -> RunConfig:
     if not company_code:
         raise ValueError("company_code or corp_code is required in run config.")
 
-    return RunConfig(
+    config = RunConfig(
         config_path=config_path,
         company_code=company_code,
         company_name=str(payload.get("company_name") or company_code).strip(),
@@ -77,6 +96,9 @@ def load_run_config(path: str | Path) -> RunConfig:
         selected_date=selected_date,
         raw=payload,
     )
+    if config.start_date > config.end_date:
+        raise ValueError("date_range must contain at least one day before selected_date.")
+    return config
 
 
 def normalize_date(value: Any) -> str:

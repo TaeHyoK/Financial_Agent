@@ -32,6 +32,7 @@ def validate_outputs(paths: RunPaths) -> dict[str, Any]:
     yfinance = {
         "market_summary": file_status(paths.market_summary),
         "market_summary_dated": file_status(paths.market_summary_dated),
+        "valuation_snapshot": file_status(paths.valuation_snapshot),
         "analyst_report": file_status(paths.yfinance_analyst_report),
         "verified_report": file_status(paths.yfinance_verified_report),
         "strategy_verified_report": file_status(paths.yfinance_strategy_verified_report),
@@ -52,7 +53,22 @@ def validate_outputs(paths: RunPaths) -> dict[str, Any]:
     }
 
 
-def collect_token_usage(paths: RunPaths) -> dict[str, Any]:
+def collect_token_usage(
+    paths: RunPaths,
+    *,
+    manifest_path: str | Path | None = None,
+    execution_id: str = "",
+    run_id: str = "",
+) -> dict[str, Any]:
+    usage_path = Path(manifest_path).expanduser().resolve() if manifest_path else paths.llm_usage_manifest
+    manifest_usage = _usage_from_jsonl(
+        usage_path,
+        execution_id=execution_id,
+        run_id=run_id,
+    )
+    if manifest_usage is not None:
+        return manifest_usage
+
     items = {
         "financial_analyst": _usage_by_field(paths.financial_agent_pipeline_dir / "pipeline_financial_analyst_report_trace.json"),
         "financial_sy": _usage_by_field(paths.financial_agent_pipeline_dir / "pipeline_sy_validation_trace.json"),
@@ -65,6 +81,7 @@ def collect_token_usage(paths: RunPaths) -> dict[str, Any]:
         for key in total:
             total[key] += int(usage.get(key) or 0)
     return {
+        "source": "legacy_agent_artifacts",
         "recorded_total": total,
         "by_step": items,
         "untracked_steps": [
@@ -72,6 +89,61 @@ def collect_token_usage(paths: RunPaths) -> dict[str, Any]:
             "yfinance_sy_validation",
         ],
         "note": "YFinance report/SY usage was not persisted by the current YFinance implementation, so recorded_total is a lower bound.",
+    }
+
+
+def _usage_from_jsonl(
+    path: Path,
+    *,
+    execution_id: str = "",
+    run_id: str = "",
+) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        if execution_id and row.get("execution_id") != execution_id:
+            continue
+        if run_id and row.get("run_id") != run_id:
+            continue
+        rows.append(row)
+    if not rows:
+        return None
+
+    total = {
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "reasoning_tokens": 0,
+        "total_tokens": 0,
+    }
+    by_step: dict[str, dict[str, int]] = {}
+    for row in rows:
+        usage = row.get("usage") if isinstance(row.get("usage"), dict) else {}
+        step = str(row.get("step") or "unknown")
+        step_usage = by_step.setdefault(step, {**{key: 0 for key in total}, "call_count": 0, "error_count": 0})
+        step_usage["call_count"] += 1
+        if row.get("status") != "ok":
+            step_usage["error_count"] += 1
+        for key in total:
+            amount = int(usage.get(key) or 0)
+            total[key] += amount
+            step_usage[key] += amount
+    return {
+        "source": str(path),
+        "recorded_total": total,
+        "by_step": by_step,
+        "call_count": len(rows),
+        "error_count": sum(1 for row in rows if row.get("status") != "ok"),
+        "untracked_steps": [],
     }
 
 

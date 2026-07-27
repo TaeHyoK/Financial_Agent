@@ -24,7 +24,7 @@ dist/
 # Logs and runtime outputs
 logs/
 *.log
-Output_total/
+Output_total*/
 
 # OS/editor files
 .DS_Store

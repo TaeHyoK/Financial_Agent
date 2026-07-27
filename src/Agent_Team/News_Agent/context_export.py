@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import copy
+import difflib
 import json
 import os
+import re
 import shutil
 import time
 from datetime import date
@@ -11,6 +13,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from tqdm.auto import tqdm
+from shared.llm_clients import execute_with_telemetry
 
 from .io.storage import save_json
 
@@ -25,9 +28,8 @@ DESCRIPTION = {
     "snippet": "대표 기사에서 추출한 요약 또는 본문 일부입니다. 원문 접근 제한 등으로 비어 있을 수 있습니다.",
     "time": "대표 기사 발행일입니다.",
     "final_score": "DART 관련성, 섹션 관련성, 언급량, 최신성, 중요도 점수를 조합한 최종 랭킹 점수입니다.",
+    "coverage": "기사 수, 고유 매체 수, 근접 복제 제거 후 기사 수와 1차 출처 포함 여부입니다.",
 }
-
-COMPANY_PROFILE_SECTION_NAMES = {"사업의 개요", "주요 제품 및 서비스"}
 
 SUMMARY_OUTPUT_DESCRIPTION = {
     "period": "요약 대상 기간입니다. 테스트에서는 일 단위, 운영에서는 월 단위입니다.",
@@ -71,9 +73,68 @@ def _compact_event(event: dict[str, Any]) -> dict[str, Any] | None:
         "mention_count": int(event.get("mention_count") or 0),
         "title": str(representative.get("title") or ""),
         "snippet": str(representative.get("snippet") or ""),
+        "source": str(representative.get("source") or ""),
+        "url": str(representative.get("url") or ""),
         "time": str(time),
         "final_score": float(scores.get("final_score") or 0.0),
+        "coverage": _event_coverage(event),
     }
+
+
+def _event_coverage(event: dict[str, Any]) -> dict[str, Any]:
+    articles = [item for item in event.get("articles") or [] if isinstance(item, dict)]
+    article_count = len(articles) or int(event.get("mention_count") or 0)
+    publishers = {
+        _normalize_publisher(item.get("source"))
+        for item in articles
+        if _normalize_publisher(item.get("source"))
+    }
+    deduplicated_count = _deduplicated_article_count(articles) if articles else article_count
+    primary_source_present = any(_is_primary_source(item) for item in articles)
+    if articles and all(str(item.get("title") or "").strip() for item in articles):
+        quality = "verified"
+    elif article_count:
+        quality = "partial"
+    else:
+        quality = "insufficient"
+    return {
+        "article_count": article_count,
+        "unique_publisher_count": len(publishers),
+        "publisher_names": sorted(publishers),
+        "deduplicated_article_count": deduplicated_count,
+        "primary_source_present": primary_source_present,
+        "coverage_quality": quality,
+    }
+
+
+def _deduplicated_article_count(articles: list[dict[str, Any]]) -> int:
+    representatives: list[str] = []
+    for article in articles:
+        normalized = _normalize_article_text(article)
+        if not normalized:
+            continue
+        if any(difflib.SequenceMatcher(None, normalized, prior).ratio() >= 0.88 for prior in representatives):
+            continue
+        representatives.append(normalized)
+    return len(representatives)
+
+
+def _normalize_article_text(article: dict[str, Any]) -> str:
+    text = f"{article.get('title') or ''} {article.get('snippet') or ''}".lower()
+    return re.sub(r"[^0-9a-z가-힣]+", " ", text).strip()
+
+
+def _normalize_publisher(value: Any) -> str:
+    return re.sub(r"\s+", "", str(value or "")).lower()
+
+
+def _is_primary_source(article: dict[str, Any]) -> bool:
+    source = _normalize_publisher(article.get("source"))
+    url = str(article.get("url") or "").lower()
+    return any(
+        marker in source or marker in url
+        for marker in ("dart", "전자공시", "보도자료", "newsroom", "/ir/", "/press/")
+    )
 
 
 def _group_events(
@@ -124,40 +185,35 @@ def _load_json_if_exists(path: Path) -> dict[str, Any]:
 
 
 def _load_company_profile(report: dict[str, Any], report_path: Path) -> dict[str, Any]:
+    """Build a compact relevance profile from already-ranked DART context chunks."""
+
     company = report.get("company") or {}
-    company_id = str(company.get("company_id") or "")
     corporate_context = report.get("corporate_context") or {}
-    report_key = str(corporate_context.get("report_key") or "")
-    if not company_id or not report_key:
-        return {"source": {}, "sections": []}
-
-    data_dir = report_path.parents[4]
-    artifacts_dir = report_path.parents[3]
-    metadata_path = data_dir / "inputs" / "dart" / company_id / report_key / "report_metadata.json"
-    sections_path = artifacts_dir / "dart" / "sections" / company_id / report_key / "dart_sections.json"
-
-    metadata = _load_json_if_exists(metadata_path)
-    sections_payload = _load_json_if_exists(sections_path)
-    sections: list[dict[str, str]] = []
-    for section in sections_payload.get("sections", []):
-        section_name = str(section.get("section_name") or "")
-        if section_name not in COMPANY_PROFILE_SECTION_NAMES:
+    chunks = corporate_context.get("chunks_by_section") or {}
+    overview = [
+        str(item.get("text") or "")
+        for item in (chunks.get("overview") or [])[:3]
+        if isinstance(item, dict) and str(item.get("text") or "").strip()
+    ]
+    product_names: list[str] = []
+    for item in chunks.get("products") or []:
+        if not isinstance(item, dict):
             continue
-        sections.append(
-            {
-                "section_name": section_name,
-                "text": str(section.get("raw_text") or ""),
-            }
-        )
-
+        for line in str(item.get("text") or "").splitlines():
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            if len(cells) < 3 or not any("%" in cell for cell in cells[1:]):
+                continue
+            name = cells[0]
+            if name and name not in {"품목", "매출액", "기타", "계", "---"} and name not in product_names:
+                product_names.append(name)
+        if len(product_names) >= 8:
+            break
     return {
-        "source": {
-            "report_name": metadata.get("report_name", ""),
-            "report_date": metadata.get("report_date", corporate_context.get("report_date", "")),
-            "report_key": report_key,
-            "receipt_no": metadata.get("receipt_no", ""),
-        },
-        "sections": sections,
+        "company_name": company.get("company_name", ""),
+        "ksic_code": company.get("ksic_code") or [],
+        "report_date": corporate_context.get("report_date", ""),
+        "business_context": overview,
+        "major_products": product_names,
     }
 
 
@@ -181,10 +237,14 @@ def _build_llm_summary_request(summary_prompt_input: dict[str, Any], llm_model: 
             }
         ],
     }
+    metadata = summary_prompt_input.get("metadata", {})
     user_payload = {
-        "input_description": summary_prompt_input.get("description", {}),
         "company_profile": summary_prompt_input.get("company_profile", {}),
-        "metadata": summary_prompt_input.get("metadata", {}),
+        "target": {
+            "company": metadata.get("company", {}),
+            "collect_date": metadata.get("collect_date", ""),
+            "granularity": metadata.get("granularity", ""),
+        },
         "periods": summary_prompt_input.get("periods", []),
         "expected_output_schema": expected_output_schema,
     }
@@ -224,7 +284,6 @@ def _build_llm_summary_request(summary_prompt_input: dict[str, Any], llm_model: 
                 ),
             },
         ],
-        "expected_output_schema": expected_output_schema,
     }
 
 
@@ -350,11 +409,19 @@ def _build_openai_client(api_key_env: str, env_path: str | Path | None) -> Any:
 
 
 def _call_llm_summary(client: Any, request_payload: dict[str, Any]) -> dict[str, Any]:
-    response = client.chat.completions.create(
-        model=str(request_payload["model"]),
-        messages=request_payload["messages"],
-        temperature=float(request_payload.get("temperature", 0.2)),
-        response_format=request_payload.get("response_format", {"type": "json_object"}),
+    model = str(request_payload["model"])
+    transport_payload = {
+        "model": model,
+        "messages": request_payload["messages"],
+        "temperature": float(request_payload.get("temperature", 0.2)),
+        "response_format": request_payload.get("response_format", {"type": "json_object"}),
+    }
+    response = execute_with_telemetry(
+        lambda: client.chat.completions.create(**transport_payload),
+        request_payload=transport_payload,
+        model=model,
+        step="news:period_summary",
+        usage_getter=lambda result: getattr(result, "usage", None),
     )
     content = response.choices[0].message.content or ""
     try:

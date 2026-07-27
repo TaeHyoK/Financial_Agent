@@ -38,6 +38,10 @@ class RunPaths:
         return self.news_context_export_dir / "month"
 
     @property
+    def news_context_export_day_dir(self) -> Path:
+        return self.news_context_export_dir / "day"
+
+    @property
     def news_report_context(self) -> Path:
         return self.output_root / "News" / "artifacts" / "reports" / "packs" / self.run_key / "report_context.json"
 
@@ -68,6 +72,14 @@ class RunPaths:
     @property
     def run_trace(self) -> Path:
         return self.run_dir / "run_trace.json"
+
+    @property
+    def llm_usage_manifest(self) -> Path:
+        return self.run_dir / "llm_usage_manifest.jsonl"
+
+    @property
+    def step_fingerprints(self) -> Path:
+        return self.run_dir / "step_fingerprints.json"
 
     @property
     def errors(self) -> Path:
@@ -123,11 +135,15 @@ class RunPaths:
 
     @property
     def news_llm_period_summaries(self) -> Path:
-        return self.news_context_export_month_dir / "llm_period_summaries.json"
+        return self.news_context_export_day_dir / "llm_period_summaries.json"
 
     @property
     def news_handoff(self) -> Path:
         return self.news_analysis_output_dir / "news_agent_handoff.json"
+
+    @property
+    def news_evidence_map(self) -> Path:
+        return self.news_analysis_output_dir / "news_agent_evidence_map.json"
 
     @property
     def news_sy_validations(self) -> Path:
@@ -154,6 +170,10 @@ class RunPaths:
         return self.yfinance_dir / "market_summary.json"
 
     @property
+    def valuation_snapshot(self) -> Path:
+        return self.yfinance_dir / "valuation_snapshot.json"
+
+    @property
     def yfinance_analyst_report(self) -> Path:
         return self.yfinance_dir / "yfinance_analyst_report.json"
 
@@ -168,10 +188,6 @@ class RunPaths:
     @property
     def yfinance_strategy_verified_report(self) -> Path:
         return self.yfinance_dir / "yfinance_verified_report.json"
-
-    @property
-    def yfinance_question_answer_log(self) -> Path:
-        return self.yfinance_dir / "sy_question_answer_log.json"
 
     @property
     def yfinance_final_report(self) -> Path:

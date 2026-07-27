@@ -83,9 +83,6 @@ ROLE_BASE_SCORE = {
     "market_indexed": 48,
 }
 
-UNSUPPORTED_VISIBLE_TERMS = ("OPM", "ROE", "ROA", "P/E", "P/B", "PER", "PBR")
-
-
 def enrich_chart_metadata_with_strategy(
     chart_metadata: list[dict[str, Any]],
     strategy_report: dict[str, Any],
@@ -279,7 +276,7 @@ def _interpretation_limit(role: str, chart: dict[str, Any]) -> str:
     base_items = [
         _compact_text(item)
         for item in limitations
-        if _compact_text(item) and not _has_unsupported_visible_term(_compact_text(item))
+        if _compact_text(item)
     ]
     base = " ".join(base_items)
     role_limits = {
@@ -372,7 +369,3 @@ def _limit_tokens(text: str) -> set[str]:
     normalized = re.sub(r"[^0-9A-Za-z가-힣]+", " ", text)
     stopwords = {"이다", "한다", "있는", "없는", "또는", "그리고", "차트", "해석", "직접"}
     return {token for token in normalized.split() if len(token) >= 2 and token not in stopwords}
-
-
-def _has_unsupported_visible_term(text: str) -> bool:
-    return any(term in text for term in UNSUPPORTED_VISIBLE_TERMS)

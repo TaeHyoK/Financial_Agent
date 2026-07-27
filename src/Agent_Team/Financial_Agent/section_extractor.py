@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from html import unescape
 
 try:
-    from .models import SectionJson, SectionMap
+    from .models import SectionMap
     from .table_parser import parse_statement_tables
 except ImportError:  # pragma: no cover - supports direct script execution
-    from models import SectionJson, SectionMap
+    from models import SectionMap
     from table_parser import parse_statement_tables
 
 

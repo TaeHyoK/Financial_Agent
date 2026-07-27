@@ -1,26 +1,49 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
+import math
 import os
 import re
 import time
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
 from openai import OpenAI
+from shared.evidence_contracts import (
+    SECONDARY_CONTEXT_EFFECTS,
+    SECONDARY_CONTEXT_USAGE,
+    canonical_evidence_id,
+    validate_evidence_catalog,
+    validate_secondary_context_assessments,
+)
+from shared.llm_clients import execute_with_telemetry
 from tqdm.auto import tqdm
 
 from .io.storage import save_json
 
 
 DEFAULT_MODEL = "gpt-5.4-mini"
-DEFAULT_GRANULARITY = "month"
+DEFAULT_GRANULARITY = "day"
 SUMMARY_MONTH_COUNT = 12
 RECENT_RAW_MONTH_COUNT = 3
+SUMMARY_DAY_COUNT = 14
+RECENT_RAW_DAY_COUNT = 1
 DEFAULT_MAX_RAW_EVENTS_PER_PERIOD = 40
+SECONDARY_FINANCIAL_METRICS = (
+    "revenue",
+    "revenue_growth",
+    "contribution_margin",
+    "sga_margin",
+    "operating_profit",
+    "net_income",
+    "operating_cash_flow",
+    "total_equity",
+    "eps",
+)
 
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[3]
@@ -29,7 +52,9 @@ def _project_root() -> Path:
 @dataclass(frozen=True)
 class AnalysisPaths:
     context_export_dir: Path
+    context_manifest_path: Path
     period_summaries_path: Path
+    summary_prompt_input_path: Path
     recent_raw_path: Path
     dart_lightweight_path: Path
     market_summary_path: Path
@@ -56,6 +81,7 @@ def main() -> None:
         env_path=args.env_path,
         timeout_seconds=args.timeout_seconds,
         max_raw_events_per_period=args.max_raw_events_per_period,
+        include_secondary_context=not args.primary_data_only,
         show_progress=True,
     )
     print(f"input_payload={paths.input_payload_path}")
@@ -79,6 +105,7 @@ def run_analysis_agent(
     env_path: str | Path | None = None,
     timeout_seconds: float = 300.0,
     max_raw_events_per_period: int = DEFAULT_MAX_RAW_EVENTS_PER_PERIOD,
+    include_secondary_context: bool = True,
     show_progress: bool = False,
 ) -> AnalysisPaths:
     project_root = _project_root()
@@ -112,6 +139,7 @@ def run_analysis_agent(
         as_of_date=as_of_date_value,
         paths=paths,
         max_raw_events_per_period=max_raw_events_per_period,
+        include_secondary_context=include_secondary_context,
     )
     progress.update(1)
     progress.set_description("News Agent: build request")
@@ -144,9 +172,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--context-export-dir",
         required=True,
-        help="Context export directory that contains the month folder.",
+        help="Context export directory that contains the granularity folder.",
     )
-    parser.add_argument("--granularity", default=DEFAULT_GRANULARITY, choices=["month"], help="Input granularity.")
+    parser.add_argument("--granularity", default=DEFAULT_GRANULARITY, choices=["day", "month"], help="Input granularity.")
     parser.add_argument("--company-name", default=None, help="Override company name inferred from context directory.")
     parser.add_argument("--ticker", default=None, help="Ticker used in target_entity.")
     parser.add_argument("--corp-code", default=None, help="DART corp code used in target_entity.")
@@ -163,6 +191,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_MAX_RAW_EVENTS_PER_PERIOD,
         help="Top raw events per recent period sent to the LLM.",
     )
+    parser.add_argument(
+        "--primary-data-only",
+        action="store_true",
+        help="Use News evidence only and omit DART/market secondary context.",
+    )
     return parser
 
 
@@ -174,32 +207,51 @@ def build_analysis_input_payload(
     as_of_date: date,
     paths: AnalysisPaths,
     max_raw_events_per_period: int,
+    include_secondary_context: bool = True,
 ) -> dict[str, Any]:
     period_summaries = _load_json(paths.period_summaries_path)
+    summary_prompt_input = _load_json(paths.summary_prompt_input_path)
     recent_raw = _load_json(paths.recent_raw_path)
-    dart_lightweight = _load_json(paths.dart_lightweight_path)
-    market_summary = _load_json(paths.market_summary_path)
-
-    period_keys = _month_window(as_of_date, SUMMARY_MONTH_COUNT)
-    raw_periods = period_keys[-RECENT_RAW_MONTH_COUNT:]
-    summary_periods = period_keys[:-RECENT_RAW_MONTH_COUNT]
+    selected_periods, summary_periods, raw_periods, summary_rule, raw_rule = _resolve_analysis_periods(paths, as_of_date)
 
     selected_summaries = _select_period_summaries(period_summaries, summary_periods)
-    product_terms = _extract_product_terms(period_summaries, company_name)
+    summary_raw = _select_recent_raw_events(
+        summary_prompt_input,
+        summary_periods,
+        max_events_per_period=max_raw_events_per_period,
+    )
     selected_raw = _select_recent_raw_events(
         recent_raw,
         raw_periods,
-        company_name=company_name,
-        product_terms=product_terms,
         max_events_per_period=max_raw_events_per_period,
     )
-    financial_context = _compact_financial_context(dart_lightweight)
-    market_context = _compact_market_context(market_summary)
+    source_ids_by_period = {
+        str(item.get("period") or ""): [
+            str(event.get("evidence_id"))
+            for event in item.get("events") or []
+            if event.get("evidence_id")
+        ]
+        for item in summary_raw
+    }
+    for summary in selected_summaries:
+        summary["source_evidence_ids"] = source_ids_by_period.get(str(summary.get("period") or ""), [])
+    all_raw = [*summary_raw, *selected_raw]
+    financial_context = (
+        _compact_financial_context(_load_json(paths.dart_lightweight_path))
+        if include_secondary_context
+        else {"status": "unavailable", "evidence_catalog": {}}
+    )
+    market_context = (
+        _compact_market_context(_load_json(paths.market_summary_path))
+        if include_secondary_context
+        else {"status": "unavailable", "evidence_catalog": {}}
+    )
     evidence_map = _build_evidence_map(
-        selected_summaries=selected_summaries,
-        selected_raw=selected_raw,
-        financial_context=financial_context,
-        market_context=market_context,
+        selected_raw=all_raw,
+        secondary_context={
+            "financial": financial_context,
+            "market": market_context,
+        },
     )
 
     return {
@@ -214,13 +266,17 @@ def build_analysis_input_payload(
         "input_policy": {
             "summary_periods": summary_periods,
             "recent_raw_periods": raw_periods,
-            "summary_rule": "Use monthly LLM summaries for the oldest 9 periods in the 12-month window.",
-            "recent_raw_rule": "Use recent raw news events for the latest 3 periods in the 12-month window.",
+            "selected_periods": selected_periods,
+            "summary_rule": summary_rule,
+            "recent_raw_rule": raw_rule,
             "max_raw_events_per_period": max_raw_events_per_period,
+            "secondary_context_enabled": include_secondary_context,
             "investment_decision_allowed": False,
         },
         "source_paths": {
+            "context_export_manifest": str(paths.context_manifest_path),
             "period_summaries": str(paths.period_summaries_path),
+            "summary_prompt_input": str(paths.summary_prompt_input_path),
             "recent_raw": str(paths.recent_raw_path),
             "dart_lightweight": str(paths.dart_lightweight_path),
             "market_summary": str(paths.market_summary_path),
@@ -229,7 +285,7 @@ def build_analysis_input_payload(
             "older_period_summaries": selected_summaries,
             "recent_raw_events": selected_raw,
         },
-        "cross_domain_context": {
+        "secondary_context": {
             "financial": financial_context,
             "market": market_context,
         },
@@ -239,85 +295,48 @@ def build_analysis_input_payload(
 
 
 def build_llm_request(*, input_payload: dict[str, Any], model: str) -> dict[str, Any]:
-    expected_output_schema = {
-        "agent_name": "News Agent",
-        "output_version": "1.0",
-        "output_mode": "analysis_handoff",
+    primary_news_catalog = {
+        evidence_id: _compact_news_evidence_for_llm(evidence)
+        for evidence_id, evidence in (input_payload.get("evidence_map") or {}).items()
+        if evidence.get("domain") == "news"
+    }
+    llm_input = {
         "target_entity": input_payload["target_entity"],
-        "input_summary": {
-            "summary_periods": [],
-            "recent_raw_periods": [],
-            "cross_domain_inputs": ["financial", "market"],
+        "period_scope": {
+            "summary_periods": input_payload["input_policy"].get("summary_periods", []),
+            "recent_raw_periods": input_payload["input_policy"].get("recent_raw_periods", []),
         },
-        "analysis_blocks": {
-            "news_only": {
-                "summary": "string",
-                "positive_signals": [],
-                "negative_signals": [],
-                "key_risks": [],
-                "uncertainties": [],
-            },
-            "news_plus_financial": {
-                "summary": "string",
-                "cross_points": [
-                    {
-                        "point": "string",
-                        "cross_analysis": "뉴스 이벤트와 재무 지표를 연결한 해석",
-                        "interpretation_limit": "string",
-                    }
-                ],
-                "conflicting_points": [
-                    {
-                        "point": "string",
-                        "cross_analysis": "뉴스 이벤트와 재무 지표가 충돌하거나 연결이 약한 지점",
-                        "interpretation_limit": "string",
-                    }
-                ],
-                "financial_context_limits": [
-                    {
-                        "limit": "string",
-                    }
-                ],
-            },
-            "news_plus_market": {
-                "summary": "string",
-                "reaction_points": [
-                    {
-                        "point": "string",
-                        "cross_analysis": "뉴스 이벤트와 주가/시장 지표를 연결한 해석",
-                        "reaction_interpretation": "string",
-                    }
-                ],
-                "divergences": [
-                    {
-                        "point": "string",
-                        "cross_analysis": "뉴스 이벤트와 주가/시장 지표가 다르게 움직이는 지점",
-                        "reaction_interpretation": "string",
-                    }
-                ],
-            },
-            "news_plus_financial_plus_market": {
-                "summary": "string",
-                "integrated_signals": [],
-                "integrated_risks": [],
-                "handoff_notes": [],
-            },
+        "period_summaries": [
+            _compact_period_summary_for_llm(item)
+            for item in (input_payload.get("news_context") or {}).get("older_period_summaries", [])
+            if isinstance(item, dict)
+        ],
+        "primary_news_evidence_catalog": primary_news_catalog,
+        "secondary_context": _compact_secondary_context_for_llm(
+            input_payload.get("secondary_context") or {}
+        ),
+        "secondary_context_contract": {
+            "effects": sorted(SECONDARY_CONTEXT_EFFECTS),
+            "usage": SECONDARY_CONTEXT_USAGE,
+            "causal_assertions_allowed": False,
+            "may_change_primary_evidence_status": False,
         },
-        "evidence_map_path": "string path to news_agent_evidence_map.json",
     }
     return {
         "model": model,
         "temperature": 0.2,
-        "response_format": {"type": "json_object"},
+        "response_format": _analysis_response_format(input_payload),
         "messages": [
             {
                 "role": "system",
                 "content": (
                     "당신은 한국 상장사 뉴스 분석 에이전트입니다. "
-                    "출력은 상위 통합 레이어에 전달할 분석 handoff JSON입니다. "
+                    "출력은 뉴스 도메인 사실과 불확실성만 담는 분석 handoff JSON입니다. "
                     "절대 buy/sell/hold, 매수/매도/보유, 목표주가, 투자판단, 투자 판단 시 같은 문구를 출력하지 마세요. "
                     "입력에 없는 사실이나 수치를 만들지 마세요. "
-                    "근거 식별자는 별도 evidence_map_path 파일에서 관리하므로 handoff 본문에는 evidence id를 출력하지 마세요. "
+                    "news_only claim에는 NEWS_RAW evidence ID만 사용하세요. "
+                    "재무·시장 데이터는 secondary_context_assessment에서 정합성이나 충돌 여부만 평가하고, "
+                    "뉴스 사건의 직접 증거나 원인으로 사용하지 마세요. 인과관계를 만들지 마세요. "
                     "JSON key는 영어로 쓰고 분석 문장은 한국어로 작성하세요."
                 ),
             },
@@ -326,34 +345,269 @@ def build_llm_request(*, input_payload: dict[str, Any], model: str) -> dict[str,
                 "content": json.dumps(
                     {
                         "task": (
-                            "뉴스 전용 분석을 먼저 수행하고, 이어서 뉴스+재무, 뉴스+시장, "
-                            "뉴스+재무+시장 통합 교차 분석을 수행하세요. "
-                            "하위 에이전트이므로 투자 결론을 내리지 말고, 상위 레이어가 판단할 "
-                            "근거, 모순, 리스크, 불확실성만 정리하세요."
+                            "뉴스 원 이벤트에서 직접 확인되는 사건, 긍정·부정 신호, 위험, 불확실성을 정리하고 "
+                            "각 claim에 원 뉴스 evidence ID를 지정하세요. 보조 재무·시장 문맥은 별도 assessment로만 평가하세요."
                         ),
                         "analysis_rules": [
                             "news_only는 뉴스 데이터만 사용합니다.",
-                            "news_plus_financial은 재무제표 단독 설명이 아닙니다. 반드시 뉴스 이벤트와 DART 지표의 연결 또는 괴리만 작성합니다.",
-                            "news_plus_market은 주가/시장 단독 설명이 아닙니다. 반드시 뉴스 이벤트와 YFinance 지표의 연결 또는 괴리만 작성합니다.",
-                            "교차분석 블록의 summary도 보조 도메인 수치 나열이 아니라 뉴스 이벤트와 해당 도메인 데이터의 관계를 요약합니다.",
-                            "news_plus_financial_plus_market은 세 도메인을 통합합니다.",
-                            "evidence_map은 출력하지 말고 evidence_map_path만 출력합니다.",
-                            "final handoff에는 evidence_ids, news_evidence_ids, financial_evidence_ids, market_evidence_ids를 출력하지 않습니다.",
-                            "근거 추적은 evidence_map_path의 별도 파일로 처리하므로 본문에는 사람이 읽는 분석만 남깁니다.",
-                            "재무제표 수치를 재계산하지 말고 입력에 있는 financial context만 해석합니다.",
-                            "DART 비교 항목의 basis_mismatch가 true이면 전년 대비, YoY, 증가, 감소, 개선처럼 같은 기간 비교로 오해될 표현을 쓰지 않습니다.",
-                            "basis_mismatch가 true인 DART 항목은 '2025 Q3 YTD와 2024 full-year의 기준이 다른 단순 비교' 또는 '기간 기준이 달라 방향성 참고만 가능'이라고 표현합니다.",
-                            "가격 움직임만으로 펀더멘털 개선을 단정하지 않습니다.",
+                            "period summary는 탐색 문맥이며 evidence가 아닙니다. claim은 NEWS_RAW ID로 뒷받침합니다.",
                             "뉴스만으로 매출, 이익, EPS 개선을 단정하지 않습니다.",
-                            "주가/시장 분석은 stock return, excess return, volume ratio, relative strength 같은 구체 지표명을 문장으로 언급하되 evidence id 필드는 만들지 않습니다.",
+                            "기사에 없는 계약 금액, 일정, 상업화 성과, 재무 기여를 만들지 않습니다.",
+                            "같은 사건을 여러 신호로 중복 작성하지 않습니다.",
+                            "각 claim의 event_status, company_specificity, materiality_status, financial_link_status를 제목과 snippet 범위 안에서 분류합니다.",
+                            "기사의 전망이나 기대는 reported_expectation으로 두고 실제 발생 사실로 승격하지 않습니다.",
+                            "산업 일반 기사는 company_specificity=industry_context로 두며 회사 직접 위험으로 확대하지 않습니다.",
+                            "secondary context는 framing_and_limitation_only이며 primary claim 상태를 바꾸지 않습니다.",
                         ],
-                        "expected_output_schema": expected_output_schema,
-                        "input_payload": input_payload,
+                        "input_payload": llm_input,
                     },
                     ensure_ascii=False,
                 ),
             },
         ],
+    }
+
+
+def _compact_news_evidence_for_llm(evidence: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: evidence.get(key)
+        for key in (
+            "source_date",
+            "title",
+            "snippet",
+            "source",
+            "relation_type",
+            "mention_count",
+            "coverage",
+        )
+        if evidence.get(key) not in (None, "", [], {})
+    }
+
+
+def _compact_period_summary_for_llm(summary: dict[str, Any]) -> dict[str, Any]:
+    issues = []
+    for raw in summary.get("issues") or []:
+        if not isinstance(raw, dict) or not str(raw.get("issue") or "").strip():
+            continue
+        issues.append(
+            {
+                key: raw.get(key)
+                for key in ("issue", "importance")
+                if raw.get(key) not in (None, "", [], {})
+            }
+        )
+    return {
+        key: value
+        for key, value in {
+            "period": summary.get("period"),
+            "period_summary": summary.get("period_summary"),
+            "issues": issues,
+            "source_evidence_ids": summary.get("source_evidence_ids") or [],
+        }.items()
+        if value not in (None, "", [], {})
+    }
+
+
+def _compact_secondary_context_for_llm(contexts: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for domain, context in contexts.items():
+        if not isinstance(context, dict):
+            continue
+        catalog = {
+            str(evidence_id): {
+                key: evidence.get(key)
+                for key in (
+                    "source_date",
+                    "period",
+                    "metric",
+                    "value",
+                    "unit",
+                    "previous_value",
+                    "comparison_value",
+                )
+                if evidence.get(key) not in (None, "", [], {})
+            }
+            for evidence_id, evidence in (context.get("evidence_catalog") or {}).items()
+            if isinstance(evidence, dict)
+        }
+        compact[str(domain)] = {
+            "status": context.get("status") or "unavailable",
+            "evidence_catalog": catalog,
+        }
+    return compact
+
+
+def _analysis_response_format(input_payload: dict[str, Any]) -> dict[str, Any]:
+    evidence_map = input_payload.get("evidence_map") or {}
+    primary_ids = sorted(
+        evidence_id
+        for evidence_id, evidence in evidence_map.items()
+        if isinstance(evidence, dict) and evidence.get("domain") == "news"
+    )
+    secondary_ids = sorted(
+        evidence_id
+        for evidence_id, evidence in evidence_map.items()
+        if isinstance(evidence, dict) and evidence.get("domain") in {"financial", "market"}
+    )
+    if not primary_ids:
+        raise ValueError("News analysis requires at least one primary News evidence ID.")
+
+    string_array = {"type": "array", "items": {"type": "string"}}
+    primary_id_array = {
+        "type": "array",
+        "items": {"$ref": "#/$defs/primary_evidence_id"},
+    }
+    secondary_id_array = {
+        "type": "array",
+        "items": {"$ref": "#/$defs/secondary_evidence_id"},
+    }
+    claim = {
+        "type": "object",
+        "properties": {
+            "claim": {"type": "string"},
+            "anchor_evidence_id": {"$ref": "#/$defs/primary_evidence_id"},
+            "evidence_ids": primary_id_array,
+            "event_status": {
+                "type": "string",
+                "enum": ["occurred", "announced", "reported_expectation", "allegation", "mixed", "insufficient"],
+            },
+            "company_specificity": {
+                "type": "string",
+                "enum": ["direct", "product_direct", "industry_context", "mixed", "insufficient"],
+            },
+            "materiality_status": {
+                "type": "string",
+                "enum": ["observed", "plausible_unquantified", "not_established", "mixed"],
+            },
+            "financial_link_status": {
+                "type": "string",
+                "enum": ["observed", "not_observed", "not_applicable"],
+            },
+        },
+        "required": [
+            "claim",
+            "anchor_evidence_id",
+            "evidence_ids",
+            "event_status",
+            "company_specificity",
+            "materiality_status",
+            "financial_link_status",
+        ],
+        "additionalProperties": False,
+    }
+    news_only = {
+        "type": "object",
+        "properties": {
+            "summary": {"$ref": "#/$defs/news_claim"},
+            "positive_signals": {"type": "array", "items": {"$ref": "#/$defs/news_claim"}},
+            "negative_signals": {"type": "array", "items": {"$ref": "#/$defs/news_claim"}},
+            "key_risks": {"type": "array", "items": {"$ref": "#/$defs/news_claim"}},
+            "uncertainties": {"type": "array", "items": {"$ref": "#/$defs/news_claim"}},
+        },
+        "required": [
+            "summary",
+            "positive_signals",
+            "negative_signals",
+            "key_risks",
+            "uncertainties",
+        ],
+        "additionalProperties": False,
+    }
+    context_assessment = {
+        "type": "object",
+        "properties": {
+            "context_id": {"type": "string"},
+            "source_domain": {"type": "string", "enum": ["financial", "market"]},
+            "effect": {"type": "string", "enum": sorted(SECONDARY_CONTEXT_EFFECTS)},
+            "statement": {"type": "string"},
+            "primary_anchor_evidence_id": {"$ref": "#/$defs/primary_evidence_id"},
+            "primary_evidence_ids": primary_id_array,
+            "secondary_anchor_evidence_id": {"$ref": "#/$defs/secondary_evidence_id"},
+            "secondary_evidence_ids": secondary_id_array,
+            "usage": {"type": "string", "enum": [SECONDARY_CONTEXT_USAGE]},
+            "limitation": {"type": "string"},
+        },
+        "required": [
+            "context_id",
+            "source_domain",
+            "effect",
+            "statement",
+            "primary_anchor_evidence_id",
+            "primary_evidence_ids",
+            "secondary_anchor_evidence_id",
+            "secondary_evidence_ids",
+            "usage",
+            "limitation",
+        ],
+        "additionalProperties": False,
+    }
+    schema = {
+        "type": "object",
+        "properties": {
+            "agent_name": {"type": "string", "enum": ["News Agent"]},
+            "output_version": {"type": "string", "enum": ["2.0"]},
+            "output_mode": {"type": "string", "enum": ["analysis_handoff"]},
+            "target_entity": {
+                "type": "object",
+                "properties": {
+                    "company_name": {"type": "string"},
+                    "ticker": {"type": "string"},
+                    "corp_code": {"type": "string"},
+                    "as_of_date": {"type": "string"},
+                },
+                "required": ["company_name", "ticker", "corp_code", "as_of_date"],
+                "additionalProperties": False,
+            },
+            "input_summary": {
+                "type": "object",
+                "properties": {
+                    "summary_periods": string_array,
+                    "recent_raw_periods": string_array,
+                },
+                "required": ["summary_periods", "recent_raw_periods"],
+                "additionalProperties": False,
+            },
+            "analysis_blocks": {
+                "type": "object",
+                "properties": {"news_only": news_only},
+                "required": ["news_only"],
+                "additionalProperties": False,
+            },
+            "secondary_context_assessment": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/context_assessment"},
+                "minItems": 0,
+                "maxItems": 0 if not secondary_ids else len(secondary_ids),
+            },
+        },
+        "required": [
+            "agent_name",
+            "output_version",
+            "output_mode",
+            "target_entity",
+            "input_summary",
+            "analysis_blocks",
+            "secondary_context_assessment",
+        ],
+        "additionalProperties": False,
+        "$defs": {
+            "primary_evidence_id": {"type": "string", "enum": primary_ids},
+            "secondary_evidence_id": (
+                {"type": "string", "enum": secondary_ids}
+                if secondary_ids
+                else {"type": "string"}
+            ),
+            "news_claim": claim,
+            "context_assessment": context_assessment,
+        },
+    }
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "news_analysis_handoff",
+            "strict": True,
+            "schema": schema,
+        },
     }
 
 
@@ -370,18 +624,24 @@ def execute_analysis_request(
 
     client = OpenAI(api_key=api_key, timeout=timeout_seconds)
     started_at = time.monotonic()
-    response = client.chat.completions.create(
+    response = execute_with_telemetry(
+        lambda: client.chat.completions.create(
+            model=model,
+            messages=llm_request["messages"],
+            temperature=float(llm_request.get("temperature", 0.2)),
+            response_format=llm_request.get("response_format", {"type": "json_object"}),
+        ),
+        request_payload=llm_request,
         model=model,
-        messages=llm_request["messages"],
-        temperature=float(llm_request.get("temperature", 0.2)),
-        response_format=llm_request.get("response_format", {"type": "json_object"}),
+        step="news:analysis",
+        usage_getter=lambda result: getattr(result, "usage", None),
     )
     elapsed_seconds = time.monotonic() - started_at
     content = response.choices[0].message.content or ""
     parsed_output, parse_warning = _parse_json_content(content)
-    if isinstance(parsed_output, dict):
-        _rewrite_basis_mismatch_phrases(parsed_output, input_payload)
-        _strip_evidence_id_fields(parsed_output)
+    if isinstance(parsed_output, dict) and not parse_warning:
+        _merge_analysis_anchor_evidence_ids(parsed_output)
+        _validate_news_analysis_output(parsed_output, input_payload)
         parsed_output["evidence_map_path"] = str(input_payload.get("evidence_map_path") or "")
         parsed_output.pop("evidence_map", None)
         parsed_output.pop("validation", None)
@@ -406,6 +666,99 @@ def execute_analysis_request(
     }
 
 
+def _merge_analysis_anchor_evidence_ids(output: dict[str, Any]) -> None:
+    news_only = ((output.get("analysis_blocks") or {}).get("news_only") or {})
+    claim_items = [news_only.get("summary")]
+    for key in ("positive_signals", "negative_signals", "key_risks", "uncertainties"):
+        claim_items.extend(news_only.get(key) or [])
+    for item in claim_items:
+        if not isinstance(item, dict):
+            continue
+        anchor = str(item.pop("anchor_evidence_id", "") or "").strip()
+        evidence_ids = item.get("evidence_ids") if isinstance(item.get("evidence_ids"), list) else []
+        item["evidence_ids"] = list(
+            dict.fromkeys([value for value in [anchor, *map(str, evidence_ids)] if value])
+        )
+
+    for item in output.get("secondary_context_assessment") or []:
+        if not isinstance(item, dict):
+            continue
+        for anchor_key, ids_key in (
+            ("primary_anchor_evidence_id", "primary_evidence_ids"),
+            ("secondary_anchor_evidence_id", "secondary_evidence_ids"),
+        ):
+            anchor = str(item.pop(anchor_key, "") or "").strip()
+            evidence_ids = item.get(ids_key) if isinstance(item.get(ids_key), list) else []
+            item[ids_key] = list(
+                dict.fromkeys([value for value in [anchor, *map(str, evidence_ids)] if value])
+            )
+
+
+def _validate_news_analysis_output(
+    output: dict[str, Any],
+    input_payload: dict[str, Any],
+) -> None:
+    evidence_map = input_payload.get("evidence_map") or {}
+    primary_ids = {
+        evidence_id
+        for evidence_id, evidence in evidence_map.items()
+        if isinstance(evidence, dict) and evidence.get("domain") == "news"
+    }
+    blocks = output.get("analysis_blocks") or {}
+    if not isinstance(blocks, dict) or set(blocks) != {"news_only"}:
+        raise ValueError("News output must contain only analysis_blocks.news_only.")
+    news_only = blocks.get("news_only") or {}
+    if not isinstance(news_only, dict):
+        raise ValueError("analysis_blocks.news_only must be an object.")
+
+    claim_items: list[Any] = [news_only.get("summary")]
+    for key in ("positive_signals", "negative_signals", "key_risks", "uncertainties"):
+        values = news_only.get(key)
+        if not isinstance(values, list):
+            raise ValueError(f"news_only.{key} must be an array.")
+        claim_items.extend(values)
+    for item in claim_items:
+        if not isinstance(item, dict) or not str(item.get("claim") or "").strip():
+            raise ValueError("Each News claim must contain claim and evidence_ids.")
+        evidence_ids = item.get("evidence_ids")
+        if not isinstance(evidence_ids, list) or not evidence_ids:
+            raise ValueError("Each News claim must cite at least one raw News evidence ID.")
+        if any(str(evidence_id) not in primary_ids for evidence_id in evidence_ids):
+            raise ValueError("News claim cited non-News or unknown primary evidence.")
+        item["evidence_ids"] = list(dict.fromkeys(str(value) for value in evidence_ids))
+        _validate_news_claim_metadata(item)
+
+    secondary_catalog = {
+        evidence_id: evidence
+        for evidence_id, evidence in evidence_map.items()
+        if isinstance(evidence, dict) and evidence.get("domain") in {"financial", "market"}
+    }
+    required_domains = [
+        domain
+        for domain, context in (input_payload.get("secondary_context") or {}).items()
+        if isinstance(context, dict) and context.get("status") == "available"
+    ]
+    output["secondary_context_assessment"] = validate_secondary_context_assessments(
+        output.get("secondary_context_assessment"),
+        primary_evidence_ids=primary_ids,
+        secondary_catalog=secondary_catalog,
+        allowed_source_domains={"financial", "market"},
+        required_source_domains=required_domains,
+    )
+
+
+def _validate_news_claim_metadata(item: dict[str, Any]) -> None:
+    allowed = {
+        "event_status": {"occurred", "announced", "reported_expectation", "allegation", "mixed", "insufficient"},
+        "company_specificity": {"direct", "product_direct", "industry_context", "mixed", "insufficient"},
+        "materiality_status": {"observed", "plausible_unquantified", "not_established", "mixed"},
+        "financial_link_status": {"observed", "not_observed", "not_applicable"},
+    }
+    for key, values in allowed.items():
+        if item.get(key) not in values:
+            raise ValueError(f"Invalid News claim {key}: {item.get(key)!r}")
+
+
 def _resolve_paths(
     *,
     project_root: Path,
@@ -418,7 +771,9 @@ def _resolve_paths(
 ) -> AnalysisPaths:
     run_key = context_export_dir.parent.name if context_export_dir.name == "context_exports" else context_export_dir.name
     period_summaries_path = context_export_dir / granularity / "llm_period_summaries.json"
+    summary_prompt_input_path = context_export_dir / granularity / "summary_prompt_input.json"
     recent_raw_path = context_export_dir / granularity / "recent_raw_input.json"
+    context_manifest_path = context_export_dir / granularity / "context_export_manifest.json"
     dart_path = (
         Path(dart_lightweight_path)
         if dart_lightweight_path
@@ -439,7 +794,9 @@ def _resolve_paths(
     output_path = output_path.resolve()
     return AnalysisPaths(
         context_export_dir=context_export_dir,
+        context_manifest_path=context_manifest_path.resolve(),
         period_summaries_path=period_summaries_path.resolve(),
+        summary_prompt_input_path=summary_prompt_input_path.resolve(),
         recent_raw_path=recent_raw_path.resolve(),
         dart_lightweight_path=dart_path.expanduser().resolve(),
         market_summary_path=market_path.expanduser().resolve(),
@@ -469,8 +826,8 @@ def _infer_company_and_date(
 def _select_period_summaries(payload: dict[str, Any], periods: list[str]) -> list[dict[str, Any]]:
     by_period = {
         str(item.get("period")): item
-        for item in payload.get("period_results", [])
-        if isinstance(item, dict) and item.get("status") == "success"
+        for item in _period_summary_items(payload)
+        if isinstance(item, dict) and item.get("period")
     }
     selected: list[dict[str, Any]] = []
     for period in periods:
@@ -479,20 +836,33 @@ def _select_period_summaries(payload: dict[str, Any], periods: list[str]) -> lis
             continue
         selected.append(
             {
-                "evidence_id": f"NEWS_SUMMARY_{period}",
+                "summary_id": f"NEWS_CONTEXT_{period}",
                 "period": period,
-                "output": item.get("output") or {},
+                "period_summary": item.get("period_summary"),
+                "issues": item.get("issues") or [],
             }
         )
     return selected
+
+
+def _period_summary_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    output = payload.get("output") if isinstance(payload.get("output"), dict) else {}
+    if isinstance(output.get("periods"), list):
+        return [item for item in output["periods"] if isinstance(item, dict)]
+    items: list[dict[str, Any]] = []
+    for result in payload.get("period_results", []):
+        if not isinstance(result, dict) or result.get("status") not in {None, "success"}:
+            continue
+        value = result.get("output") if isinstance(result.get("output"), dict) else result
+        if isinstance(value, dict):
+            items.append(value)
+    return items
 
 
 def _select_recent_raw_events(
     payload: dict[str, Any],
     periods: list[str],
     *,
-    company_name: str,
-    product_terms: set[str] | None = None,
     max_events_per_period: int,
 ) -> list[dict[str, Any]]:
     by_period = {
@@ -517,18 +887,21 @@ def _select_recent_raw_events(
         compact_events = []
         for event in events[: max(max_events_per_period, 1)]:
             event_id = str(event.get("event_id") or "")
-            compact_events.append(
-                {
-                    "evidence_id": f"NEWS_RAW_{period}_{event_id}",
-                    "event_id": event_id,
-                    "mention_count": int(event.get("mention_count") or 0),
-                    "title": str(event.get("title") or ""),
-                    "snippet": str(event.get("snippet") or ""),
-                    "time": str(event.get("time") or ""),
-                    "final_score": float(event.get("final_score") or 0.0),
-                    "relation_type": _classify_news_relation(event, company_name, product_terms=product_terms),
-                }
-            )
+            compact_event = {
+                "evidence_id": f"NEWS_RAW_{period}_{event_id}",
+                "event_id": event_id,
+                "mention_count": int(event.get("mention_count") or 0),
+                "title": str(event.get("title") or ""),
+                "snippet": str(event.get("snippet") or ""),
+                "source": str(event.get("source") or ""),
+                "url": str(event.get("url") or ""),
+                "time": str(event.get("time") or ""),
+                "final_score": float(event.get("final_score") or 0.0),
+                "coverage": copy.deepcopy(event.get("coverage") or {}),
+            }
+            if event.get("relation_type"):
+                compact_event["relation_type"] = str(event["relation_type"])
+            compact_events.append(compact_event)
         selected.append(
             {
                 "period": period,
@@ -541,35 +914,48 @@ def _select_recent_raw_events(
 
 
 def _compact_financial_context(payload: dict[str, Any]) -> dict[str, Any]:
-    metric_keys = payload.get("metric_order") or sorted((payload.get("metrics_by_key") or {}).keys())
     metrics_by_key = payload.get("metrics_by_key") or {}
-    compact_metrics: dict[str, Any] = {}
-    for metric_key in metric_keys:
+    catalog: dict[str, Any] = {}
+    for metric_key in SECONDARY_FINANCIAL_METRICS:
         metric = metrics_by_key.get(metric_key) or {}
-        comparisons = _with_comparability_flags(metric.get("comparisons") or {})
+        if not isinstance(metric, dict):
+            continue
+        values = metric.get("values_by_period") or {}
+        current = values.get("current_fiscal_year") or {}
+        previous = values.get("same_period_previous_year") or {}
+        comparison = _first_comparison(metric.get("comparisons") or {})
+        value = current.get("value")
+        if not _finite_number(value) and comparison:
+            value = comparison.get("value")
+        if not _finite_number(value):
+            continue
+        period = current.get("period") if isinstance(current.get("period"), dict) else {}
+        evidence_id = canonical_evidence_id("financial", metric_key)
         compact: dict[str, Any] = {
-            "evidence_id": f"DART_{str(metric_key).upper()}",
-            "display_name": metric.get("display_name"),
-            "metric_type": metric.get("metric_type"),
+            "evidence_id": evidence_id,
+            "domain": "financial",
+            "source_domain": "financial",
+            "origin_type": "deterministic_derived" if metric.get("metric_type") == "comparison" else "raw_source",
+            "source_ref": f"dart_lightweight.metrics_by_key.{metric_key}",
+            "source_date": str(period.get("period_end") or ""),
+            "period": str(period.get("basis") or ""),
+            "metric": metric_key,
+            "value": value,
             "unit": metric.get("unit"),
         }
-        if metric.get("values_by_period"):
-            compact["values_by_period"] = metric.get("values_by_period")
-        if comparisons:
-            compact["comparisons"] = comparisons
-        compact_metrics[str(metric_key)] = compact
-    return {
-        "schema_name": payload.get("schema_name"),
-        "periods": payload.get("periods") or {},
-        "comparison_pairs": payload.get("comparison_pairs") or {},
-        "metrics_by_key": compact_metrics,
-    }
+        if _finite_number(previous.get("value")):
+            compact["previous_value"] = previous.get("value")
+        if comparison and _finite_number(comparison.get("value")):
+            compact["comparison_value"] = comparison.get("value")
+        catalog[evidence_id] = compact
+    validate_evidence_catalog(catalog, allowed_domains={"financial"})
+    return {"status": "available" if catalog else "unavailable", "evidence_catalog": catalog}
 
 
 def _compact_market_context(payload: Any) -> dict[str, Any]:
     row = payload[0] if isinstance(payload, list) and payload else payload
     if not isinstance(row, dict):
-        return {"metrics_by_key": {}}
+        return {"status": "unavailable", "evidence_catalog": {}}
     fields = [
         "date",
         "stock_close",
@@ -588,47 +974,46 @@ def _compact_market_context(payload: Any) -> dict[str, Any]:
         "stock_excess_return_20d",
         "stock_relative_strength_60",
     ]
-    metrics_by_key: dict[str, Any] = {}
+    catalog: dict[str, Any] = {}
+    source_date = str(row.get("date") or "")
     for field in fields:
-        if field not in row:
+        if field == "date" or not _finite_number(row.get(field)):
             continue
-        metrics_by_key[field] = {
-            "evidence_id": f"YF_{field.upper()}",
-            "field": field,
-            "date": row.get("date"),
+        evidence_id = canonical_evidence_id("market", field)
+        catalog[evidence_id] = {
+            "evidence_id": evidence_id,
+            "domain": "market",
+            "source_domain": "market",
+            "origin_type": "raw_source",
+            "source_ref": f"market_full_dataset.latest.{field}",
+            "source_date": source_date,
+            "period": "",
+            "metric": field,
             "value": row.get(field),
+            "unit": _market_unit(field),
         }
-    return {"metrics_by_key": metrics_by_key}
+    validate_evidence_catalog(catalog, allowed_domains={"market"})
+    return {"status": "available" if catalog else "unavailable", "evidence_catalog": catalog}
 
 
 def _build_evidence_map(
     *,
-    selected_summaries: list[dict[str, Any]],
     selected_raw: list[dict[str, Any]],
-    financial_context: dict[str, Any],
-    market_context: dict[str, Any],
+    secondary_context: dict[str, Any],
 ) -> dict[str, Any]:
     evidence_map: dict[str, Any] = {}
-    for item in selected_summaries:
-        evidence_id = str(item.get("evidence_id") or "")
-        if not evidence_id:
-            continue
-        output = item.get("output") or {}
-        evidence_map[evidence_id] = {
-            "source_domain": "news",
-            "source_type": "period_summary",
-            "period": item.get("period"),
-            "period_summary": output.get("period_summary"),
-            "issue_count": len(output.get("issues") or []),
-        }
-
     for period_payload in selected_raw:
         for event in period_payload.get("events") or []:
             evidence_id = str(event.get("evidence_id") or "")
             if not evidence_id:
                 continue
             evidence_map[evidence_id] = {
+                "evidence_id": evidence_id,
+                "domain": "news",
                 "source_domain": "news",
+                "origin_type": "raw_source",
+                "source_ref": f"news_events.{period_payload.get('period')}.{event.get('event_id')}",
+                "source_date": event.get("time") or period_payload.get("period"),
                 "source_type": "recent_raw_event",
                 "period": period_payload.get("period"),
                 "event_id": event.get("event_id"),
@@ -636,142 +1021,91 @@ def _build_evidence_map(
                 "mention_count": event.get("mention_count"),
                 "final_score": event.get("final_score"),
                 "title": event.get("title"),
+                "snippet": event.get("snippet"),
+                "source": event.get("source"),
+                "url": event.get("url"),
+                "coverage": copy.deepcopy(event.get("coverage") or {}),
                 "time": event.get("time"),
             }
 
-    for metric_key, metric in (financial_context.get("metrics_by_key") or {}).items():
-        evidence_id = str(metric.get("evidence_id") or "")
-        if not evidence_id:
+    for context in secondary_context.values():
+        if not isinstance(context, dict):
             continue
-        evidence_map[evidence_id] = {
-            "source_domain": "financial",
-            "source_type": "dart_lightweight_metric",
-            "metric_key": metric_key,
-            "display_name": metric.get("display_name"),
-            "metric_type": metric.get("metric_type"),
-            "unit": metric.get("unit"),
-            "comparability": _metric_comparability_summary(metric),
-        }
+        for evidence_id, evidence in (context.get("evidence_catalog") or {}).items():
+            evidence_map[evidence_id] = evidence
 
-    for field, metric in (market_context.get("metrics_by_key") or {}).items():
-        evidence_id = str(metric.get("evidence_id") or "")
-        if not evidence_id:
-            continue
-        evidence_map[evidence_id] = {
-            "source_domain": "market",
-            "source_type": "yfinance_market_summary_field",
-            "field": field,
-            "date": metric.get("date"),
-            "value": metric.get("value"),
-        }
+    validate_evidence_catalog(evidence_map)
     return evidence_map
 
 
-def _with_comparability_flags(comparisons: dict[str, Any]) -> dict[str, Any]:
-    output: dict[str, Any] = {}
-    for key, comparison in comparisons.items():
-        if not isinstance(comparison, dict):
-            output[key] = comparison
-            continue
-        current_basis = str(comparison.get("current_basis") or "")
-        previous_basis = str(comparison.get("previous_basis") or "")
-        basis_mismatch = bool(current_basis and previous_basis and current_basis != previous_basis)
-        output[key] = {
-            **comparison,
-            "basis_mismatch": basis_mismatch,
-            "interpretation_warning": (
-                "Current and previous periods use different bases; do not describe as clean YoY."
-                if basis_mismatch
-                else ""
-            ),
-        }
-    return output
+def _first_comparison(comparisons: dict[str, Any]) -> dict[str, Any]:
+    for comparison in comparisons.values():
+        if isinstance(comparison, dict) and comparison.get("status") in {None, "ok"}:
+            return comparison
+    return {}
 
 
-def _metric_comparability_summary(metric: dict[str, Any]) -> dict[str, Any]:
-    comparisons = metric.get("comparisons") or {}
-    mismatch_keys = [
-        key
-        for key, comparison in comparisons.items()
-        if isinstance(comparison, dict) and comparison.get("basis_mismatch")
-    ]
-    return {
-        "has_basis_mismatch": bool(mismatch_keys),
-        "basis_mismatch_comparison_keys": mismatch_keys,
-    }
+def _finite_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
 
 
-def _classify_news_relation(
-    event: dict[str, Any],
-    company_name: str,
-    *,
-    product_terms: set[str] | None = None,
-) -> str:
-    text = f"{event.get('title') or ''} {event.get('snippet') or ''}".lower()
-    company_aliases = _company_aliases(company_name)
-    product_aliases = {term.lower() for term in (product_terms or set()) if term}
-    market_context_terms = {"제네릭", "경쟁", "브라바탑", "대웅제약"}
-    sector_terms = {"제약", "바이오", "신약", "임상", "의약품", "헬스케어"}
-
-    if any(alias and alias in text for alias in company_aliases):
-        return "direct_company"
-    if any(term in text for term in product_aliases):
-        return "partner_or_product"
-    if any(term in text for term in market_context_terms):
-        return "market_context"
-    if any(term in text for term in sector_terms):
-        return "sector_context"
-    return "low_relevance"
+def _market_unit(metric: str) -> str:
+    if metric in {"stock_close", "kospi_close", "fx_close"}:
+        return "price"
+    if "rsi" in metric or "volume_ratio" in metric:
+        return "index"
+    if any(token in metric for token in ("return", "strength", "volatility", "to_ma", "obv", "bb_width")):
+        return "ratio"
+    return "number"
 
 
-def _company_aliases(company_name: str) -> set[str]:
-    base = str(company_name or "").strip().lower()
-    compact = re.sub(r"\s+", "", base)
-    aliases = {base, compact}
-    for removable in ("주식회사", "(주)", "㈜", "co.,ltd.", "co. ltd.", "corp.", "inc."):
-        aliases.add(base.replace(removable, "").strip())
-        aliases.add(compact.replace(removable.replace(" ", ""), "").strip())
-    return {alias for alias in aliases if alias}
+def _resolve_analysis_periods(
+    paths: AnalysisPaths,
+    as_of_date: date,
+) -> tuple[list[str], list[str], list[str], str, str]:
+    manifest = _load_json_if_exists(paths.context_manifest_path)
+    if manifest:
+        selected_periods = _string_list(manifest.get("selected_periods"))
+        summary_periods = _string_list(manifest.get("summary_periods_for_news_agent"))
+        raw_periods = _string_list(manifest.get("raw_periods_for_news_agent"))
+        if selected_periods or summary_periods or raw_periods:
+            return (
+                selected_periods,
+                summary_periods,
+                raw_periods,
+                "Use LLM period summaries selected by context_export_manifest.json.",
+                "Use raw news events selected by context_export_manifest.json.",
+            )
 
+    granularity = paths.context_manifest_path.parent.name
+    if granularity == "day":
+        period_keys = _day_window(as_of_date, SUMMARY_DAY_COUNT)
+        raw_periods = period_keys[-RECENT_RAW_DAY_COUNT:]
+        summary_periods = period_keys[:-RECENT_RAW_DAY_COUNT]
+        return (
+            period_keys,
+            summary_periods,
+            raw_periods,
+            "Use daily LLM summaries for the older 13 days in the 14-day window.",
+            "Use raw news events for the latest 1 day in the 14-day window.",
+        )
 
-def _extract_product_terms(period_summaries: dict[str, Any], company_name: str) -> set[str]:
-    """Extract company-specific product/business terms without fixed company assumptions."""
-
-    stopwords = {
-        "",
-        "뉴스",
-        "이슈",
-        "실적",
-        "성장",
-        "개선",
-        "확대",
-        "사업",
-        "프로젝트",
-        "플랫폼",
-        "서비스",
-        "제품",
-        str(company_name or "").strip(),
-    }
-    pattern = re.compile(
-        r"([A-Za-z][A-Za-z0-9+._-]{2,}|[가-힣A-Za-z0-9+._-]{2,})"
-        r"(?=\s*(?:제품|치료제|신약|서비스|플랫폼|솔루션|브랜드|사업|프로젝트))"
+    period_keys = _month_window(as_of_date, SUMMARY_MONTH_COUNT)
+    raw_periods = period_keys[-RECENT_RAW_MONTH_COUNT:]
+    summary_periods = period_keys[:-RECENT_RAW_MONTH_COUNT]
+    return (
+        period_keys,
+        summary_periods,
+        raw_periods,
+        "Use monthly LLM summaries for the oldest 9 periods in the 12-month window.",
+        "Use recent raw news events for the latest 3 periods in the 12-month window.",
     )
-    terms: set[str] = set()
-    for item in period_summaries.get("period_results", []):
-        output = item.get("output") if isinstance(item, dict) else {}
-        if not isinstance(output, dict):
-            continue
-        texts = [str(output.get("period_summary") or "")]
-        for issue in output.get("issues") or []:
-            if isinstance(issue, dict):
-                texts.append(str(issue.get("issue") or ""))
-                texts.append(str(issue.get("rationale") or ""))
-        for text in texts:
-            for match in pattern.findall(text):
-                term = match.strip()
-                if term and term not in stopwords:
-                    terms.add(term)
-    return terms
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item or "").strip()]
 
 
 def _month_window(as_of_date: date, count: int) -> list[str]:
@@ -785,76 +1119,9 @@ def _month_window(as_of_date: date, count: int) -> list[str]:
     return periods
 
 
-def _rewrite_basis_mismatch_phrases(output: dict[str, Any], input_payload: dict[str, Any]) -> list[str]:
-    if not _has_dart_basis_mismatch(input_payload):
-        return []
-    blocks = output.get("analysis_blocks")
-    if not isinstance(blocks, dict):
-        return []
-    changed = _rewrite_strings_in_place(
-        blocks,
-        replacements={
-            "전년 대비": "기간 기준이 다른 단순 비교상",
-            "YoY": "동일 기간",
-        },
-    )
-    return []
-
-
-def _strip_evidence_id_fields(value: Any) -> None:
-    if isinstance(value, dict):
-        for key in list(value.keys()):
-            if key == "evidence_ids" or key.endswith("_evidence_ids"):
-                value.pop(key, None)
-                continue
-            _strip_evidence_id_fields(value[key])
-    elif isinstance(value, list):
-        for item in value:
-            _strip_evidence_id_fields(item)
-
-
-def _rewrite_strings_in_place(value: Any, *, replacements: dict[str, str]) -> bool:
-    changed = False
-    if isinstance(value, dict):
-        for key, item in list(value.items()):
-            if isinstance(item, str):
-                new_item = item
-                for before, after in replacements.items():
-                    new_item = new_item.replace(before, after)
-                new_item = re.sub(r"전년\s+([^,.\s]+)\s*대비", r"2024년 연간 \1과 비교해", new_item)
-                if new_item != item:
-                    value[key] = new_item
-                    changed = True
-            else:
-                changed = _rewrite_strings_in_place(item, replacements=replacements) or changed
-    elif isinstance(value, list):
-        for idx, item in enumerate(value):
-            if isinstance(item, str):
-                new_item = item
-                for before, after in replacements.items():
-                    new_item = new_item.replace(before, after)
-                new_item = re.sub(r"전년\s+([^,.\s]+)\s*대비", r"2024년 연간 \1과 비교해", new_item)
-                if new_item != item:
-                    value[idx] = new_item
-                    changed = True
-            else:
-                changed = _rewrite_strings_in_place(item, replacements=replacements) or changed
-    return changed
-
-
-def _has_dart_basis_mismatch(input_payload: dict[str, Any]) -> bool:
-    metrics = (
-        ((input_payload.get("cross_domain_context") or {}).get("financial") or {}).get("metrics_by_key")
-        or {}
-    )
-    for metric in metrics.values():
-        comparisons = metric.get("comparisons") if isinstance(metric, dict) else None
-        if not isinstance(comparisons, dict):
-            continue
-        for comparison in comparisons.values():
-            if isinstance(comparison, dict) and comparison.get("basis_mismatch"):
-                return True
-    return False
+def _day_window(as_of_date: date, count: int) -> list[str]:
+    start = as_of_date - timedelta(days=max(1, count) - 1)
+    return [(start + timedelta(days=offset)).isoformat() for offset in range(max(1, count))]
 
 
 def _parse_json_content(content: str) -> tuple[Any, str | None]:
@@ -876,6 +1143,12 @@ def _parse_date(value: str | None) -> date | None:
 def _load_json(path: Path) -> Any:
     if not path.exists():
         raise FileNotFoundError(path)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _load_json_if_exists(path: Path) -> Any:
+    if not path.exists():
+        return None
     return json.loads(path.read_text(encoding="utf-8"))
 
 

@@ -10,10 +10,10 @@ from datetime import date
 from typing import Any, Literal
 
 try:
-    from .models import SectionJson, TargetReport
+    from .models import Filing, SectionJson, TargetReport
     from .normalizer import STATEMENT_NAMES, isolate_previous_fiscal_year
 except ImportError:  # pragma: no cover - supports direct script execution
-    from models import SectionJson, TargetReport
+    from models import Filing, SectionJson, TargetReport
     from normalizer import STATEMENT_NAMES, isolate_previous_fiscal_year
 
 
@@ -48,6 +48,8 @@ _SAFE_ALIAS_KEYS = {
     "기초현금및현금성자산": "beginning_cash_and_cash_equivalents",
     "기말현금및현금성자산": "ending_cash_and_cash_equivalents",
     "매출액": "revenue",
+    "수익매출액": "revenue",
+    "영업수익": "revenue",
     "제품매출": "product_revenue",
     "용역매출": "service_revenue",
     "영업이익": "operating_profit",
@@ -98,6 +100,215 @@ class PeriodItems:
     items: list[dict[str, str | None]]
 
 
+def build_single_report_canonical(master: dict[str, Any], primary_target: TargetReport) -> dict[str, Any]:
+    """Build the canonical schema from one resolved DART report."""
+
+    canonical: dict[str, Any] = {}
+    for statement_key, statement_name in STATEMENT_NAMES.items():
+        current_section = _section(master, "primary", statement_key)
+        if statement_key == "4-3":
+            canonical[statement_key] = _build_single_equity_statement(current_section, primary_target)
+        else:
+            canonical[statement_key] = _build_single_period_statement(
+                statement_key,
+                statement_name,
+                current_section,
+                primary_target,
+            )
+    return canonical
+
+
+def build_trend_canonical(
+    master: dict[str, Any],
+    resolved: dict[str, tuple[TargetReport, Filing]],
+    *,
+    selected_date: date,
+    theoretical_target: TargetReport,
+    annual_history_limit: int = 3,
+) -> dict[str, Any]:
+    """Build point-in-time canonical statements with comparable history."""
+
+    canonical: dict[str, Any] = {}
+    for statement_key, statement_name in STATEMENT_NAMES.items():
+        if statement_key == "4-3":
+            canonical[statement_key] = _build_trend_equity_statement(
+                master,
+                resolved,
+                annual_history_limit=max(0, annual_history_limit),
+            )
+        else:
+            canonical[statement_key] = _build_trend_period_statement(
+                statement_key,
+                statement_name,
+                master,
+                resolved,
+                annual_history_limit=max(0, annual_history_limit),
+            )
+    canonical["collection_context"] = _collection_context(
+        resolved,
+        selected_date=selected_date,
+        theoretical_target=theoretical_target,
+    )
+    return canonical
+
+
+def _build_trend_period_statement(
+    statement_key: str,
+    statement_name: str,
+    master: dict[str, Any],
+    resolved: dict[str, tuple[TargetReport, Filing]],
+    *,
+    annual_history_limit: int,
+) -> dict[str, Any]:
+    sections = {
+        role: _section(master, role, statement_key)
+        for role in resolved
+        if role in master
+    }
+    tables: list[dict[str, Any]] = []
+    for table_index, table_group in enumerate(_aligned_table_groups(sections), start=1):
+        period_sources: list[dict[str, Any]] = []
+        primary = resolved.get("primary")
+        if primary and table_group.get("primary") is not None:
+            target, filing = primary
+            source = _target_period_source(
+                "current_fiscal_year",
+                table_group.get("primary"),
+                target,
+                filing,
+                statement_key=statement_key,
+                source_role="primary",
+            )
+            if source["items"]:
+                period_sources.append(source)
+
+        same_period = resolved.get("same_period_previous")
+        if same_period and table_group.get("same_period_previous") is not None:
+            target, filing = same_period
+            source = _target_period_source(
+                "same_period_previous_year",
+                table_group.get("same_period_previous"),
+                target,
+                filing,
+                statement_key=statement_key,
+                source_role="same_period_previous",
+            )
+            if source["items"]:
+                period_sources.append(source)
+
+        annual_role = "annual_history" if "annual_history" in resolved else "primary"
+        annual_report = resolved.get(annual_role)
+        annual_table = table_group.get(annual_role)
+        if annual_report and annual_table is not None and annual_history_limit:
+            annual_target, annual_filing = annual_report
+            excluded_years = {
+                int(source["metadata"]["fiscal_year"])
+                for source in period_sources
+                if source.get("metadata", {}).get("period_type") == "ANNUAL"
+                and source.get("metadata", {}).get("fiscal_year") is not None
+            }
+            period_sources.extend(
+                _annual_history_sources(
+                    annual_table,
+                    annual_target,
+                    annual_filing,
+                    excluded_years=excluded_years,
+                    limit=annual_history_limit,
+                )
+            )
+
+        periods = {source["period_key"]: source["metadata"] for source in period_sources}
+        items_by_key, item_order = _canonical_multi_period_items(period_sources)
+        tables.append(
+            {
+                "table_key": f"{_TABLE_KEY_PREFIX[statement_key]}_{table_index}",
+                "table_title": _first_table_title(table_group),
+                "unit": "원",
+                "periods": periods,
+                "items_by_key": items_by_key,
+                "item_order": item_order,
+            }
+        )
+    return {"statement_name": statement_name, "tables": tables}
+
+
+def _build_trend_equity_statement(
+    master: dict[str, Any],
+    resolved: dict[str, tuple[TargetReport, Filing]],
+    *,
+    annual_history_limit: int,
+) -> dict[str, Any]:
+    sections: dict[str, SectionJson] = {}
+    for role, (target, _) in resolved.items():
+        if role not in master:
+            continue
+        section = _section(master, role, "4-3")
+        if role == "primary" and not target.is_periodic:
+            section = isolate_previous_fiscal_year(section, "4-3", target.fiscal_year)
+        sections[role] = section
+
+    tables: list[dict[str, Any]] = []
+    for table_index, table_group in enumerate(_aligned_table_groups(sections), start=1):
+        period_blocks: dict[str, Any] = {}
+        for role, period_key in (
+            ("primary", "current_fiscal_year"),
+            ("same_period_previous", "same_period_previous_year"),
+        ):
+            report = resolved.get(role)
+            table = table_group.get(role)
+            if not report or table is None:
+                continue
+            target, filing = report
+            metadata = _filing_period_metadata(
+                _target_period_metadata(target, _basis_for_single_statement("4-3", target)),
+                filing,
+                source_role=role,
+            )
+            period_blocks[period_key] = _equity_block(
+                table,
+                basis=_basis_for_single_statement("4-3", target),
+                period_meta=metadata,
+            )
+
+        annual_role = "annual_history" if "annual_history" in resolved else "primary"
+        annual_report = resolved.get(annual_role)
+        if annual_report and annual_history_limit:
+            annual_target, annual_filing = annual_report
+            annual_section = _section(master, annual_role, "4-3")
+            excluded_years = {
+                block.get("fiscal_year")
+                for block in period_blocks.values()
+                if block.get("period_type") == "ANNUAL"
+            }
+            annual_offset = 0
+            for fiscal_year in range(annual_target.fiscal_year, annual_target.fiscal_year - 4, -1):
+                if fiscal_year in excluded_years or annual_offset >= annual_history_limit:
+                    continue
+                isolated = isolate_previous_fiscal_year(annual_section, "4-3", fiscal_year)
+                annual_table = _table_at_or_none(isolated.get("tables", []), table_index - 1)
+                metadata = _filing_period_metadata(
+                    _annual_period_metadata(fiscal_year, basis="FULL_YEAR"),
+                    annual_filing,
+                    source_role="annual_history",
+                )
+                block = _equity_block(annual_table, basis="FULL_YEAR", period_meta=metadata)
+                if not block["row_order"]:
+                    continue
+                period_blocks[_historical_period_key(annual_offset)] = block
+                annual_offset += 1
+
+        _merge_all_period_column_aliases(period_blocks)
+        tables.append(
+            {
+                "table_key": f"{_TABLE_KEY_PREFIX['4-3']}_{table_index}",
+                "table_title": _first_table_title(table_group),
+                "unit": "원",
+                "period_blocks": period_blocks,
+            }
+        )
+    return {"statement_name": STATEMENT_NAMES["4-3"], "tables": tables}
+
+
 def build_2y_handoff(master: dict[str, Any], secondary_target: TargetReport) -> dict[str, Any]:
     """Build the canonical two-year schema from the flat matrix master."""
 
@@ -136,6 +347,243 @@ def build_master_canonical(master: dict[str, Any], secondary_target: TargetRepor
                 secondary_target,
             )
     return canonical
+
+
+def _build_single_period_statement(
+    statement_key: str,
+    statement_name: str,
+    current_section: SectionJson,
+    primary_target: TargetReport,
+) -> dict[str, Any]:
+    current_basis = _basis_for_single_statement(statement_key, primary_target)
+    current_period_meta = _target_period_metadata(primary_target, current_basis)
+    tables: list[dict[str, Any]] = []
+    for table_index, current_table in enumerate(current_section.get("tables", []), start=1):
+        current_period = _single_period_table(current_table, target_year=None)
+        metadata = _metadata_from_period_items(current_period_meta, current_period)
+        period_sources = [
+            {
+                "period_key": "current_fiscal_year",
+                "metadata": metadata,
+                "items": current_period.items,
+            }
+        ]
+        items_by_key, item_order = _canonical_multi_period_items(period_sources)
+        tables.append(
+            {
+                "table_key": f"{_TABLE_KEY_PREFIX[statement_key]}_{table_index}",
+                "table_title": _table_title(current_table, None),
+                "unit": "원",
+                "periods": {"current_fiscal_year": metadata},
+                "items_by_key": items_by_key,
+                "item_order": item_order,
+            }
+        )
+    return {"statement_name": statement_name, "tables": tables}
+
+
+def _build_single_equity_statement(
+    current_section: SectionJson,
+    primary_target: TargetReport,
+) -> dict[str, Any]:
+    current_basis = _basis_for_single_statement("4-3", primary_target)
+    current_period_meta = _target_period_metadata(primary_target, current_basis)
+    tables: list[dict[str, Any]] = []
+    for table_index, current_table in enumerate(current_section.get("tables", []), start=1):
+        tables.append(
+            {
+                "table_key": f"{_TABLE_KEY_PREFIX['4-3']}_{table_index}",
+                "table_title": _table_title(current_table, None),
+                "unit": "원",
+                "period_blocks": {
+                    "current_fiscal_year": _equity_block(
+                        current_table,
+                        basis=current_basis,
+                        period_meta=current_period_meta,
+                    )
+                },
+            }
+        )
+    return {"statement_name": STATEMENT_NAMES["4-3"], "tables": tables}
+
+
+def _target_period_source(
+    period_key: str,
+    table: dict[str, Any] | None,
+    target: TargetReport,
+    filing: Filing,
+    *,
+    statement_key: str,
+    source_role: str,
+) -> dict[str, Any]:
+    period = _single_period_table(table, target_year=target.fiscal_year)
+    basis = _basis_for_single_statement(statement_key, target)
+    metadata = _metadata_from_period_items(_target_period_metadata(target, basis), period)
+    return {
+        "period_key": period_key,
+        "metadata": _filing_period_metadata(metadata, filing, source_role=source_role),
+        "items": period.items,
+    }
+
+
+def _annual_history_sources(
+    table: dict[str, Any] | None,
+    target: TargetReport,
+    filing: Filing,
+    *,
+    excluded_years: set[int],
+    limit: int,
+) -> list[dict[str, Any]]:
+    if table is None or limit <= 0:
+        return []
+    matrix = _matrix(table)
+    if not matrix:
+        return []
+
+    header_count = _header_row_count(matrix)
+    descriptors = [_column_descriptor(matrix, header_count, col) for col in range(_width(matrix))]
+    data_cols = [index for index in range(1, len(descriptors)) if not _is_note_label(descriptors[index])]
+    sources: list[dict[str, Any]] = []
+
+    for col_offset, col in enumerate(data_cols):
+        fiscal_year = _parse_year_from_descriptor(descriptors[col]) or target.fiscal_year - col_offset
+        if fiscal_year in excluded_years:
+            continue
+        items: list[dict[str, str | None]] = []
+        used_keys: set[str] = set()
+        for row in matrix[header_count:]:
+            display_name = _display_label(row[0] if row else "")
+            if not display_name:
+                continue
+            value = _cell(row, col)
+            if value == "":
+                continue
+            item_key = _dedupe_key(_stable_key(display_name, namespace="item"), used_keys)
+            items.append({"key": item_key, "display_name": display_name, "value": value})
+        if not items:
+            continue
+        period_key = _historical_period_key(len(sources))
+        metadata = _with_label(
+            _annual_period_metadata(fiscal_year, basis="FULL_YEAR"),
+            _period_label(descriptors[col]),
+        )
+        sources.append(
+            {
+                "period_key": period_key,
+                "metadata": _filing_period_metadata(metadata, filing, source_role="annual_history"),
+                "items": items,
+            }
+        )
+        if len(sources) >= limit:
+            break
+    return sources
+
+
+def _aligned_table_groups(sections: dict[str, SectionJson]) -> list[dict[str, dict[str, Any] | None]]:
+    role_order = ["primary", "same_period_previous", "annual_history"]
+    groups: list[dict[str, dict[str, Any] | None]] = []
+    primary_tables = sections.get("primary", {}).get("tables", [])
+    groups.extend({"primary": table} for table in primary_tables)
+
+    for role in role_order[1:]:
+        tables = sections.get(role, {}).get("tables", [])
+        used: set[int] = set()
+        for group_index, group in enumerate(groups):
+            anchor = group.get("primary") or next((value for value in group.values() if value is not None), None)
+            if anchor is None:
+                continue
+            table_index = _find_matching_table(anchor, tables, used)
+            if table_index is None and group_index < len(tables) and group_index not in used:
+                table_index = group_index
+            if table_index is not None:
+                group[role] = tables[table_index]
+                used.add(table_index)
+        for table_index, table in enumerate(tables):
+            if table_index not in used:
+                groups.append({role: table})
+
+    if not groups:
+        for role in role_order:
+            for table in sections.get(role, {}).get("tables", []):
+                groups.append({role: table})
+    return groups
+
+
+def _first_table_title(table_group: dict[str, dict[str, Any] | None]) -> str:
+    for role in ("primary", "same_period_previous", "annual_history"):
+        table = table_group.get(role)
+        if table is not None:
+            title = str(table.get("table_title") or "").strip()
+            if title:
+                return title
+    return ""
+
+
+def _filing_period_metadata(
+    metadata: dict[str, Any],
+    filing: Filing,
+    *,
+    source_role: str,
+) -> dict[str, Any]:
+    return {
+        **metadata,
+        "receipt_no": filing.rcept_no,
+        "receipt_date": _iso_date(filing.rcept_dt),
+        "report_name": filing.report_nm,
+        "source_role": source_role,
+    }
+
+
+def _collection_context(
+    resolved: dict[str, tuple[TargetReport, Filing]],
+    *,
+    selected_date: date,
+    theoretical_target: TargetReport,
+) -> dict[str, Any]:
+    primary_target, primary_filing = resolved["primary"]
+    reports = []
+    for role, (target, filing) in resolved.items():
+        reports.append(
+            {
+                "source_role": role,
+                "period_type": _target_period_type(target),
+                "fiscal_year": target.fiscal_year,
+                "period_end": target.period_end.isoformat(),
+                "receipt_date": _iso_date(filing.rcept_dt),
+                "receipt_no": filing.rcept_no,
+                "report_name": filing.report_nm,
+            }
+        )
+    return {
+        "selected_date": selected_date.isoformat(),
+        "selected_date_policy": "prior_day_cutoff_when_receipt_time_unavailable",
+        "latest_available_filing": {
+            "period_type": _target_period_type(primary_target),
+            "fiscal_year": primary_target.fiscal_year,
+            "period_end": primary_target.period_end.isoformat(),
+            "receipt_date": _iso_date(primary_filing.rcept_dt),
+            "receipt_no": primary_filing.rcept_no,
+            "report_name": primary_filing.report_nm,
+        },
+        "theoretical_target": {
+            "period_type": _target_period_type(theoretical_target),
+            "fiscal_year": theoretical_target.fiscal_year,
+            "period_end": theoretical_target.period_end.isoformat(),
+        },
+        "fallback_applied": primary_target.period_end != theoretical_target.period_end,
+        "future_filing_excluded": all(
+            _iso_date(filing.rcept_dt) < selected_date.isoformat()
+            for _, filing in resolved.values()
+        ),
+        "reports_used": reports,
+    }
+
+
+def _iso_date(value: str) -> str:
+    digits = re.sub(r"\D", "", value or "")
+    if len(digits) == 8:
+        return f"{digits[:4]}-{digits[4:6]}-{digits[6:]}"
+    return str(value or "")
 
 
 def _build_pair_statement(
@@ -483,7 +931,10 @@ def _canonical_multi_period_items(period_sources: list[dict[str, Any]]) -> tuple
             if period_key == "current_fiscal_year":
                 target["current_value"] = value
                 target["current_numeric"] = _parse_numeric(value)
-            elif period_key == "previous_fiscal_year":
+            elif period_key == "same_period_previous_year":
+                target["previous_value"] = value
+                target["previous_numeric"] = _parse_numeric(value)
+            elif period_key == "previous_fiscal_year" and target["previous_value"] is None:
                 target["previous_value"] = value
                 target["previous_numeric"] = _parse_numeric(value)
 
@@ -659,6 +1110,14 @@ def _basis_for_statement(statement_key: str) -> tuple[PeriodBasis, PeriodBasis]:
     return "YTD", "FULL_YEAR"
 
 
+def _basis_for_single_statement(statement_key: str, primary_target: TargetReport) -> PeriodBasis:
+    if statement_key == "4-1":
+        return "POINT_IN_TIME"
+    if primary_target.period_type == "annual":
+        return "FULL_YEAR"
+    return "YTD"
+
+
 def _historical_period_key(offset: int) -> str:
     if offset == 0:
         return "previous_fiscal_year"
@@ -673,6 +1132,36 @@ def _annual_period_metadata(fiscal_year: int, *, basis: PeriodBasis) -> dict[str
         period_end=date(fiscal_year, 12, 31).isoformat(),
         basis=basis,
     )
+
+
+def _target_period_metadata(target: TargetReport, basis: PeriodBasis) -> dict[str, Any]:
+    return _period_metadata(
+        label="",
+        fiscal_year=target.fiscal_year,
+        period_type=_target_period_type(target),
+        period_end=target.period_end.isoformat(),
+        basis=basis,
+    )
+
+
+def _target_period_type(target: TargetReport) -> str:
+    return {
+        "q1": "Q1",
+        "half": "HALF",
+        "q3": "Q3",
+        "annual": "ANNUAL",
+    }.get(target.period_type, "")
+
+
+def _metadata_from_period_items(base_metadata: dict[str, Any], period: PeriodItems) -> dict[str, Any]:
+    metadata = _with_label(base_metadata, period.label)
+    if period.fiscal_year is not None:
+        metadata["fiscal_year"] = period.fiscal_year
+    if period.period_type:
+        metadata["period_type"] = period.period_type
+    if period.period_end:
+        metadata["period_end"] = period.period_end
+    return metadata
 
 
 def _table_at_or_none(tables: list[dict[str, Any]], index: int) -> dict[str, Any] | None:

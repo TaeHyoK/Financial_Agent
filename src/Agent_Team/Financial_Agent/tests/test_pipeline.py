@@ -16,13 +16,25 @@ SRC_ROOT = Path(__file__).resolve().parents[3]
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from Agent_Team.Financial_Agent.handoff_builder import build_2y_handoff
+from Agent_Team.Financial_Agent.handoff_builder import (
+    build_2y_handoff,
+    build_single_report_canonical,
+    build_trend_canonical,
+)
+from Agent_Team.Financial_Agent.financial_index_calculator import calculate_financial_index
+from Agent_Team.Financial_Agent.langgraph_flow import build_financial_trends
 from Agent_Team.Financial_Agent import build_run_key
 from Agent_Team.Financial_Agent.main import _build_master, _resolve_output_dir, _write_outputs, collect_report
 from Agent_Team.Financial_Agent.models import Filing, PipelineInput, SectionMap, TargetReport
 from Agent_Team.Financial_Agent.normalizer import normalize_primary_report
-from Agent_Team.Financial_Agent.report_resolver import build_targets
+from Agent_Team.Financial_Agent.report_resolver import (
+    build_available_report_candidates,
+    build_targets,
+    resolve_report_set,
+)
 from Agent_Team.Financial_Agent.report_selector import parse_period_end_from_report_name, select_latest_valid_filing
+from Agent_Team.Financial_Agent.revenue_breakdown_extractor import extract_revenue_breakdown
+from Agent_Team.Financial_Agent.share_information_extractor import extract_share_information
 from Agent_Team.Financial_Agent.SY_Agent.run_pipeline import resolve_pipeline_output_dir
 from Agent_Team.Financial_Agent.table_parser import parse_table_matrix
 
@@ -44,6 +56,54 @@ class ReportResolutionTests(unittest.TestCase):
                 self.assertEqual(primary.period_end, primary_end)
                 self.assertEqual(secondary.period_type, "annual")
                 self.assertEqual(secondary.period_end, secondary_end)
+
+    def test_available_candidates_are_ordered_by_period_end(self) -> None:
+        candidates = build_available_report_candidates(date(2025, 10, 31))
+
+        self.assertEqual(
+            [(item.period_type, item.period_end) for item in candidates[:4]],
+            [
+                ("q3", date(2025, 9, 30)),
+                ("half", date(2025, 6, 30)),
+                ("q1", date(2025, 3, 31)),
+                ("annual", date(2024, 12, 31)),
+            ],
+        )
+
+    def test_report_set_falls_back_to_half_year_and_excludes_future_q3(self) -> None:
+        client = _PointInTimeFakeClient()
+
+        resolved = resolve_report_set(
+            client=client,
+            company_code="00878696",
+            selected_date=date(2025, 10, 31),
+        )
+
+        self.assertEqual(resolved["primary"][0].period_type, "half")
+        self.assertEqual(resolved["primary"][1].rcept_no, "20250814001203")
+        self.assertEqual(resolved["same_period_previous"][0].period_end, date(2024, 6, 30))
+        self.assertEqual(resolved["annual_history"][0].period_end, date(2024, 12, 31))
+        self.assertTrue(all(end_de <= "20251031" for end_de in client.requested_end_dates))
+
+    def test_q3_is_not_available_on_its_receipt_date_without_receipt_time(self) -> None:
+        resolved = resolve_report_set(
+            client=_PointInTimeFakeClient(),
+            company_code="00878696",
+            selected_date=date(2025, 11, 14),
+        )
+
+        self.assertEqual(resolved["primary"][0].period_type, "half")
+        self.assertEqual(resolved["primary"][1].rcept_no, "20250814001203")
+
+    def test_q3_becomes_available_on_the_day_after_receipt(self) -> None:
+        resolved = resolve_report_set(
+            client=_PointInTimeFakeClient(),
+            company_code="00878696",
+            selected_date=date(2025, 11, 15),
+        )
+
+        self.assertEqual(resolved["primary"][0].period_type, "q3")
+        self.assertEqual(resolved["primary"][1].rcept_no, "20251114001570")
 
 
 class OutputPathTests(unittest.TestCase):
@@ -120,6 +180,31 @@ class ReportSelectorTests(unittest.TestCase):
         selected = select_latest_valid_filing(filings, target)
         self.assertEqual(selected.rcept_no, "3")
 
+    def test_select_latest_valid_filing_applies_as_of_cutoff(self) -> None:
+        target = _q3_target()
+        filings = [
+            Filing(rcept_no="1", report_nm="분기보고서 (2025.09)", rcept_dt="20251114"),
+            Filing(rcept_no="2", report_nm="[기재정정]분기보고서 (2025.09)", rcept_dt="20251120"),
+        ]
+
+        with self.assertRaises(LookupError):
+            select_latest_valid_filing(filings, target, as_of_date=date(2025, 11, 14))
+
+        selected = select_latest_valid_filing(filings, target, as_of_date=date(2025, 11, 15))
+
+        self.assertEqual(selected.rcept_no, "1")
+
+    def test_select_latest_valid_filing_skips_attachment_only_correction(self) -> None:
+        target = _annual_target_for_test("annual_history", 2024)
+        filings = [
+            Filing("20250814002739", "[기재정정]사업보고서 (2024.12)", "20250814"),
+            Filing("20250814002850", "[첨부정정]사업보고서 (2024.12)", "20250814"),
+        ]
+
+        selected = select_latest_valid_filing(filings, target, as_of_date=date(2025, 10, 31))
+
+        self.assertEqual(selected.rcept_no, "20250814002739")
+
 
 class TableParserTests(unittest.TestCase):
     """Verify table parsing preserves expanded structure."""
@@ -142,6 +227,89 @@ class TableParserTests(unittest.TestCase):
                 ["매출액", "10", "30"],
             ],
         )
+
+
+class RevenueBreakdownTests(unittest.TestCase):
+    def test_extracts_product_service_revenue_and_share(self) -> None:
+        xml = """
+        <DOCUMENT><SECTION-2>
+          <TITLE>2. 주요 제품 및 서비스</TITLE>
+          <TABLE><TR><TD>(단위: 백만원)</TD></TR></TABLE>
+          <TABLE>
+            <TR><TH>품목</TH><TH colspan="2">제15기 반기말(2025년 06월말)</TH><TH colspan="2">제14기 기말(2024년 12월말)</TH></TR>
+            <TR><TH>품목</TH><TH>매출액</TH><TH>비율</TH><TH>매출액</TH><TH>비율</TH></TR>
+            <TR><TD>제품 A</TD><TD>304,962</TD><TD>95.1%</TD><TD>531,241</TD><TD>97.0%</TD></TR>
+            <TR><TD>서비스 B</TD><TD>15,692</TD><TD>4.9%</TD><TD>16,355</TD><TD>3.0%</TD></TR>
+            <TR><TD>계</TD><TD>320,654</TD><TD>100%</TD><TD>547,596</TD><TD>100%</TD></TR>
+          </TABLE>
+        </SECTION-2></DOCUMENT>
+        """
+        target = _half_target("primary", 2025)
+        filing = Filing("H1-2025", "반기보고서 (2025.06)", "20250814")
+
+        result = extract_revenue_breakdown(xml, target=target, filing=filing)
+
+        self.assertEqual(result["status"], "available")
+        self.assertEqual(result["dimension_type"], "product_service")
+        self.assertEqual(result["unit"], "백만원")
+        self.assertEqual(result["current_period"]["period_end"], "2025-06-30")
+        self.assertEqual(result["current_items"][0]["name"], "제품 A")
+        self.assertEqual(result["current_items"][0]["revenue"], 304962)
+        self.assertEqual(result["current_items"][0]["revenue_krw"], 304_962_000_000)
+        self.assertEqual(result["current_items"][0]["revenue_share"], 0.951)
+        self.assertTrue(all(result["validation"]["share_sum_within_tolerance"].values()))
+        _assert_no_key_recursive(result, "market_share")
+
+    def test_missing_product_section_is_non_fatal(self) -> None:
+        result = extract_revenue_breakdown(
+            "<DOCUMENT><TITLE>4. 재무제표</TITLE></DOCUMENT>",
+            target=_half_target("primary", 2025),
+            filing=Filing("H1-2025", "반기보고서 (2025.06)", "20250814"),
+        )
+
+        self.assertEqual(result["status"], "not_disclosed")
+        self.assertEqual(result["reason"], "section_not_found")
+        self.assertEqual(result["current_items"], [])
+
+
+class ShareInformationTests(unittest.TestCase):
+    def test_extracts_outstanding_shares_from_exact_filing_table(self) -> None:
+        xml = """
+        <DOCUMENT><SECTION-2>
+          <TITLE>4. 주식의 총수 등</TITLE>
+          <TABLE>
+            <TR><TH>구분</TH><TH>구분</TH><TH>의결권 있는 주식</TH><TH>합계</TH></TR>
+            <TR><TH>구분</TH><TH>구분</TH><TH>의결권 있는 주식</TH><TH>합계</TH></TR>
+            <TR><TD>II. 현재까지 발행한 주식의 총수</TD><TD>II. 현재까지 발행한 주식의 총수</TD><TD>80,000,000</TD><TD>80,000,000</TD></TR>
+            <TR><TD>IV. 발행주식의 총수</TD><TD>IV. 발행주식의 총수</TD><TD>78,313,250</TD><TD>78,313,250</TD></TR>
+            <TR><TD>V. 자기주식수</TD><TD>V. 자기주식수</TD><TD>1,000</TD><TD>1,000</TD></TR>
+            <TR><TD>VI. 유통주식수</TD><TD>VI. 유통주식수</TD><TD>78,312,250</TD><TD>78,312,250</TD></TR>
+          </TABLE>
+        </SECTION-2></DOCUMENT>
+        """
+
+        result = extract_share_information(
+            xml,
+            target=_half_target("primary", 2025),
+            filing=Filing("H1-2025", "반기보고서 (2025.06)", "20250814"),
+        )
+
+        self.assertEqual(result["status"], "available")
+        self.assertEqual(result["issued_shares"], 78_313_250)
+        self.assertEqual(result["treasury_shares"], 1_000)
+        self.assertEqual(result["shares_outstanding"], 78_312_250)
+        self.assertTrue(result["validation"]["issued_minus_treasury_equals_outstanding"])
+        self.assertEqual(result["source"]["receipt_date"], "2025-08-14")
+
+    def test_missing_share_section_is_non_fatal(self) -> None:
+        result = extract_share_information(
+            "<DOCUMENT><TITLE>4. 재무제표</TITLE></DOCUMENT>",
+            target=_half_target("primary", 2025),
+            filing=Filing("H1-2025", "반기보고서 (2025.06)", "20250814"),
+        )
+
+        self.assertEqual(result["status"], "not_disclosed")
+        self.assertIsNone(result["shares_outstanding"])
 
 
 class NormalizerTests(unittest.TestCase):
@@ -277,6 +445,119 @@ class NormalizerTests(unittest.TestCase):
 
 class HandoffBuilderTests(unittest.TestCase):
     """Verify canonical two-year statement generation."""
+
+    def test_collection_context_marks_same_day_receipt_as_excluded_by_policy(self) -> None:
+        target = _half_target("primary", 2025)
+        canonical = build_trend_canonical(
+            {"primary": _period_section_map("제 15 기 반기", "300")},
+            {
+                "primary": (
+                    target,
+                    Filing("H1-2025", "반기보고서 (2025.06)", "20250814"),
+                )
+            },
+            selected_date=date(2025, 8, 14),
+            theoretical_target=target,
+            annual_history_limit=0,
+        )
+
+        context = canonical["collection_context"]
+        self.assertEqual(
+            context["selected_date_policy"],
+            "prior_day_cutoff_when_receipt_time_unavailable",
+        )
+        self.assertFalse(context["future_filing_excluded"])
+
+    def test_single_report_canonical_keeps_only_current_period(self) -> None:
+        current = _empty_section_map()
+        current["4-1"] = {
+            "section_title": "재무상태표",
+            "tables": [{"table_title": "재무상태표", "matrix": [["과목", "제 15 기 3분기말"], ["유동자산", "100"]]}],
+        }
+        current["4-2"] = {
+            "section_title": "포괄손익계산서",
+            "tables": [{"table_title": "포괄손익계산서", "matrix": [["과목", "제 15 기 3분기"], ["매출액", "300"]]}],
+        }
+
+        handoff = build_single_report_canonical({"primary": current}, _q3_target())
+
+        balance_table = handoff["4-1"]["tables"][0]
+        income_table = handoff["4-2"]["tables"][0]
+        self.assertEqual(list(balance_table["periods"].keys()), ["current_fiscal_year"])
+        self.assertNotIn("previous_fiscal_year", balance_table["periods"])
+        self.assertEqual(balance_table["periods"]["current_fiscal_year"]["basis"], "POINT_IN_TIME")
+        self.assertEqual(income_table["periods"]["current_fiscal_year"]["basis"], "YTD")
+        self.assertEqual(income_table["items_by_key"]["revenue"]["values_by_period_key"], {"current_fiscal_year": "300"})
+
+    def test_trend_canonical_separates_same_period_and_annual_history(self) -> None:
+        master = {
+            "primary": _period_section_map("제 15 기 반기", "300"),
+            "same_period_previous": _period_section_map("제 14 기 반기", "240"),
+            "annual_history": _annual_history_section_map(),
+        }
+        resolved = {
+            "primary": (
+                _half_target("primary", 2025),
+                Filing("H1-2025", "반기보고서 (2025.06)", "20250814"),
+            ),
+            "same_period_previous": (
+                _half_target("same_period_previous", 2024),
+                Filing("H1-2024", "반기보고서 (2024.06)", "20240814"),
+            ),
+            "annual_history": (
+                _annual_target_for_test("annual_history", 2024),
+                Filing("FY-2024", "사업보고서 (2024.12)", "20250318"),
+            ),
+        }
+
+        canonical = build_trend_canonical(
+            master,
+            resolved,
+            selected_date=date(2025, 10, 31),
+            theoretical_target=_q3_target(),
+            annual_history_limit=3,
+        )
+
+        periods = canonical["4-2"]["tables"][0]["periods"]
+        self.assertEqual(
+            list(periods),
+            [
+                "current_fiscal_year",
+                "same_period_previous_year",
+                "previous_fiscal_year",
+                "previous_fiscal_year_2",
+                "previous_fiscal_year_3",
+            ],
+        )
+        self.assertEqual(periods["current_fiscal_year"]["period_type"], "HALF")
+        self.assertEqual(periods["same_period_previous_year"]["period_type"], "HALF")
+        self.assertEqual(periods["current_fiscal_year"]["receipt_date"], "2025-08-14")
+        self.assertEqual(periods["previous_fiscal_year"]["basis"], "FULL_YEAR")
+        item = canonical["4-2"]["tables"][0]["items_by_key"]["revenue"]
+        self.assertEqual(item["current_value"], "300")
+        self.assertEqual(item["previous_value"], "240")
+        self.assertEqual(item["values_by_period_key"]["previous_fiscal_year_3"], "300")
+        self.assertTrue(canonical["collection_context"]["fallback_applied"])
+        self.assertTrue(canonical["collection_context"]["future_filing_excluded"])
+
+        financial_index = calculate_financial_index(canonical, ["Revenue", "Revenue Growth"])
+        comparison_keys = [item["comparison_key"] for item in financial_index["comparison_pairs"]]
+        self.assertEqual(
+            comparison_keys,
+            [
+                "2025_HALF_vs_2024_HALF",
+                "2024_ANNUAL_vs_2023_ANNUAL",
+                "2023_ANNUAL_vs_2022_ANNUAL",
+            ],
+        )
+        self.assertNotIn("2025_HALF_vs_2024_ANNUAL", comparison_keys)
+        ttm_revenue = financial_index["metrics_by_key"]["revenue"]["values_by_period"]["ttm"]
+        self.assertEqual(ttm_revenue["value"], 560)
+        self.assertEqual(ttm_revenue["period"]["basis"], "TTM")
+        trends = build_financial_trends(financial_index)
+        self.assertEqual(trends["current_vs_same_period"]["current_values"]["revenue"], 300)
+        self.assertEqual(trends["current_vs_same_period"]["previous_values"]["revenue"], 240)
+        self.assertEqual(trends["ttm"]["values"]["revenue"], 560)
 
     def test_4_1_pairs_items_and_retains_missing_side_items(self) -> None:
         current = _empty_section_map()
@@ -494,6 +775,28 @@ class HandoffBuilderTests(unittest.TestCase):
         self.assertEqual(items["beginning_cash_and_cash_equivalents"]["aliases"], ["기초 현금및현금성자산", "기초현금및현금성자산"])
         self.assertEqual(items["equity_method_capital_changes"]["aliases"], ["지분법 자본변동", "지분법자본변동"])
 
+    def test_revenue_alias_merges_sales_and_revenue_sales_labels(self) -> None:
+        current = _empty_section_map()
+        previous = _empty_section_map()
+        current["4-2"] = {
+            "section_title": "포괄손익계산서",
+            "tables": [{"table_title": "포괄손익계산서", "matrix": [["과목", "2025 반기"], ["매출액", "300"]]}],
+        }
+        previous["4-2"] = {
+            "section_title": "포괄손익계산서",
+            "tables": [{"table_title": "포괄손익계산서", "matrix": [["과목", "2024 반기"], ["수익(매출액)", "240"]]}],
+        }
+
+        handoff = build_2y_handoff(
+            {"primary": current, "secondary": previous},
+            _secondary_annual_target(),
+        )
+
+        revenue = handoff["4-2"]["tables"][0]["items_by_key"]["revenue"]
+        self.assertEqual(revenue["aliases"], ["매출액", "수익(매출액)"])
+        self.assertEqual(revenue["current_value"], "300")
+        self.assertEqual(revenue["previous_value"], "240")
+
     def test_parenthesized_amounts_are_negative_numeric_values(self) -> None:
         current = _empty_section_map()
         secondary = _empty_section_map()
@@ -641,6 +944,61 @@ class MasterOutputTests(unittest.TestCase):
             self.assertNotIn("metrics", master_index)
 
 
+class _PointInTimeFakeClient:
+    def __init__(self) -> None:
+        self.requested_end_dates: list[str] = []
+
+    def list_filings(
+        self,
+        *,
+        corp_code: str,
+        bgn_de: str,
+        end_de: str,
+        pblntf_detail_ty: str,
+    ) -> list[Filing]:
+        self.requested_end_dates.append(end_de)
+        filings = [
+            Filing(
+                rcept_no="20251114001570",
+                report_nm="분기보고서 (2025.09)",
+                rcept_dt="20251114",
+                corp_code=corp_code,
+            ),
+            Filing(
+                rcept_no="20250814001203",
+                report_nm="반기보고서 (2025.06)",
+                rcept_dt="20250814",
+                corp_code=corp_code,
+            ),
+            Filing(
+                rcept_no="20240814001111",
+                report_nm="반기보고서 (2024.06)",
+                rcept_dt="20240814",
+                corp_code=corp_code,
+            ),
+            Filing(
+                rcept_no="20250318001091",
+                report_nm="사업보고서 (2024.12)",
+                rcept_dt="20250318",
+                corp_code=corp_code,
+            ),
+        ]
+        return [
+            filing
+            for filing in filings
+            if bgn_de <= filing.rcept_dt <= end_de
+            and (
+                (pblntf_detail_ty == "A001" and "사업보고서" in filing.report_nm)
+                or (pblntf_detail_ty == "A002" and "반기보고서" in filing.report_nm)
+                or (
+                    pblntf_detail_ty == "A003"
+                    and "분기보고서" in filing.report_nm
+                    and "반기보고서" not in filing.report_nm
+                )
+            )
+        ]
+
+
 def _find_item_by_display_name(table: dict, display_name: str) -> dict:
     for item_key in table["item_order"]:
         item = table["items_by_key"][item_key]
@@ -721,6 +1079,59 @@ def _empty_section_map() -> SectionMap:
         "4-3": {"section_title": "자본변동표", "tables": []},
         "4-4": {"section_title": "현금흐름표", "tables": []},
     }
+
+
+def _period_section_map(label: str, revenue: str) -> SectionMap:
+    sections = _empty_section_map()
+    sections["4-2"] = {
+        "section_title": "포괄손익계산서",
+        "tables": [
+            {
+                "table_title": "포괄손익계산서",
+                "matrix": [["과목", label], ["매출액", revenue]],
+            }
+        ],
+    }
+    return sections
+
+
+def _annual_history_section_map() -> SectionMap:
+    sections = _empty_section_map()
+    sections["4-2"] = {
+        "section_title": "포괄손익계산서",
+        "tables": [
+            {
+                "table_title": "포괄손익계산서",
+                "matrix": [
+                    ["과목", "2024.01.01~2024.12.31", "2023.01.01~2023.12.31", "2022.01.01~2022.12.31"],
+                    ["매출액", "500", "400", "300"],
+                ],
+            }
+        ],
+    }
+    return sections
+
+
+def _half_target(role: str, fiscal_year: int) -> TargetReport:
+    return TargetReport(
+        role=role,  # type: ignore[arg-type]
+        fiscal_year=fiscal_year,
+        period_type="half",
+        period_end=date(fiscal_year, 6, 30),
+        dart_detail_type="A002",
+        report_keyword="반기보고서",
+    )
+
+
+def _annual_target_for_test(role: str, fiscal_year: int) -> TargetReport:
+    return TargetReport(
+        role=role,  # type: ignore[arg-type]
+        fiscal_year=fiscal_year,
+        period_type="annual",
+        period_end=date(fiscal_year, 12, 31),
+        dart_detail_type="A001",
+        report_keyword="사업보고서",
+    )
 
 
 def _q3_target() -> TargetReport:

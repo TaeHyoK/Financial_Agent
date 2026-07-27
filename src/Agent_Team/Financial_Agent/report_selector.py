@@ -37,17 +37,27 @@ def is_valid_periodic_filing(filing: Filing, target: TargetReport) -> bool:
     report_nm = filing.report_nm
     if not filing.rcept_no or not report_nm:
         return False
-    if "철회" in report_nm:
+    if "철회" in report_nm or "첨부정정" in report_nm:
         return False
     if target.report_keyword and target.report_keyword not in report_nm:
         return False
     return parse_period_end_from_report_name(report_nm) == target.period_end
 
 
-def select_latest_valid_filing(filings: list[Filing], target: TargetReport) -> Filing:
-    """Select the latest valid filing for the same target fiscal period."""
+def select_latest_valid_filing(
+    filings: list[Filing],
+    target: TargetReport,
+    *,
+    as_of_date: date | None = None,
+) -> Filing:
+    """Select the latest filing published before the requested calendar date."""
 
-    matches = [filing for filing in filings if is_valid_periodic_filing(filing, target)]
+    matches = [
+        filing
+        for filing in filings
+        if is_valid_periodic_filing(filing, target)
+        and (as_of_date is None or _date_int(filing.rcept_dt) < int(as_of_date.strftime("%Y%m%d")))
+    ]
     if not matches:
         expected = f"{target.report_keyword} ({target.period_end:%Y.%m})"
         raise LookupError(f"No DART filing matched target period: {expected}")

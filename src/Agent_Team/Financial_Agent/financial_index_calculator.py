@@ -26,6 +26,8 @@ MetricUnit = Literal["원", "ratio", "원/주", "times"]
 
 PERIOD_KEY_ORDER = (
     "current_fiscal_year",
+    "same_period_previous_year",
+    "ttm",
     "previous_fiscal_year",
     "previous_fiscal_year_2",
     "previous_fiscal_year_3",
@@ -92,6 +94,28 @@ OPERATING_PROFIT_SPEC = ItemLookupSpec(
     item_keys=("operating_profit",),
     labels=("영업이익", "영업이익(손실)"),
 )
+NET_INCOME_SPEC = ItemLookupSpec(
+    statement_key="4-2",
+    item_keys=("net_income",),
+    labels=(
+        "당기순이익",
+        "당기순이익(손실)",
+        "분기순이익",
+        "분기순이익(손실)",
+        "반기순이익",
+        "반기순이익(손실)",
+    ),
+)
+OPERATING_CASH_FLOW_SPEC = ItemLookupSpec(
+    statement_key="4-4",
+    item_keys=("cash_flows_from_operating_activities",),
+    labels=("영업활동현금흐름", "영업활동으로 인한 현금흐름"),
+)
+TOTAL_EQUITY_SPEC = ItemLookupSpec(
+    statement_key="4-1",
+    item_keys=("total_equity",),
+    labels=("자본총계", "자본합계"),
+)
 EPS_SPEC = ItemLookupSpec(
     statement_key="4-2",
     item_keys=("basic_eps", "eps"),
@@ -154,6 +178,26 @@ METRIC_DEFINITIONS_BY_DISPLAY_NAME = {
         formula="SG&A / Revenue",
         source_metric_keys=("sga", "revenue"),
     ),
+    "Operating Profit": MetricDefinition(
+        metric_key="operating_profit",
+        display_name="Operating Profit",
+        source_items=("영업이익", "영업이익(손실)"),
+    ),
+    "Net Income": MetricDefinition(
+        metric_key="net_income",
+        display_name="Net Income",
+        source_items=("당기순이익", "분기순이익", "반기순이익"),
+    ),
+    "Operating Cash Flow": MetricDefinition(
+        metric_key="operating_cash_flow",
+        display_name="Operating Cash Flow",
+        source_items=("영업활동현금흐름", "영업활동으로 인한 현금흐름"),
+    ),
+    "Total Equity": MetricDefinition(
+        metric_key="total_equity",
+        display_name="Total Equity",
+        source_items=("자본총계", "자본합계"),
+    ),
     "EPS": MetricDefinition(
         metric_key="eps",
         display_name="EPS",
@@ -189,6 +233,9 @@ def calculate_financial_index(
     """Calculate the requested metrics from one canonical DART JSON payload."""
 
     periods = _extract_periods(canonical_payload)
+    ttm_period = _ttm_period_metadata(periods)
+    if ttm_period:
+        periods["ttm"] = ttm_period
     period_keys = [period_key for period_key in PERIOD_KEY_ORDER if period_key in periods]
     comparison_pairs = _comparison_pairs(periods, period_keys)
     context = _CalculationContext(
@@ -212,6 +259,9 @@ def calculate_financial_index(
         "source_file": source_file,
         "index_file": index_file,
         "unit": "원",
+        "collection_context": canonical_payload.get("collection_context", {}),
+        "revenue_breakdown": canonical_payload.get("revenue_breakdown", {}),
+        "share_information": canonical_payload.get("share_information", {}),
         "periods": {period_key: periods[period_key] for period_key in period_keys},
         "comparison_pairs": comparison_pairs,
         "metric_order": agent_metric_order,
@@ -346,8 +396,33 @@ def _calculate_metric(metric_name: str, context: _CalculationContext) -> dict[st
         margin = _divide_series(ebitda, revenue, context.period_keys)
         return _period_value_metric(metric_name, "ratio", margin, context)
 
+    if metric_name == "Operating Profit":
+        operating_profit = _find_item_series(context.payload, OPERATING_PROFIT_SPEC, context.period_keys)
+        return _period_value_metric(metric_name, "원", operating_profit, context)
+
+    if metric_name == "Net Income":
+        net_income = _find_item_series(context.payload, NET_INCOME_SPEC, context.period_keys)
+        return _period_value_metric(metric_name, "원", net_income, context)
+
+    if metric_name == "Operating Cash Flow":
+        operating_cash_flow = _find_item_series(
+            context.payload,
+            OPERATING_CASH_FLOW_SPEC,
+            context.period_keys,
+        )
+        return _period_value_metric(metric_name, "원", operating_cash_flow, context)
+
+    if metric_name == "Total Equity":
+        total_equity = _find_item_series(
+            context.payload,
+            TOTAL_EQUITY_SPEC,
+            context.period_keys,
+            derive_ttm=False,
+        )
+        return _period_value_metric(metric_name, "원", total_equity, context)
+
     if metric_name == "EPS":
-        eps = _find_item_series(context.payload, EPS_SPEC, context.period_keys)
+        eps = _find_item_series(context.payload, EPS_SPEC, context.period_keys, derive_ttm=False)
         return _period_value_metric(metric_name, "원/주", eps, context)
 
     if metric_name == "PE Ratio":
@@ -496,6 +571,7 @@ def _find_item_series(
     period_keys: Iterable[str],
     *,
     combine: Literal["first", "sum"] = "first",
+    derive_ttm: bool = True,
 ) -> MetricSeries:
     numeric_by_period: dict[str, Number | None] = {period_key: None for period_key in period_keys}
     source_value_by_period: dict[str, str | None] = {period_key: None for period_key in period_keys}
@@ -540,6 +616,15 @@ def _find_item_series(
                 numeric_by_period[period_key] = None
                 source_value_by_period[period_key] = None
                 source_label_by_period[period_key] = None
+
+    if derive_ttm and "ttm" in numeric_by_period:
+        current = numeric_by_period.get("current_fiscal_year")
+        same_period = numeric_by_period.get("same_period_previous_year")
+        annual = numeric_by_period.get("previous_fiscal_year")
+        if current is not None and same_period is not None and annual is not None:
+            numeric_by_period["ttm"] = annual + current - same_period
+            source_value_by_period["ttm"] = f"{annual} + {current} - {same_period}"
+            source_label_by_period["ttm"] = "FY + Current YTD - Prior-year Same YTD"
 
     return MetricSeries(
         numeric_by_period=numeric_by_period,
@@ -669,13 +754,55 @@ def _extract_periods(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {}
 
 
+def _ttm_period_metadata(periods: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    current = periods.get("current_fiscal_year") or {}
+    same_period = periods.get("same_period_previous_year") or {}
+    annual = periods.get("previous_fiscal_year") or {}
+    if not current or not same_period or not annual:
+        return None
+    if current.get("basis") != "YTD" or same_period.get("basis") != "YTD":
+        return None
+    if annual.get("basis") != "FULL_YEAR":
+        return None
+    if current.get("period_type") != same_period.get("period_type"):
+        return None
+    return {
+        "label": f"TTM through {current.get('period_end') or 'current period'}",
+        "fiscal_year": current.get("fiscal_year"),
+        "period_type": "TTM",
+        "period_end": current.get("period_end"),
+        "basis": "TTM",
+        "derivation": "previous_fiscal_year + current_fiscal_year - same_period_previous_year",
+        "component_period_keys": [
+            "previous_fiscal_year",
+            "current_fiscal_year",
+            "same_period_previous_year",
+        ],
+    }
+
+
 def _comparison_pairs(periods: dict[str, dict[str, Any]], period_keys: list[str]) -> list[dict[str, Any]]:
     pairs: list[dict[str, Any]] = []
-    for current_key, previous_key in zip(period_keys, period_keys[1:]):
+    candidate_pairs: list[tuple[str, str]] = []
+    if "current_fiscal_year" in periods and "same_period_previous_year" in periods:
+        candidate_pairs.append(("current_fiscal_year", "same_period_previous_year"))
+
+    annual_keys = [
+        key
+        for key in ("previous_fiscal_year", "previous_fiscal_year_2", "previous_fiscal_year_3")
+        if key in periods
+    ]
+    if periods.get("current_fiscal_year", {}).get("period_type") == "ANNUAL":
+        annual_keys.insert(0, "current_fiscal_year")
+    candidate_pairs.extend(zip(annual_keys, annual_keys[1:]))
+
+    for current_key, previous_key in candidate_pairs:
         current_year = periods.get(current_key, {}).get("fiscal_year")
         previous_year = periods.get(previous_key, {}).get("fiscal_year")
-        if current_year is not None and previous_year is not None:
-            comparison_key = f"{current_year}_vs_{previous_year}"
+        current_type = periods.get(current_key, {}).get("period_type")
+        previous_type = periods.get(previous_key, {}).get("period_type")
+        if current_year is not None and previous_year is not None and current_type and previous_type:
+            comparison_key = f"{current_year}_{current_type}_vs_{previous_year}_{previous_type}"
         else:
             comparison_key = f"{current_key}_vs_{previous_key}"
         pairs.append(

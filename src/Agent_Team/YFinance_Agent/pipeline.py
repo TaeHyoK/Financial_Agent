@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from indicators import add_technical_indicators
+from valuation import collect_historical_valuation, unavailable_direct_valuation
 
 
 DEFAULT_FX_TICKER = "KRW=X"
@@ -27,6 +28,9 @@ SOURCE_LOOKBACK_YEARS = 2
 OUTPUT_COLUMNS = [
     "date",
     "stock_close",
+    "stock_adjusted_close",
+    "stock_dividends",
+    "stock_splits",
     "stock_return_5d",
     "stock_return_20d",
     "stock_return_60d",
@@ -68,6 +72,7 @@ class PipelineInput:
     end_date: date
     selected_date: date
     source_path: Path
+    selected_date_policy: str = "before_market_open"
 
 
 @dataclass(frozen=True)
@@ -78,6 +83,7 @@ class OutputPaths:
     full_json: Path
     summary_csv: Path
     summary_json: Path
+    valuation_json: Path
     manifest_json: Path
     full_period_technical_chart: Path
     full_period_macro_chart: Path
@@ -104,13 +110,16 @@ def load_pipeline_input(path: Path) -> PipelineInput:
     if not ticker:
         raise ValueError(f"Input file must include a non-empty ticker: {path}")
 
-    start_date, end_date = _resolve_date_range(payload)
-    selected_raw = str(payload.get("selected_date") or end_date.strftime("%Y%m%d"))
+    start_date, requested_end_date = _resolve_date_range(payload)
+    selected_raw = str(
+        payload.get("selected_date")
+        or (requested_end_date + timedelta(days=1)).strftime("%Y%m%d")
+    )
     selected_date = _parse_yyyymmdd(selected_raw)
-    if selected_date < start_date or selected_date > end_date:
+    end_date = min(requested_end_date, selected_date - timedelta(days=1))
+    if selected_date <= start_date or end_date < start_date:
         raise ValueError(
-            f"selected_date {selected_date.isoformat()} must be within "
-            f"{start_date.isoformat()}..{end_date.isoformat()}"
+            f"date_range must contain data before selected_date {selected_date.isoformat()}"
         )
 
     return PipelineInput(
@@ -120,6 +129,7 @@ def load_pipeline_input(path: Path) -> PipelineInput:
         end_date=end_date,
         selected_date=selected_date,
         source_path=path,
+        selected_date_policy="before_market_open",
     )
 
 
@@ -166,10 +176,24 @@ def run_pipeline(
     full_json = output_dir / "market_full_dataset.json"
     summary_csv = output_dir / f"market_summary_{pipeline_input.selected_date.strftime('%Y%m%d')}.csv"
     summary_json = output_dir / f"market_summary_{pipeline_input.selected_date.strftime('%Y%m%d')}.json"
+    valuation_json = output_dir / "valuation_snapshot.json"
     manifest_json = output_dir / "manifest.json"
 
     write_dataframe_outputs(full, csv_path=full_csv, json_path=full_json)
     write_dataframe_outputs(summary.frame, csv_path=summary_csv, json_path=summary_json)
+    try:
+        valuation = collect_historical_valuation(
+            pipeline_input.ticker,
+            selected_date=pipeline_input.selected_date,
+        )
+    except Exception as exc:  # provider failures must not discard valid OHLCV output
+        logger.warning("Historical valuation collection unavailable: %s", type(exc).__name__)
+        valuation = unavailable_direct_valuation(
+            ticker=pipeline_input.ticker,
+            selected_date=pipeline_input.selected_date,
+            reason="provider_request_failed",
+        )
+    _write_json_payload(valuation_json, valuation)
 
     technical_chart = charts_dir / "full_period_technical.png"
     macro_chart = charts_dir / "full_period_kospi_fx.png"
@@ -183,6 +207,7 @@ def run_pipeline(
         full_json=full_json,
         summary_csv=summary_csv,
         summary_json=summary_json,
+        valuation_json=valuation_json,
         manifest_json=manifest_json,
         full_period_technical_chart=technical_chart,
         full_period_macro_chart=macro_chart,
@@ -225,7 +250,7 @@ def download_market_data(
             end=end_exclusive.isoformat(),
             auto_adjust=False,
             progress=False,
-            actions=False,
+            actions=True,
             threads=True,
         )
         normalized = normalize_ohlcv_frame(frame)
@@ -249,7 +274,9 @@ def normalize_ohlcv_frame(frame: pd.DataFrame) -> pd.DataFrame:
     """Normalize yfinance output into lowercase OHLCV columns indexed by date."""
 
     if frame.empty:
-        return pd.DataFrame(columns=["open", "high", "low", "close", "adj_close", "volume"])
+        return pd.DataFrame(
+            columns=["open", "high", "low", "close", "adj_close", "volume", "dividends", "stock_splits"]
+        )
 
     normalized = frame.copy()
     if isinstance(normalized.columns, pd.MultiIndex):
@@ -257,17 +284,30 @@ def normalize_ohlcv_frame(frame: pd.DataFrame) -> pd.DataFrame:
 
     rename_map = {str(column).strip().lower().replace(" ", "_"): column for column in normalized.columns}
     output = pd.DataFrame(index=pd.to_datetime(normalized.index).tz_localize(None).normalize())
-    for expected in ["open", "high", "low", "close", "adj_close", "volume"]:
+    for expected in [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume",
+        "dividends",
+        "stock_splits",
+    ]:
         source = rename_map.get(expected)
         if source is None:
             output[expected] = pd.NA
         else:
             output[expected] = pd.to_numeric(normalized[source], errors="coerce")
 
-    if output["adj_close"].isna().all():
+    adjusted_close_available = not output["adj_close"].isna().all()
+    if not adjusted_close_available:
         output["adj_close"] = output["close"]
     if output["volume"].isna().all():
         output["volume"] = 0
+    output["dividends"] = output["dividends"].fillna(0.0)
+    output["stock_splits"] = output["stock_splits"].fillna(0.0)
+    output.attrs["adjusted_close_source"] = "provider" if adjusted_close_available else "raw_close_fallback"
 
     return output.sort_index()
 
@@ -280,8 +320,19 @@ def build_full_dataset(
     """Join stock, KOSPI, and FX features into the normalized output schema."""
 
     calculation_index = frames["stock"].index
-    stock_features = add_technical_indicators(frames["stock"])
-    kospi_features = add_technical_indicators(frames["kospi"].reindex(calculation_index).ffill())
+    stock_input = frames["stock"].copy()
+    if "adj_close" not in stock_input:
+        stock_input["adj_close"] = stock_input["close"]
+    for action_column in ("dividends", "stock_splits"):
+        if action_column not in stock_input:
+            stock_input[action_column] = 0.0
+    stock_input["analysis_close"] = stock_input["adj_close"]
+    stock_features = add_technical_indicators(stock_input, close_col="analysis_close")
+    kospi_input = frames["kospi"].reindex(calculation_index).ffill()
+    if "adj_close" not in kospi_input:
+        kospi_input["adj_close"] = kospi_input["close"]
+    kospi_input["analysis_close"] = kospi_input["adj_close"]
+    kospi_features = add_technical_indicators(kospi_input, close_col="analysis_close")
     fx_features = add_technical_indicators(frames["fx_usdkrw"].reindex(calculation_index).ffill())
 
     output_mask = (calculation_index.date >= pipeline_input.start_date) & (
@@ -298,6 +349,9 @@ def build_full_dataset(
     full["date"] = full.index.strftime("%Y-%m-%d")
 
     full["stock_close"] = stock_output["close"]
+    full["stock_adjusted_close"] = stock_output["adj_close"]
+    full["stock_dividends"] = stock_output["dividends"]
+    full["stock_splits"] = stock_output["stock_splits"]
     full["stock_return_5d"] = stock_output["return_5d"]
     full["stock_return_20d"] = stock_output["return_20d"]
     full["stock_return_60d"] = stock_output["return_60d"]
@@ -332,18 +386,18 @@ def build_full_dataset(
     kospi_strength = 1.0 + kospi_output["return_60d"]
     full["stock_relative_strength_60"] = stock_strength / kospi_strength.replace(0, pd.NA) - 1.0
 
-    return full.reset_index(drop=True)[OUTPUT_COLUMNS]
+    result = full.reset_index(drop=True)[OUTPUT_COLUMNS]
+    result.attrs["stock_adjusted_close_source"] = frames["stock"].attrs.get(
+        "adjusted_close_source",
+        "unknown",
+    )
+    return result
 
 
 def build_summary_dataset(full: pd.DataFrame, *, selected_date: date) -> SummaryResult:
-    """Return one summary row for selected_date, or the latest prior trading date."""
+    """Return the latest trading row strictly before a pre-open selected date."""
 
     target = selected_date.isoformat()
-    exact = full.loc[full["date"] == target].copy()
-    if not exact.empty:
-        frame = exact.head(1).reset_index(drop=True)
-        return SummaryResult(frame=frame, requested_date=target, actual_date=target, match_type="exact")
-
     prior = full.loc[full["date"] < target].tail(1).copy()
     if prior.empty:
         raise RuntimeError(f"No market data exists on or before selected date {target}.")
@@ -352,7 +406,7 @@ def build_summary_dataset(full: pd.DataFrame, *, selected_date: date) -> Summary
         frame=frame,
         requested_date=target,
         actual_date=str(frame.iloc[0]["date"]),
-        match_type="previous_trading_day",
+        match_type="latest_trading_day_before_selected_date",
     )
 
 
@@ -362,6 +416,12 @@ def write_dataframe_outputs(frame: pd.DataFrame, *, csv_path: Path, json_path: P
     frame.to_csv(csv_path, index=False, encoding="utf-8")
     with json_path.open("w", encoding="utf-8") as file:
         json.dump(_json_records(frame), file, ensure_ascii=False, indent=2, allow_nan=False)
+        file.write("\n")
+
+
+def _write_json_payload(path: Path, payload: dict[str, Any]) -> None:
+    with path.open("w", encoding="utf-8") as file:
+        json.dump(payload, file, ensure_ascii=False, indent=2, allow_nan=False)
         file.write("\n")
 
 
@@ -391,12 +451,23 @@ def write_manifest(
             "end": pipeline_input.end_date.isoformat(),
         },
         "selected_date": pipeline_input.selected_date.isoformat(),
+        "selected_date_policy": pipeline_input.selected_date_policy,
+        "information_cutoff_date": (pipeline_input.selected_date - timedelta(days=1)).isoformat(),
         "summary_requested_date": summary.requested_date,
         "summary_actual_date": summary.actual_date,
         "summary_date_match": summary.match_type,
         "kospi_ticker": kospi_ticker,
         "fx_ticker": fx_ticker,
         "row_count": int(len(full)),
+        "price_basis": {
+            "valuation_and_display": "raw_close",
+            "returns_and_technical_indicators": "adjusted_close",
+            "adjusted_close_source": full.attrs.get("stock_adjusted_close_source", "unknown"),
+        },
+        "corporate_actions": {
+            "dividend_event_count": int((pd.to_numeric(full["stock_dividends"], errors="coerce").fillna(0) != 0).sum()),
+            "split_event_count": int((pd.to_numeric(full["stock_splits"], errors="coerce").fillna(0) != 0).sum()),
+        },
         "columns": OUTPUT_COLUMNS,
         "outputs": {key: str(value) for key, value in paths.__dict__.items()},
     }
@@ -417,7 +488,13 @@ def plot_full_period_technical(
     fig, axes = plt.subplots(4, 1, figsize=(14, 12), sharex=True, gridspec_kw={"height_ratios": [3, 1, 1, 1]})
     fig.suptitle(f"{pipeline_input.ticker} Technical Indicators", fontsize=14)
 
-    axes[0].plot(data.index, data["stock_close"], label="Close", color="#1f77b4", linewidth=1.5)
+    axes[0].plot(
+        data.index,
+        data["stock_adjusted_close"],
+        label="Adjusted Close",
+        color="#1f77b4",
+        linewidth=1.5,
+    )
     axes[0].set_ylabel("Price")
     axes[0].legend(loc="upper left", fontsize=9)
     axes[0].grid(True, alpha=0.25)
@@ -460,7 +537,7 @@ def plot_full_period_macro(
     fig, axes = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
     fig.suptitle(f"{pipeline_input.ticker} vs KOSPI and USD/KRW", fontsize=14)
 
-    normalized_stock = _normalize_to_100(data["stock_close"])
+    normalized_stock = _normalize_to_100(data["stock_adjusted_close"])
     normalized_kospi = _normalize_to_100(data["kospi_close"])
     normalized_fx = _normalize_to_100(data["fx_close"])
 

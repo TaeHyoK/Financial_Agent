@@ -41,6 +41,11 @@ def main() -> None:
         help="Supporting News period summaries JSON.",
     )
     parser.add_argument(
+        "--valuation-json",
+        default=None,
+        help="Point-in-time YFinance valuation snapshot JSON.",
+    )
+    parser.add_argument(
         "--report-md",
         default=str(DEFAULT_REPORT_MD),
         help="Markdown report output path.",
@@ -62,6 +67,11 @@ def main() -> None:
         default=str(DEFAULT_ENV_PATH),
         help="Env file to load before calling OpenAI.",
     )
+    parser.add_argument(
+        "--primary-data-only",
+        action="store_true",
+        help="Use YFinance market/provider data only and omit DART/News subdata.",
+    )
     parser.add_argument("--log-level", default="INFO", help="Python logging level.")
     args = parser.parse_args()
 
@@ -73,11 +83,13 @@ def main() -> None:
         market_json=Path(args.market_json).expanduser().resolve(),
         dart_json=Path(args.dart_json).expanduser().resolve(),
         news_json=Path(args.news_json).expanduser().resolve(),
+        valuation_json=Path(args.valuation_json).expanduser().resolve() if args.valuation_json else None,
         report_md=Path(args.report_md).expanduser().resolve(),
         report_json=Path(args.report_json).expanduser().resolve(),
         company_name=args.company_name,
         ticker=args.ticker,
         model=args.model,
+        primary_data_only=args.primary_data_only,
     )
     for name, path in paths.__dict__.items():
         logger.info("Wrote %s: %s", name, path)

@@ -3,7 +3,7 @@ inputs_root: "Output_total/News/inputs"
 
 news:
   collector: "google_news_rss"
-  collection_days: 365
+  collection_days: 14
   query_language: "ko"
   max_results: 200
   dedup_on_url: true

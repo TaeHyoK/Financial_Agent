@@ -71,8 +71,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     logger = logging.getLogger("peer_comparison_agent")
     logger.info("Wrote peer comparison dataset: %s", paths.dataset_json)
-    logger.info("Wrote peer positioning summary: %s", paths.positioning_json)
-    logger.info("Wrote peer comparison markdown: %s", paths.summary_md)
     return 0
 
 

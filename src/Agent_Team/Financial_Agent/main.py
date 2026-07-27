@@ -22,19 +22,23 @@ try:
     )
     from .dart_client import DartClient
     from .financial_index_calculator import calculate_financial_index_files
-    from .handoff_builder import build_2y_handoff, build_master_canonical
-    from .models import Filing, PipelineInput, SectionMap, TargetReport
+    from .handoff_builder import build_master_canonical, build_trend_canonical
+    from .models import Filing, PipelineInput, TargetReport
     from .normalizer import normalize_primary_report
-    from .report_resolver import build_targets, load_pipeline_input, resolve_reports
+    from .revenue_breakdown_extractor import extract_revenue_breakdown
+    from .report_resolver import build_primary_target, load_pipeline_input, resolve_report_set
     from .section_extractor import extract_section_four
+    from .share_information_extractor import extract_share_information
 except ImportError:  # pragma: no cover - supports direct script execution
     from dart_client import DartClient
     from financial_index_calculator import calculate_financial_index_files
-    from handoff_builder import build_2y_handoff, build_master_canonical
-    from models import Filing, PipelineInput, SectionMap, TargetReport
+    from handoff_builder import build_master_canonical, build_trend_canonical
+    from models import Filing, PipelineInput, TargetReport
     from normalizer import normalize_primary_report
-    from report_resolver import build_targets, load_pipeline_input, resolve_reports
+    from revenue_breakdown_extractor import extract_revenue_breakdown
+    from report_resolver import build_primary_target, load_pipeline_input, resolve_report_set
     from section_extractor import extract_section_four
+    from share_information_extractor import extract_share_information
     AGENT_DIR = Path(__file__).resolve().parent
     PROJECT_ROOT = AGENT_DIR.parents[2]
     DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "company_input.json"
@@ -96,28 +100,43 @@ def main() -> None:
     api_key = os.getenv("DART_API_KEY", "").strip()
     client = DartClient(api_key, max_retries=pipeline_input.max_retries, logger=logger)
 
-    primary_target, secondary_target = build_targets(pipeline_input.selected_date)
+    primary_target = build_primary_target(pipeline_input.selected_date)
     logger.info(
-        "Resolved theoretical targets: primary=%s %s, secondary=%s %s",
+        "Resolved theoretical target: primary=%s %s",
         primary_target.period_type,
         primary_target.period_end.isoformat(),
-        secondary_target.period_type,
-        secondary_target.period_end.isoformat(),
     )
 
-    resolved = resolve_reports(
+    resolved = resolve_report_set(
         client=client,
         company_code=pipeline_input.company_code,
-        primary_target=primary_target,
-        secondary_target=secondary_target,
+        selected_date=pipeline_input.selected_date,
     )
     for role, (target, filing) in resolved.items():
         logger.info("%s filing: %s %s %s", role, filing.rcept_dt, filing.rcept_no, filing.report_nm)
 
     collected = _collect_parallel(client, resolved)
     matrix_master = _build_matrix_master(collected)
-    master = build_master_canonical(matrix_master, secondary_target)
-    handoff = build_2y_handoff(matrix_master, secondary_target)
+    master = build_trend_canonical(
+        matrix_master,
+        resolved,
+        selected_date=pipeline_input.selected_date,
+        theoretical_target=primary_target,
+        annual_history_limit=3,
+    )
+    handoff = build_trend_canonical(
+        matrix_master,
+        resolved,
+        selected_date=pipeline_input.selected_date,
+        theoretical_target=primary_target,
+        annual_history_limit=1,
+    )
+    revenue_breakdown = collected.get("primary", {}).get("revenue_breakdown") or {}
+    share_information = collected.get("primary", {}).get("share_information") or {}
+    master["revenue_breakdown"] = revenue_breakdown
+    handoff["revenue_breakdown"] = revenue_breakdown
+    master["share_information"] = share_information
+    handoff["share_information"] = share_information
 
     output_dir = _resolve_output_dir(args.output_dir, pipeline_input)
     financial_index_path = Path(args.financial_index).expanduser().resolve()
@@ -131,23 +150,38 @@ def main() -> None:
     )
 
 
-def collect_report(client: DartClient, target: TargetReport, filing: Filing) -> dict[str, SectionMap]:
+def collect_report(client: DartClient, target: TargetReport, filing: Filing) -> dict[str, Any]:
     """Fetch, extract, and normalize one resolved report."""
 
     xml_text = client.fetch_document_xml(rcept_no=filing.rcept_no)
     raw = extract_section_four(xml_text)
-    if target.role == "primary":
+    if target.is_periodic:
         normalized = normalize_primary_report(raw, target)
     else:
         normalized = json.loads(json.dumps(raw, ensure_ascii=False))
-    return {"raw": raw, "normalized": normalized}
+    revenue_breakdown = (
+        extract_revenue_breakdown(xml_text, target=target, filing=filing)
+        if target.role == "primary"
+        else {}
+    )
+    share_information = (
+        extract_share_information(xml_text, target=target, filing=filing)
+        if target.role == "primary"
+        else {}
+    )
+    return {
+        "raw": raw,
+        "normalized": normalized,
+        "revenue_breakdown": revenue_breakdown,
+        "share_information": share_information,
+    }
 
 
 def _collect_parallel(
     client: DartClient,
     resolved: dict[str, tuple[TargetReport, Filing]],
-) -> dict[str, dict[str, SectionMap]]:
-    results: dict[str, dict[str, SectionMap]] = {}
+) -> dict[str, dict[str, Any]]:
+    results: dict[str, dict[str, Any]] = {}
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = {
             executor.submit(collect_report, client, target, filing): role
@@ -159,18 +193,18 @@ def _collect_parallel(
     return results
 
 
-def _build_master(collected: dict[str, dict[str, SectionMap]], secondary_target: TargetReport) -> dict[str, Any]:
+def _build_master(collected: dict[str, dict[str, Any]], secondary_target: TargetReport) -> dict[str, Any]:
     """Build the four-year canonical master payload."""
 
     return build_master_canonical(_build_matrix_master(collected), secondary_target)
 
 
-def _build_matrix_master(collected: dict[str, dict[str, SectionMap]]) -> dict[str, Any]:
+def _build_matrix_master(collected: dict[str, dict[str, Any]]) -> dict[str, Any]:
     """Build the internal matrix master used only as canonicalization input."""
 
     return {
-        "primary": collected["primary"]["normalized"],
-        "secondary": collected["secondary"]["normalized"],
+        role: payload["normalized"]
+        for role, payload in collected.items()
     }
 
 

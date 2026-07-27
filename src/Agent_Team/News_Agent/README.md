@@ -76,17 +76,16 @@ News SY Agent output:
 
 ```text
 sy_agent/sy_claim_validations.json
-sy_agent/sy_question_answer_log.json
 sy_agent/sy_audit_trace.json
-sy_agent/critic_queue.json
+sy_agent/news_agent_verified_handoff.json
 ```
 
-News SY는 LangGraph 안에서 `Q1/A1 -> Q2/A2 -> SY evaluation`을 수행합니다. 모든 claim이 `keep`이 아니면 `Revision Brief`가 SY 질문/답변과 평가 이유를 재작성 지시로 정리하고, `news_agent_handoff.output`을 한 번 자연스럽게 다시 작성합니다. 재작성된 output은 다시 SY 검증하지 않고 바로 최종 산출물로 저장합니다.
+News SY는 날짜·수치·evidence catalog 정합성을 코드로 검사한 뒤, 모든 적격 claim을 한 번의 semantic batch로 평가합니다. 결과는 `strong`, `context_only`, `exclude` 근거 사용 계약으로 저장하며 원 News handoff 문장은 재작성하지 않습니다.
 
 상위 레이어가 기본으로 읽을 파일:
 
 ```text
-Output_total/News/{run_key}/output/news_agent_handoff.json
+Output_total/News/{run_key}/output/sy_agent/news_agent_verified_handoff.json
 Output_total/News/{run_key}/output/sy_agent/sy_claim_validations.json
 ```
 
@@ -114,9 +113,7 @@ PYTHONPATH=src python -m Agent_Team.News_Agent.cli \
 
 - `usage`: News Agent LLM 토큰 사용량
 - `output.analysis_blocks.news_only`
-- `output.analysis_blocks.news_plus_financial`
-- `output.analysis_blocks.news_plus_market`
-- `output.analysis_blocks.news_plus_financial_plus_market`
+- `output.secondary_context_assessment`
 - `output.evidence_map_path`
 
 `sy_claim_validations.json`:
@@ -125,13 +122,14 @@ PYTHONPATH=src python -m Agent_Team.News_Agent.cli \
 - `claim_validations`
 - `llm_usage`
 
-판정값:
+primary News claim 판정값:
 
 ```text
-supported -> keep
-weakly_supported -> revise
-unsupported -> hallucination_candidate
-contradicted -> remove
+strong
+context_only
+exclude
 ```
+
+Financial/Market 보조 문맥은 `framing_and_limitation_only`로 유지되며 News 사건의 직접 증거나 인과 근거로 사용되지 않습니다.
 
 News/SY Agent는 최종 투자 판단을 생성하지 않습니다.

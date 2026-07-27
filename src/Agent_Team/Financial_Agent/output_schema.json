@@ -11,10 +11,14 @@
     "ticker",
     "corp_code",
     "as_of_date",
+    "collection_context",
+    "financial_trends",
+    "revenue_breakdown",
+    "share_information",
     "main_view",
     "financial_statement_view",
     "detailed_analysis",
-    "cross_data_reconciliation",
+    "secondary_context",
     "sy_handoff"
   ],
   "properties": {
@@ -35,6 +39,22 @@
     },
     "as_of_date": {
       "type": "string"
+    },
+    "collection_context": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "financial_trends": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "revenue_breakdown": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "share_information": {
+      "type": "object",
+      "additionalProperties": true
     },
     "main_view": {
       "type": "object",
@@ -83,7 +103,6 @@
         "profitability",
         "cost_efficiency",
         "eps",
-        "risk_context",
         "cash_flow",
         "balance_sheet",
         "capital_structure",
@@ -101,9 +120,6 @@
           "$ref": "#/$defs/statement_view"
         },
         "eps": {
-          "$ref": "#/$defs/statement_view"
-        },
-        "risk_context": {
           "$ref": "#/$defs/statement_view"
         },
         "cash_flow": {
@@ -131,7 +147,6 @@
         "margin",
         "expense_efficiency",
         "eps",
-        "risk_and_context",
         "cash_flow",
         "balance_sheet",
         "capital_structure",
@@ -151,9 +166,6 @@
         "eps": {
           "$ref": "#/$defs/detailed_item"
         },
-        "risk_and_context": {
-          "$ref": "#/$defs/detailed_item"
-        },
         "cash_flow": {
           "$ref": "#/$defs/detailed_item"
         },
@@ -171,27 +183,19 @@
         }
       }
     },
-    "cross_data_reconciliation": {
+    "secondary_context": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "main_analysis",
-        "news_plus_dart",
-        "market_plus_dart",
-        "market_plus_news_plus_dart"
+        "news",
+        "market"
       ],
       "properties": {
-        "main_analysis": {
-          "$ref": "#/$defs/cross_analysis_section"
+        "news": {
+          "$ref": "#/$defs/secondary_context_domain"
         },
-        "news_plus_dart": {
-          "$ref": "#/$defs/cross_analysis_section"
-        },
-        "market_plus_dart": {
-          "$ref": "#/$defs/cross_analysis_section"
-        },
-        "market_plus_news_plus_dart": {
-          "$ref": "#/$defs/cross_analysis_section"
+        "market": {
+          "$ref": "#/$defs/secondary_context_domain"
         }
       }
     },
@@ -272,48 +276,61 @@
         }
       }
     },
-    "cross_analysis_section": {
+    "secondary_context_domain": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "summary",
-        "reaction_points",
-        "divergences"
+        "status",
+        "evidence_catalog"
       ],
       "properties": {
-        "summary": {
-          "type": "string"
+        "status": {
+          "enum": [
+            "available",
+            "unavailable"
+          ]
         },
-        "reaction_points": {
+        "claims": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/cross_analysis_item"
+            "type": "object",
+            "additionalProperties": true
           }
         },
-        "divergences": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/cross_analysis_item"
+        "evidence_catalog": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/secondary_evidence"
           }
         }
       }
     },
-    "cross_analysis_item": {
+    "secondary_evidence": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": [
-        "point",
-        "cross_analysis",
-        "reaction_interpretation"
+        "evidence_id",
+        "domain",
+        "origin_type",
+        "source_ref"
       ],
       "properties": {
-        "point": {
+        "evidence_id": {
           "type": "string"
         },
-        "cross_analysis": {
-          "type": "string"
+        "domain": {
+          "enum": [
+            "news",
+            "market"
+          ]
         },
-        "reaction_interpretation": {
+        "origin_type": {
+          "enum": [
+            "raw_source",
+            "deterministic_derived"
+          ]
+        },
+        "source_ref": {
           "type": "string"
         }
       }
@@ -327,7 +344,6 @@
         "financial_dimension",
         "status",
         "dart_anchor_summary_ko",
-        "context_summary_ko",
         "caution_ko",
         "action_for_sy"
       ],
@@ -346,6 +362,7 @@
             "eps",
             "earnings_quality",
             "valuation_context",
+            "financial_position",
             "risk"
           ]
         },
@@ -359,9 +376,6 @@
           ]
         },
         "dart_anchor_summary_ko": {
-          "type": "string"
-        },
-        "context_summary_ko": {
           "type": "string"
         },
         "caution_ko": {
@@ -416,6 +430,7 @@
             "YTD",
             "QUARTER",
             "FULL_YEAR",
+            "TTM",
             "POINT_IN_TIME",
             "context_only"
           ]

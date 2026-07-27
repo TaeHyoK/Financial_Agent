@@ -2,27 +2,123 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import tempfile
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib import error, request
 
+from shared.llm_clients import compact_json, execute_with_telemetry, is_transient_transport_error
+from orchestration.ablation import config_from_mapping
+
 from . import AGENT_DIR, DEFAULT_TARGET_CONFIG, OUTPUT_ROOT
+from .contracts_v2 import (
+    DECISION_VERSION,
+    STRATEGY_CACHE_VERSION,
+    build_compact_strategy_packet_v2,
+    finalize_strategy_decision_v2,
+    strategy_decision_response_format_v2,
+    validate_strategy_decision_v2,
+)
 
 
-OUTPUT_VERSION = "2.0"
-BASIS_CARD_VERSION = "1.1"
+OUTPUT_VERSION = "4.0"
+BASIS_CARD_VERSION = "1.2"
 DECISION_BASIS_VERSION = "1.0"
 PROMPTS_DIR = AGENT_DIR / "prompts"
 DEFAULT_ENV_FILE = AGENT_DIR.parents[2] / "configs" / ".env"
-DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
-DEFAULT_OPENAI_MAX_TOKENS = 12000
+DEFAULT_OPENAI_MODEL = "gpt-5.4"
+DEFAULT_OPENAI_MAX_TOKENS = 20000
 FINAL_RECOMMENDATIONS = {"Buy", "Hold", "Sell"}
-VALIDATION_ANSWER_CHAR_LIMIT = 900
-VALIDATION_REASON_CHAR_LIMIT = 500
+DEFAULT_DECISION_HORIZON_PROFILE = "default"
+DECISION_HORIZON_PROFILES = {
+    "default": {
+        "horizon": "6~12개월",
+        "policy": (
+            "- 향후 6~12개월 관점에서 판단한다. 중기 실적 지속성, 현금흐름, 현재 가격과 밸류에이션, "
+            "확인 가능한 촉매·위험을 균형 있게 본다.\n"
+            "- `decision.horizon`은 정확히 `6~12개월`로 반환한다."
+        ),
+    },
+    "unspecified": {
+        "horizon": "기간 미지정",
+        "policy": (
+            "- 특정 보유기간을 미리 가정하지 않는다. 현재 입력 근거가 보여주는 전반적인 투자 매력과 "
+            "위험의 균형만 판단하며, 임의의 기간 때문에 특정 근거의 중요도를 높이거나 낮추지 않는다.\n"
+            "- `decision.horizon`은 정확히 `기간 미지정`으로 반환한다."
+        ),
+    },
+    "short_term": {
+        "horizon": "1개월",
+        "policy": (
+            "- 향후 1개월 단기 관점에서 판단한다. 최근 가격·거래량·KOSPI 상대성과, 현재 밸류에이션과 "
+            "기간 안에 확인 가능한 촉매·위험을 우선한다. 장기 사업 가능성과 재무 기여가 확인되지 않은 "
+            "뉴스는 보조 문맥으로만 사용한다.\n"
+            "- `decision.horizon`은 정확히 `1개월`로 반환한다."
+        ),
+    },
+    "medium_term": {
+        "horizon": "3개월",
+        "policy": (
+            "- 향후 3개월 중기 관점에서 판단한다. 최근 시장 흐름과 밸류에이션을 보되 다음 실적 확인과 "
+            "구체화 가능한 촉매·위험, 실적 및 현금흐름의 지속 가능성을 함께 평가한다. 재무 기여가 "
+            "확인되지 않은 기대는 결정적 근거로 승격하지 않는다.\n"
+            "- `decision.horizon`은 정확히 `3개월`로 반환한다."
+        ),
+    },
+    "long_term": {
+        "horizon": "6개월",
+        "policy": (
+            "- 향후 6개월 장기 관점에서 판단한다. 단기 가격 변동보다 실적 개선의 지속성, 현금창출력, "
+            "재무구조, 제품 집중도, 경쟁 위치와 사업 실행 가능성을 우선한다. 뉴스는 기간 안에 사업·재무 "
+            "성과로 연결될 근거가 있을 때만 방향 판단에 사용한다.\n"
+            "- `decision.horizon`은 정확히 `6개월`로 반환한다."
+        ),
+    },
+}
+CONTENT_PLAN_SECTIONS = (
+    "investment_thesis",
+    "financial_view",
+    "business_mix_view",
+    "catalyst_view",
+    "risk_view",
+    "market_price_view",
+    "valuation_view",
+    "cross_agent_consistency_check",
+    "peer_competitor_positioning",
+    "decision_balance",
+    "limitations",
+)
+DECISION_REFERENCE_SECTIONS = (
+    "final_recommendation",
+    "investment_thesis",
+    "financial_view",
+    "business_mix_view",
+    "catalyst_view",
+    "risk_view",
+    "market_price_view",
+    "valuation_view",
+    "cross_agent_consistency_check",
+    "peer_competitor_positioning",
+    "decision_balance",
+    "final_rationale",
+    "limitations",
+)
+BASIS_SOURCE_ROOTS = (
+    "claim_ledger",
+    "evidence_catalog",
+    "secondary_context_assessments",
+    "structured_facts",
+    "peer_metric_catalog",
+    "peer_context",
+    "limitations",
+    "decision_constraints",
+)
 
 
 def run_strategy_agent(
@@ -32,14 +128,88 @@ def run_strategy_agent(
     target_financial_path: Path,
     target_news_path: Path,
     target_yfinance_path: Path,
-    competitor_report_paths: list[Path],
     output_dir: Path,
+    peer_comparison_path: Path | None = None,
     llm_provider: str = "openai",
     llm_model: str = "auto",
     llm_timeout: int = 120,
     env_file: Path | None = DEFAULT_ENV_FILE,
+    packet_version: str | None = None,
+    emit_v2_shadow_artifacts: bool | None = None,
+    ablation_config: dict[str, Any] | None = None,
+    decision_horizon_profile: str = DEFAULT_DECISION_HORIZON_PROFILE,
 ) -> dict[str, Any]:
-    """Run Strategy Agent and write strategy outputs."""
+    """Run the selected Strategy contract without mixing v1 and v2 downstream inputs."""
+
+    version = (packet_version or os.getenv("STRATEGY_PACKET_VERSION") or "v2").strip().lower()
+    if version not in {"v1", "v2"}:
+        raise ValueError("packet_version must be v1 or v2.")
+    if version == "v2":
+        return _run_strategy_agent_v2(
+            target_company_name=target_company_name,
+            target_run_key=target_run_key,
+            target_financial_path=target_financial_path,
+            target_news_path=target_news_path,
+            target_yfinance_path=target_yfinance_path,
+            output_dir=output_dir,
+            peer_comparison_path=peer_comparison_path,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            llm_timeout=llm_timeout,
+            env_file=env_file,
+            ablation_config=ablation_config,
+            decision_horizon_profile=decision_horizon_profile,
+        )
+    if decision_horizon_profile != DEFAULT_DECISION_HORIZON_PROFILE:
+        raise ValueError("decision_horizon_profile is supported only by packet_version=v2.")
+    report = _run_strategy_agent_v1(
+        target_company_name=target_company_name,
+        target_run_key=target_run_key,
+        target_financial_path=target_financial_path,
+        target_news_path=target_news_path,
+        target_yfinance_path=target_yfinance_path,
+        output_dir=output_dir,
+        peer_comparison_path=peer_comparison_path,
+        llm_provider=llm_provider,
+        llm_model=llm_model,
+        llm_timeout=llm_timeout,
+        env_file=env_file,
+        ablation_config=ablation_config,
+    )
+    shadow = emit_v2_shadow_artifacts
+    if shadow is None:
+        shadow = os.getenv("EMIT_STRATEGY_V2_SHADOW_ARTIFACTS", "").strip().lower() in {"1", "true", "yes"}
+    if shadow:
+        _emit_v2_shadow_artifacts(
+            target_company_name=target_company_name,
+            target_run_key=target_run_key,
+            target_financial_path=target_financial_path,
+            target_news_path=target_news_path,
+            target_yfinance_path=target_yfinance_path,
+            output_dir=output_dir,
+            peer_comparison_path=peer_comparison_path,
+            llm_model=llm_model,
+            ablation_config=ablation_config,
+        )
+    return report
+
+
+def _run_strategy_agent_v1(
+    *,
+    target_company_name: str,
+    target_run_key: str,
+    target_financial_path: Path,
+    target_news_path: Path,
+    target_yfinance_path: Path,
+    output_dir: Path,
+    peer_comparison_path: Path | None = None,
+    llm_provider: str = "openai",
+    llm_model: str = "auto",
+    llm_timeout: int = 120,
+    env_file: Path | None = DEFAULT_ENV_FILE,
+    ablation_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run the deprecated two-call Strategy contract for rollback only."""
 
     if env_file:
         load_env_file(env_file)
@@ -53,29 +223,73 @@ def run_strategy_agent(
         target_financial_path=target_financial_path,
         target_news_path=target_news_path,
         target_yfinance_path=target_yfinance_path,
-        competitor_report_paths=competitor_report_paths,
+        peer_comparison_path=peer_comparison_path,
+        ablation_config=ablation_config,
     )
     validate_input_bundle(input_bundle)
     save_json(output_dir / "strategy_input_bundle.json", input_bundle)
+    llm_packet = build_strategy_llm_packet(input_bundle)
+    save_json(output_dir / "strategy_llm_packet.json", llm_packet)
 
-    content_plan = run_content_planner(
-        input_bundle,
+    content_plan_path = output_dir / "strategy_content_plan.json"
+    content_plan_cache_path = output_dir / "strategy_content_plan_cache.json"
+    planner_fingerprint = content_plan_fingerprint(
+        llm_packet,
         llm_provider=llm_provider,
         llm_model=llm_model,
-        llm_timeout=llm_timeout,
     )
-    validate_content_plan(content_plan)
-    save_json(output_dir / "strategy_content_plan.json", content_plan)
+    content_plan = load_cached_content_plan(
+        content_plan_path,
+        content_plan_cache_path,
+        planner_fingerprint,
+    )
+    if content_plan is None:
+        content_plan = run_content_planner(
+            llm_packet,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            llm_timeout=llm_timeout,
+        )
+        content_plan = normalize_content_plan(content_plan)
+        validate_content_plan(content_plan, llm_packet=llm_packet)
+        save_json(content_plan_path, content_plan)
+        save_json(content_plan_cache_path, {"fingerprint": planner_fingerprint})
+    else:
+        validate_content_plan(content_plan, llm_packet=llm_packet)
 
-    strategy_output = run_decision_agent(
-        input_bundle,
+    decision_packet = build_strategy_decision_packet(llm_packet, content_plan)
+    save_json(output_dir / "strategy_decision_packet.json", decision_packet)
+    decision_output_path = output_dir / "strategy_decision_output.json"
+    decision_cache_path = output_dir / "strategy_decision_cache.json"
+    decision_fp = decision_fingerprint(
+        decision_packet,
         content_plan,
         llm_provider=llm_provider,
         llm_model=llm_model,
-        llm_timeout=llm_timeout,
     )
-    strategy_report, decision_basis_by_section = normalize_strategy_decision_output(strategy_output, input_bundle)
-    validate_strategy_report(strategy_report)
+    strategy_output = load_cached_llm_output(
+        decision_output_path,
+        decision_cache_path,
+        decision_fp,
+    )
+    if strategy_output is None:
+        strategy_output = run_decision_agent(
+            decision_packet,
+            content_plan,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            llm_timeout=llm_timeout,
+        )
+        save_json(decision_output_path, strategy_output)
+        save_json(decision_cache_path, {"fingerprint": decision_fp})
+    raw_report, raw_evidence_refs = split_strategy_decision_output(strategy_output)
+    strategy_report = normalize_strategy_report(raw_report, input_bundle)
+    validate_strategy_report(strategy_report, input_bundle=decision_packet)
+    decision_basis_by_section = normalize_decision_basis_by_section(
+        raw_evidence_refs,
+        strategy_report,
+        decision_packet,
+    )
     validate_decision_basis_by_section(decision_basis_by_section, strategy_report)
     decision_basis_card = build_decision_basis_card(strategy_report, decision_basis_by_section)
     validate_decision_basis_card(decision_basis_card)
@@ -84,6 +298,351 @@ def run_strategy_agent(
     save_json(output_dir / "decision_basis_by_section.json", decision_basis_by_section)
     save_json(output_dir / "decision_basis_card.json", decision_basis_card)
     return strategy_report
+
+
+def _run_strategy_agent_v2(
+    *,
+    target_company_name: str,
+    target_run_key: str,
+    target_financial_path: Path,
+    target_news_path: Path,
+    target_yfinance_path: Path,
+    output_dir: Path,
+    peer_comparison_path: Path | None,
+    llm_provider: str,
+    llm_model: str,
+    llm_timeout: int,
+    env_file: Path | None,
+    ablation_config: dict[str, Any] | None,
+    decision_horizon_profile: str,
+) -> dict[str, Any]:
+    """Run the one-call self-contained Strategy contract."""
+
+    if env_file:
+        load_env_file(env_file)
+    profile = resolve_decision_horizon_profile(decision_horizon_profile)
+    output_dir = output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    input_bundle = build_strategy_input_bundle(
+        target_company_name=target_company_name,
+        target_run_key=target_run_key,
+        target_financial_path=target_financial_path,
+        target_news_path=target_news_path,
+        target_yfinance_path=target_yfinance_path,
+        peer_comparison_path=peer_comparison_path,
+        ablation_config=ablation_config,
+    )
+    validate_input_bundle(input_bundle)
+    save_json(output_dir / "strategy_input_bundle.json", input_bundle)
+    resolved_model = resolve_llm_model(resolve_llm_provider(llm_provider), llm_model)
+    packet, provenance, telemetry, gate_a = build_compact_strategy_packet_v2(
+        input_bundle,
+        model=resolved_model,
+    )
+    strategy_context_mode = str(
+        (input_bundle.get("ablation") or {}).get("strategy_context_mode")
+        or "compact_cards"
+    )
+    generation_payload = build_strategy_generation_payload_v2(
+        input_bundle=input_bundle,
+        compact_packet=packet,
+        context_mode=strategy_context_mode,
+    )
+    generation_prompt = decision_generation_prompt_v2(
+        decision_horizon_profile,
+        context_mode=strategy_context_mode,
+    )
+    save_json(output_dir / "strategy_compact_packet_v2.json", packet)
+    save_json(output_dir / "strategy_packet_provenance_v2.json", provenance)
+    save_json(output_dir / "strategy_generation_context_v2.json", generation_payload)
+    telemetry = {
+        **telemetry,
+        "strategy_context_mode": strategy_context_mode,
+        "generation_payload_bytes": len(compact_json(generation_payload).encode("utf-8")),
+    }
+    save_json(output_dir / "strategy_packet_telemetry_v2.json", telemetry)
+
+    decision_path = output_dir / "strategy_decision_output_v2.json"
+    cache_path = output_dir / "strategy_decision_cache_v2.json"
+    fingerprint = strategy_v2_fingerprint(
+        packet,
+        llm_provider=llm_provider,
+        llm_model=llm_model,
+        decision_horizon_profile=decision_horizon_profile,
+        generation_payload=generation_payload,
+        generation_prompt=generation_prompt,
+    )
+    decision_output = load_cached_llm_output(decision_path, cache_path, fingerprint)
+    failure_report_path = output_dir / "strategy_failure_report_v2.json"
+    if decision_output is None:
+        try:
+            decision_output = run_decision_agent_v2(
+                packet,
+                llm_provider=llm_provider,
+                llm_model=llm_model,
+                llm_timeout=llm_timeout,
+                decision_horizon_profile=decision_horizon_profile,
+                generation_payload=generation_payload,
+                generation_prompt=generation_prompt,
+            )
+        except Exception as exc:
+            save_json(
+                failure_report_path,
+                {
+                    "status": "fail",
+                    "stage": "decision_generation_or_finalize",
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                    "fingerprint": fingerprint,
+                    "decision_horizon_profile": decision_horizon_profile,
+                    "required_horizon": profile["horizon"],
+                },
+            )
+            raise
+    failed_decision_path = output_dir / "strategy_decision_output_v2.failed.json"
+    try:
+        gate_b = validate_strategy_decision_v2(
+            decision_output,
+            packet=packet,
+            provenance=provenance,
+            required_horizon=str(profile["horizon"]),
+        )
+    except ValueError as exc:
+        save_json(failed_decision_path, decision_output)
+        if cache_path.exists():
+            cache_path.unlink()
+        save_json(
+            failure_report_path,
+            {
+                "status": "fail",
+                "stage": "gate_b",
+                "error_type": type(exc).__name__,
+                "message": str(exc),
+                "fingerprint": fingerprint,
+                "decision_horizon_profile": decision_horizon_profile,
+                "required_horizon": profile["horizon"],
+                "failed_decision_path": str(failed_decision_path),
+            },
+        )
+        raise
+    if failed_decision_path.exists():
+        failed_decision_path.unlink()
+    if failure_report_path.exists():
+        failure_report_path.unlink()
+    decision_output = deepcopy(decision_output)
+    decision_output.pop("strategy_report", None)
+    strategy_report = build_strategy_report_projection_v2(
+        decision_output,
+        input_bundle=input_bundle,
+        packet=packet,
+    )
+    save_json(decision_path, decision_output)
+    save_json(cache_path, {"fingerprint": fingerprint, "contract_version": DECISION_VERSION})
+    save_json(
+        output_dir / "strategy_decision_profile_v2.json",
+        {
+            "profile": decision_horizon_profile,
+            "required_horizon": profile["horizon"],
+            "prompt_sha256": hashlib.sha256(
+                decision_prompt_v2(decision_horizon_profile).encode("utf-8")
+            ).hexdigest(),
+        },
+    )
+    save_json(
+        output_dir / "strategy_semantic_validation_v2.json",
+        {"status": "pass", "gate_a": gate_a, "gate_b": gate_b},
+    )
+    save_json(output_dir / "strategy_report.json", strategy_report)
+    save_text(
+        output_dir / "strategy_report.md",
+        render_strategy_projection_markdown_v2(strategy_report),
+    )
+    _remove_deprecated_v1_strategy_artifacts(output_dir)
+    return strategy_report
+
+
+def _remove_deprecated_v1_strategy_artifacts(output_dir: Path) -> None:
+    for filename in (
+        "strategy_content_plan.json",
+        "strategy_content_plan_cache.json",
+        "strategy_decision_output.json",
+        "strategy_decision_cache.json",
+        "strategy_decision_packet.json",
+        "strategy_llm_packet.json",
+        "decision_basis_by_section.json",
+        "decision_basis_card.json",
+    ):
+        path = output_dir / filename
+        if path.exists():
+            path.unlink()
+
+
+def _emit_v2_shadow_artifacts(
+    *,
+    target_company_name: str,
+    target_run_key: str,
+    target_financial_path: Path,
+    target_news_path: Path,
+    target_yfinance_path: Path,
+    output_dir: Path,
+    peer_comparison_path: Path | None,
+    llm_model: str,
+    ablation_config: dict[str, Any] | None,
+) -> None:
+    """Build v2 packet artifacts without making an additional LLM call."""
+
+    bundle = build_strategy_input_bundle(
+        target_company_name=target_company_name,
+        target_run_key=target_run_key,
+        target_financial_path=target_financial_path,
+        target_news_path=target_news_path,
+        target_yfinance_path=target_yfinance_path,
+        peer_comparison_path=peer_comparison_path,
+        ablation_config=ablation_config,
+    )
+    packet, provenance, telemetry, gate_a = build_compact_strategy_packet_v2(bundle, model=llm_model)
+    output_dir = output_dir.expanduser().resolve()
+    save_json(output_dir / "strategy_compact_packet_v2.json", packet)
+    save_json(output_dir / "strategy_packet_provenance_v2.json", provenance)
+    save_json(output_dir / "strategy_packet_telemetry_v2.json", telemetry)
+    save_json(output_dir / "strategy_gate_a_shadow_v2.json", gate_a)
+
+
+def build_strategy_report_projection_v2(
+    decision_output: dict[str, Any],
+    *,
+    input_bundle: dict[str, Any],
+    packet: dict[str, Any],
+) -> dict[str, Any]:
+    """Project the typed decision into a non-duplicative Strategy artifact."""
+
+    target = require_dict(input_bundle.get("target_company"), "target_company")
+    decision = require_dict(decision_output.get("decision"), "decision")
+    bridge = require_dict(
+        decision_output.get("recommendation_bridge"),
+        "recommendation_bridge",
+    )
+    cards = require_dict(packet.get("cards"), "cards")
+    assessments = []
+    for item in decision_output.get("evidence_assessments") or []:
+        if not isinstance(item, dict):
+            continue
+        card_key = str(item.get("card_key") or "")
+        card = cards.get(card_key) if isinstance(cards.get(card_key), dict) else {}
+        assessments.append(
+            {
+                "card_key": card_key,
+                "label": card.get("label"),
+                "domain": card.get("domain"),
+                "evidence_family": card.get("evidence_family"),
+                "comparison_scope": card.get("comparison_scope"),
+                "materiality": item.get("materiality"),
+                "investment_effect": item.get("investment_effect"),
+                "interpretation": item.get("interpretation"),
+            }
+        )
+    return {
+        "agent_name": "Strategy Agent",
+        "output_version": "6.0",
+        "contract_version": DECISION_VERSION,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "target_company_name": target.get("company_name"),
+        "target_run_key": target.get("run_key"),
+        "final_recommendation": {
+            "opinion": decision.get("opinion"),
+            "investment_horizon": decision.get("horizon"),
+            "data_coverage": decision.get("evidence_sufficiency"),
+            "decision_confidence": bridge.get("decision_confidence"),
+        },
+        "recommendation_bridge": deepcopy(bridge),
+        "evidence_assessments": assessments,
+        "peer_findings": deepcopy(decision_output.get("peer_findings") or []),
+        "decision_risk_factors": deepcopy(
+            decision_output.get("decision_risk_factors") or []
+        ),
+        "limitation_requirements": deepcopy(packet.get("limitation_requirements") or []),
+        "coverage_summary": deepcopy(packet.get("coverage_summary") or {}),
+    }
+
+
+def render_strategy_projection_markdown_v2(report: dict[str, Any]) -> str:
+    """Render the typed Strategy projection without regenerating analytical prose."""
+
+    recommendation = require_dict(
+        report.get("final_recommendation"),
+        "final_recommendation",
+    )
+    bridge = require_dict(report.get("recommendation_bridge"), "recommendation_bridge")
+    lines = [
+        f"# {report.get('target_company_name')} Strategy Report",
+        "",
+        "## Final Recommendation",
+        f"- Opinion: {recommendation.get('opinion')}",
+        f"- Horizon: {recommendation.get('investment_horizon')}",
+        f"- Data coverage: {recommendation.get('data_coverage')}",
+        f"- Decision confidence: {recommendation.get('decision_confidence')}",
+        "",
+        "## Recommendation Bridge",
+        f"- Current price: {bridge.get('current_price_rationale')}",
+        f"- Forward support: {bridge.get('forward_support')}",
+        f"- Valuation counterweight: {bridge.get('valuation_counterweight')}",
+        f"- Residual uncertainty: {bridge.get('residual_uncertainty')}",
+        "",
+        "## Evidence Assessments",
+    ]
+    for item in report.get("evidence_assessments") or []:
+        if not isinstance(item, dict):
+            continue
+        lines.append(
+            f"- [{item.get('materiality')}/{item.get('investment_effect')}] "
+            f"{item.get('label')}: {item.get('interpretation')}"
+        )
+    lines.extend(["", "## Peer Findings"])
+    for item in report.get("peer_findings") or []:
+        if isinstance(item, dict):
+            lines.append(f"- {item.get('finding')}")
+    lines.extend(["", "## Risks"])
+    for item in report.get("decision_risk_factors") or []:
+        if isinstance(item, dict):
+            lines.append(
+                f"- {item.get('reader_summary') or item.get('risk_summary')} | "
+                f"Monitoring: {item.get('monitoring_point')}"
+            )
+    lines.extend(["", "## Data Limits"])
+    for item in report.get("limitation_requirements") or []:
+        if isinstance(item, dict):
+            lines.append(
+                f"- {item.get('category')}: "
+                f"{json.dumps(item.get('facts') or {}, ensure_ascii=False)}"
+            )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def strategy_v2_fingerprint(
+    packet: dict[str, Any],
+    *,
+    llm_provider: str,
+    llm_model: str,
+    decision_horizon_profile: str = DEFAULT_DECISION_HORIZON_PROFILE,
+    generation_payload: dict[str, Any] | None = None,
+    generation_prompt: str | None = None,
+) -> str:
+    profile = resolve_decision_horizon_profile(decision_horizon_profile)
+    payload = {
+        "cache_version": STRATEGY_CACHE_VERSION,
+        "contract_version": DECISION_VERSION,
+        "packet": packet,
+        "generation_payload": generation_payload or {"strategy_compact_packet_v2": packet},
+        "decision_horizon_profile": decision_horizon_profile,
+        "prompt": generation_prompt or decision_prompt_v2(decision_horizon_profile),
+        "response_format": strategy_decision_response_format_v2(
+            packet,
+            required_horizon=str(profile["horizon"]),
+        ),
+        "provider": llm_provider,
+        "model": llm_model,
+    }
+    return hashlib.sha256(compact_json(payload, sort_keys=True).encode("utf-8")).hexdigest()
 
 
 def generate_strategy_report(
@@ -96,12 +655,14 @@ def generate_strategy_report(
     output_root: Path = OUTPUT_ROOT,
     output_json: Path | None = None,
     output_md: Path | None = None,
-    competitor_reports: list[Path] | None = None,
-    auto_discover_competitors: bool = False,
+    peer_comparison: Path | None = None,
     llm_provider: str = "openai",
     llm_model: str = "auto",
     llm_timeout: int = 120,
     env_file: Path | None = DEFAULT_ENV_FILE,
+    packet_version: str | None = None,
+    ablation_config: dict[str, Any] | None = None,
+    decision_horizon_profile: str = DEFAULT_DECISION_HORIZON_PROFILE,
 ) -> dict[str, Any]:
     """Compatibility wrapper around run_strategy_agent using repo defaults."""
 
@@ -116,9 +677,6 @@ def generate_strategy_report(
         "news": news_report or output_root / "News" / target_run_key / "final_report.json",
         "yfinance": yfinance_report or output_root / "Y_Finance" / target_run_key / "final_report.json",
     }
-    competitor_paths = list(competitor_reports or [])
-    if auto_discover_competitors:
-        competitor_paths.extend(discover_competitor_reports(output_root=output_root, target_run_key=target_run_key))
     output_dir = (output_json.parent if output_json else output_md.parent if output_md else output_root / "Strategy" / target_run_key)
     report = run_strategy_agent(
         target_company_name=target_company_name,
@@ -126,12 +684,15 @@ def generate_strategy_report(
         target_financial_path=paths["financial"],
         target_news_path=paths["news"],
         target_yfinance_path=paths["yfinance"],
-        competitor_report_paths=dedupe_paths(competitor_paths),
         output_dir=output_dir,
+        peer_comparison_path=peer_comparison,
         llm_provider=llm_provider,
         llm_model=llm_model,
         llm_timeout=llm_timeout,
         env_file=env_file,
+        packet_version=packet_version,
+        ablation_config=ablation_config,
+        decision_horizon_profile=decision_horizon_profile,
     )
     if output_json and output_json != output_dir / "strategy_report.json":
         save_json(output_json, report)
@@ -147,7 +708,8 @@ def build_strategy_input_bundle(
     target_financial_path: Path,
     target_news_path: Path,
     target_yfinance_path: Path,
-    competitor_report_paths: list[Path],
+    peer_comparison_path: Path | None = None,
+    ablation_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create the exact input bundle read by the two Strategy Agent LLM steps."""
 
@@ -158,12 +720,33 @@ def build_strategy_input_bundle(
     target_news_path = resolve_preferred_report_path(target_news_path, "news")
     target_yfinance_path = resolve_preferred_report_path(target_yfinance_path, "yfinance")
 
-    financial = sanitize_strategy_input_report(load_required_json(target_financial_path, "Target Financial"), "financial")
-    news = sanitize_strategy_input_report(load_required_json(target_news_path, "Target News"), "news")
-    yfinance = sanitize_strategy_input_report(load_required_json(target_yfinance_path, "Target YFinance"), "yfinance")
-    financial_validation = load_optional_validation_evidence(target_financial_path, "financial")
-    news_validation = load_optional_validation_evidence(target_news_path, "news")
-    yfinance_validation = load_optional_validation_evidence(target_yfinance_path, "yfinance")
+    ablation = config_from_mapping(ablation_config)
+    raw_financial = load_required_json(target_financial_path, "Target Financial")
+    raw_news = load_required_json(target_news_path, "Target News")
+    raw_yfinance = load_required_json(target_yfinance_path, "Target YFinance")
+    all_reports = {
+        "financial": sanitize_strategy_input_report(raw_financial, "financial"),
+        "news": sanitize_strategy_input_report(raw_news, "news"),
+        "yfinance": sanitize_strategy_input_report(raw_yfinance, "yfinance"),
+    }
+    financial = all_reports["financial"] if "financial" in ablation.included_domains else {}
+    news = all_reports["news"] if "news" in ablation.included_domains else {}
+    yfinance = all_reports["yfinance"] if "yfinance" in ablation.included_domains else {}
+    financial_validation = (
+        load_optional_validation_evidence(target_financial_path, "financial")
+        if "financial" in ablation.included_domains
+        else {"source_path": "", "summary": {}, "claims": []}
+    )
+    news_validation = (
+        load_optional_validation_evidence(target_news_path, "news")
+        if "news" in ablation.included_domains
+        else {"source_path": "", "summary": {}, "claims": []}
+    )
+    yfinance_validation = (
+        load_optional_validation_evidence(target_yfinance_path, "yfinance")
+        if "yfinance" in ablation.included_domains
+        else {"source_path": "", "summary": {}, "claims": []}
+    )
     target_company = infer_target_company(
         target_company_name=target_company_name,
         target_run_key=target_run_key,
@@ -171,7 +754,12 @@ def build_strategy_input_bundle(
         news=news,
         yfinance=yfinance,
     )
-    competitors = load_competitor_reports(competitor_report_paths)
+    peer_comparison = (
+        load_peer_comparison(peer_comparison_path)
+        if ablation.include_competitor
+        else {}
+    )
+    decision_constraints = extract_decision_constraints(financial, news, yfinance)
     return {
         "agent_name": "Strategy Agent",
         "output_version": OUTPUT_VERSION,
@@ -186,8 +774,15 @@ def build_strategy_input_bundle(
             "news": news_validation,
             "yfinance": yfinance_validation,
         },
-        "competitor_reports": competitors,
-        "decision_constraints": extract_decision_constraints(financial, news, yfinance),
+        "peer_comparison": peer_comparison,
+        "evidence_catalogs": {
+            "financial": load_financial_evidence_catalog(financial) if financial else {},
+            "news": load_news_evidence_catalog(raw_news, target_news_path) if news else {},
+            "yfinance": load_yfinance_evidence_catalog(yfinance) if yfinance else {},
+        },
+        "evidence_hierarchy": build_evidence_hierarchy(peer_comparison_available=bool(peer_comparison)),
+        "decision_constraints": decision_constraints,
+        "ablation": ablation.as_dict(),
         "input_metadata": {
             "target_financial_path": str(target_financial_path),
             "target_news_path": str(target_news_path),
@@ -197,15 +792,576 @@ def build_strategy_input_bundle(
                 "news": news_validation.get("source_path", ""),
                 "yfinance": yfinance_validation.get("source_path", ""),
             },
-            "competitor_report_paths": [str(path.expanduser().resolve()) for path in competitor_report_paths],
-            "competitor_count": len(competitors),
+            "peer_comparison_path": str(peer_comparison_path.expanduser().resolve()) if peer_comparison_path else "",
             "created_at": datetime.now().isoformat(timespec="seconds"),
         },
     }
 
 
-def run_content_planner(
+def build_strategy_llm_packet(input_bundle: dict[str, Any]) -> dict[str, Any]:
+    """Build the referenced-only packet sent to Strategy LLM calls."""
+
+    global_catalog = _merge_strategy_evidence_catalogs(input_bundle)
+    claim_ledger: dict[str, list[dict[str, Any]]] = {}
+    referenced_ids: set[str] = set()
+    excluded_counts: dict[str, int] = {}
+    seen_statements: dict[str, dict[str, Any]] = {}
+    for domain in ("financial", "news", "yfinance"):
+        validation = (input_bundle.get("target_validation_evidence") or {}).get(domain) or {}
+        rows: list[dict[str, Any]] = []
+        excluded_counts[domain] = 0
+        for claim in ensure_list(validation.get("claims")):
+            if not isinstance(claim, dict):
+                continue
+            evidence_use = clean_text(claim.get("evidence_use")).lower()
+            if evidence_use == "exclude":
+                excluded_counts[domain] += 1
+                continue
+            statement = clean_text(claim.get("claim"))
+            claim_id = clean_text(claim.get("claim_id"))
+            if not statement or not claim_id:
+                continue
+            evidence_ids = [
+                evidence_id
+                for evidence_id in dedupe(text_items(claim.get("evidence_ids")), 32)
+                if evidence_id in global_catalog
+            ]
+            referenced_ids.update(evidence_ids)
+            normalized_statement = re.sub(r"\s+", " ", statement).strip().lower()
+            duplicate = seen_statements.get(normalized_statement)
+            if duplicate is not None:
+                duplicate["source_claim_ids"] = dedupe(
+                    text_items(duplicate.get("source_claim_ids")) + [claim_id],
+                    32,
+                )
+                duplicate["primary_evidence_ids"] = dedupe(
+                    text_items(duplicate.get("primary_evidence_ids")) + evidence_ids,
+                    32,
+                )
+                duplicate["limitations"] = dedupe(
+                    text_items(duplicate.get("limitations")) + text_items(claim.get("limitations")),
+                    32,
+                )
+                if evidence_use == "strong":
+                    duplicate["evidence_use"] = "strong"
+                continue
+            row = {
+                "claim_id": claim_id,
+                "source_claim_ids": [claim_id],
+                "domain": domain,
+                "statement": statement,
+                "claim_kind": clean_text(claim.get("claim_kind")) or "interpretation",
+                "evidence_use": evidence_use or "context_only",
+                "primary_evidence_ids": evidence_ids,
+                "limitations": text_items(claim.get("limitations")),
+            }
+            rows.append(row)
+            seen_statements[normalized_statement] = row
+        claim_ledger[domain] = rows
+
+    context_assessments = _collect_strategy_context_assessments(input_bundle, global_catalog)
+    for item in context_assessments:
+        referenced_ids.update(item["primary_evidence_ids"])
+        referenced_ids.update(item["secondary_evidence_ids"])
+
+    evidence_catalog = {
+        evidence_id: global_catalog[evidence_id]
+        for evidence_id in sorted(referenced_ids)
+        if evidence_id in global_catalog
+    }
+    limitations = build_strategy_limitation_catalog(
+        claim_ledger,
+        input_bundle.get("decision_constraints") or [],
+        input_bundle.get("peer_comparison") or {},
+    )
+    llm_claim_ledger = {
+        domain: [
+            {
+                key: deepcopy(value)
+                for key, value in claim.items()
+                if key not in {"domain", "limitations"}
+            }
+            for claim in claims
+        ]
+        for domain, claims in claim_ledger.items()
+    }
+    peer_metric_catalog = build_peer_metric_catalog(input_bundle.get("peer_comparison") or {})
+    reports = input_bundle.get("target_reports") or {}
+    packet = {
+        "agent_name": "Strategy Agent",
+        "packet_version": "2.0",
+        "target_company": deepcopy(input_bundle.get("target_company") or {}),
+        "claim_ledger": llm_claim_ledger,
+        "evidence_catalog": evidence_catalog,
+        "secondary_context_assessments": context_assessments,
+        "structured_facts": {
+            "financial": compact_strategy_financial_facts(reports.get("financial") or {}),
+            "valuation": compact_strategy_valuation(reports.get("yfinance") or {}),
+        },
+        "peer_metric_catalog": peer_metric_catalog,
+        "peer_context": {
+            "comparison_limits": text_items((input_bundle.get("peer_comparison") or {}).get("comparison_limits")),
+            "data_quality": [
+                {
+                    "company_name": clean_text(company.get("company_name")),
+                    "missing_fields": text_items(
+                        get_path(company, ["data_quality", "missing_fields"])
+                    ),
+                }
+                for company in ensure_list((input_bundle.get("peer_comparison") or {}).get("metrics"))
+                if isinstance(company, dict)
+                and text_items(get_path(company, ["data_quality", "missing_fields"]))
+            ],
+        },
+        "limitations": limitations,
+        "decision_constraints": deepcopy(input_bundle.get("decision_constraints") or []),
+        "coverage_summary": {
+            "admissible_claim_counts": {domain: len(rows) for domain, rows in llm_claim_ledger.items()},
+            "excluded_claim_counts": excluded_counts,
+            "secondary_context_count": len(context_assessments),
+            "referenced_evidence_count": len(evidence_catalog),
+        },
+    }
+    validate_strategy_llm_packet(packet)
+    return packet
+
+
+def _merge_strategy_evidence_catalogs(input_bundle: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    catalog: dict[str, dict[str, Any]] = {}
+    sources: list[dict[str, Any]] = [
+        value
+        for value in (input_bundle.get("evidence_catalogs") or {}).values()
+        if isinstance(value, dict)
+    ]
+    for report in (input_bundle.get("target_reports") or {}).values():
+        if not isinstance(report, dict):
+            continue
+        for key in ("primary_evidence_catalog", "secondary_context_catalog"):
+            value = report.get(key)
+            if isinstance(value, dict):
+                sources.append(value)
+        for context in (report.get("secondary_context") or {}).values():
+            if isinstance(context, dict) and isinstance(context.get("evidence_catalog"), dict):
+                sources.append(context["evidence_catalog"])
+        output = report.get("output") if isinstance(report.get("output"), dict) else {}
+        for key in ("primary_evidence_catalog", "secondary_context_catalog"):
+            value = output.get(key)
+            if isinstance(value, dict):
+                sources.append(value)
+    for source in sources:
+        for raw_id, raw_evidence in source.items():
+            if not isinstance(raw_evidence, dict):
+                continue
+            evidence_id = clean_text(raw_evidence.get("evidence_id")) or clean_text(raw_id)
+            if not evidence_id:
+                continue
+            evidence = normalize_strategy_evidence(evidence_id, raw_evidence)
+            existing = catalog.get(evidence_id)
+            if existing is None or len(compact_json(evidence)) > len(compact_json(existing)):
+                catalog[evidence_id] = evidence
+    return catalog
+
+
+def normalize_strategy_evidence(evidence_id: str, evidence: dict[str, Any]) -> dict[str, Any]:
+    domain = clean_text(evidence.get("domain") or evidence.get("source_domain"))
+    if not domain:
+        domain = "news" if evidence_id.startswith("NEWS_") else "financial" if evidence_id.startswith(("DART_", "E")) else "market"
+    normalized = {
+        "domain": domain,
+        "source_ref": clean_text(evidence.get("source_ref")) or f"normalized_catalog.{evidence_id}",
+        "source_date": clean_text(evidence.get("source_date") or evidence.get("time") or evidence.get("date")),
+        "period": clean_text(evidence.get("period")),
+        "metric": clean_text(evidence.get("metric") or evidence.get("metric_or_event")),
+        "unit": clean_text(evidence.get("unit")),
+    }
+    if "value" in evidence:
+        normalized["value"] = deepcopy(evidence.get("value"))
+    text = clean_text(evidence.get("text") or evidence.get("title"))
+    if text:
+        normalized["text"] = text
+    return {key: value for key, value in normalized.items() if value not in (None, "", [], {})}
+
+
+def _collect_strategy_context_assessments(
     input_bundle: dict[str, Any],
+    evidence_catalog: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    assessments: list[dict[str, Any]] = []
+    reports = input_bundle.get("target_reports") or {}
+    for origin_agent, report in reports.items():
+        if not isinstance(report, dict):
+            continue
+        output = report.get("output") if isinstance(report.get("output"), dict) else report
+        values = output.get("secondary_context_assessment") or report.get("secondary_context_assessment") or []
+        for raw in ensure_list(values):
+            if not isinstance(raw, dict):
+                continue
+            primary_ids = [value for value in text_items(raw.get("primary_evidence_ids")) if value in evidence_catalog]
+            secondary_ids = [value for value in text_items(raw.get("secondary_evidence_ids")) if value in evidence_catalog]
+            if not primary_ids or not clean_text(raw.get("statement")):
+                continue
+            assessments.append(
+                {
+                    "context_id": f"CTX_{origin_agent.upper()}_{len(assessments) + 1:03d}",
+                    "origin_agent": origin_agent,
+                    "source_domain": clean_text(raw.get("source_domain")),
+                    "effect": clean_text(raw.get("effect")),
+                    "statement": clean_text(raw.get("statement")),
+                    "primary_evidence_ids": primary_ids,
+                    "secondary_evidence_ids": secondary_ids,
+                    "usage": "framing_and_limitation_only",
+                    "limitation": clean_text(raw.get("limitation")),
+                }
+            )
+    return assessments
+
+
+def compact_strategy_financial_facts(report: dict[str, Any]) -> dict[str, Any]:
+    collection = report.get("collection_context") or {}
+    latest = collection.get("latest_available_filing") or {}
+    theoretical = collection.get("theoretical_target") or {}
+    trends = report.get("financial_trends") or {}
+    current_comparison = trends.get("current_vs_same_period") or {}
+    annual_history = []
+    for item in ensure_list(trends.get("annual_history")):
+        if not isinstance(item, dict):
+            continue
+        annual_history.append(
+            {
+                "period": _compact_financial_period(item.get("period") or {}),
+                "values": deepcopy(item.get("values") or {}),
+            }
+        )
+    ttm = trends.get("ttm") or {}
+    facts = {
+        "filing_basis": {
+            "selected_date": collection.get("selected_date"),
+            "latest_available": _compact_financial_period(latest),
+            "theoretical_target": _compact_financial_period(theoretical),
+            "fallback_applied": collection.get("fallback_applied"),
+        },
+        "current_vs_same_period": {
+            "current_period": _compact_financial_period(current_comparison.get("current_period") or {}),
+            "previous_period": _compact_financial_period(current_comparison.get("previous_period") or {}),
+            "current_values": deepcopy(current_comparison.get("current_values") or {}),
+            "previous_values": deepcopy(current_comparison.get("previous_values") or {}),
+        },
+        "annual_history": annual_history,
+        "ttm": {
+            "period": _compact_financial_period(ttm.get("period") or {}),
+            "values": deepcopy(ttm.get("values") or {}),
+        },
+        "revenue_breakdown": _compact_revenue_breakdown(report.get("revenue_breakdown") or {}),
+        "share_information": {
+            key: deepcopy((report.get("share_information") or {}).get(key))
+            for key in (
+                "status",
+                "as_of_date",
+                "issued_shares",
+                "treasury_shares",
+                "shares_outstanding",
+            )
+            if (report.get("share_information") or {}).get(key) is not None
+        },
+    }
+    return {key: value for key, value in facts.items() if value not in (None, "", [], {})}
+
+
+def _compact_financial_period(period: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: deepcopy(period.get(key))
+        for key in ("fiscal_year", "period_type", "period_end", "basis")
+        if period.get(key) not in (None, "", [], {})
+    }
+
+
+def _compact_revenue_breakdown(revenue: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(revenue, dict) or revenue.get("status") != "available":
+        return {"status": clean_text(revenue.get("status")) or "unavailable"}
+    periods = [
+        {
+            "period_key": clean_text(period.get("period_key")),
+            **_compact_financial_period(period),
+        }
+        for period in ensure_list(revenue.get("periods"))
+        if isinstance(period, dict)
+    ]
+    items = []
+    for item in ensure_list(revenue.get("items")):
+        if not isinstance(item, dict):
+            continue
+        values = {
+            str(period_key): {
+                key: deepcopy(period_value.get(key))
+                for key in ("revenue_krw", "revenue_share")
+                if period_value.get(key) is not None
+            }
+            for period_key, period_value in (item.get("values_by_period") or {}).items()
+            if isinstance(period_value, dict)
+        }
+        items.append({"name": clean_text(item.get("name")), "values_by_period": values})
+    return {
+        "status": "available",
+        "periods": periods,
+        "current_period_key": clean_text(revenue.get("current_period_key")),
+        "items": items,
+    }
+
+
+def compact_strategy_valuation(report: dict[str, Any]) -> dict[str, Any]:
+    valuation = report.get("valuation_snapshot") or {}
+    if not isinstance(valuation, dict):
+        return {}
+    direct = valuation.get("direct_yfinance") or valuation
+    latest = direct.get("latest_period") if isinstance(direct, dict) else {}
+    return {
+        "status": valuation.get("status") or direct.get("status"),
+        "selected_date": valuation.get("selected_date") or direct.get("selected_date"),
+        "market_date": valuation.get("market_date"),
+        "latest_period": deepcopy(latest or {}),
+        "data_limits": text_items(direct.get("data_limits")) if isinstance(direct, dict) else [],
+    }
+
+
+def build_peer_metric_catalog(peer_comparison: dict[str, Any]) -> dict[str, Any]:
+    catalog: dict[str, Any] = {}
+    for company in ensure_list(peer_comparison.get("metrics")):
+        if not isinstance(company, dict):
+            continue
+        identity = {
+            "company_name": clean_text(company.get("company_name")),
+            "peer_group": clean_text(company.get("peer_group")),
+        }
+        for key, value in flatten_scalar_values(company):
+            if key in {"company_name", "peer_group", "run_key", "ticker"}:
+                continue
+            if _is_peer_metadata_path(key):
+                continue
+            metric_id = f"PEER_METRIC_{len(catalog) + 1:03d}"
+            catalog[metric_id] = {**identity, "metric_path": key, "value": value}
+    return catalog
+
+
+def _is_peer_metadata_path(path: str) -> bool:
+    return (
+        path == "as_of_date"
+        or path.startswith("data_quality.")
+        or path.endswith(("_basis", "_period", "_date"))
+        or path.endswith(".market_date")
+    )
+
+
+def flatten_scalar_values(value: Any, prefix: str = "") -> list[tuple[str, Any]]:
+    rows: list[tuple[str, Any]] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            path = f"{prefix}.{key}" if prefix else key
+            rows.extend(flatten_scalar_values(child, path))
+    elif value not in (None, "", [], {}):
+        rows.append((prefix, value))
+    return rows
+
+
+def build_strategy_limitation_catalog(
+    claim_ledger: dict[str, list[dict[str, Any]]],
+    decision_constraints: list[Any],
+    peer_comparison: dict[str, Any],
+) -> dict[str, Any]:
+    values: list[tuple[str, str]] = []
+    for domain, claims in claim_ledger.items():
+        for claim in claims:
+            values.extend((f"claim:{domain}:{claim['claim_id']}", text) for text in text_items(claim.get("limitations")))
+    values.extend(("decision_constraint", clean_text(value)) for value in decision_constraints if clean_text(value))
+    values.extend(("peer_comparison", text) for text in text_items(peer_comparison.get("comparison_limits")))
+    catalog: dict[str, Any] = {}
+    seen: set[str] = set()
+    for source, text in values:
+        normalized = re.sub(r"\s+", " ", text).strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        limit_id = f"LIMIT_{len(catalog) + 1:03d}"
+        catalog[limit_id] = {"source": source, "text": text}
+    return catalog
+
+
+def validate_strategy_llm_packet(packet: dict[str, Any]) -> None:
+    require_dict(packet, "strategy_llm_packet")
+    if "input_metadata" in packet or "target_reports" in packet or "target_validation_evidence" in packet:
+        raise ValueError("Strategy LLM packet contains audit-only fields.")
+    catalog = require_dict(packet.get("evidence_catalog"), "evidence_catalog")
+    referenced: set[str] = set()
+    statements: list[str] = []
+    for domain, claims in require_dict(packet.get("claim_ledger"), "claim_ledger").items():
+        if not isinstance(claims, list):
+            raise ValueError(f"claim_ledger.{domain} must be a list.")
+        for claim in claims:
+            statement = clean_text(claim.get("statement"))
+            if statement:
+                statements.append(statement)
+            for evidence_id in text_items(claim.get("primary_evidence_ids")):
+                if evidence_id not in catalog:
+                    raise ValueError(f"Unknown claim evidence ID: {evidence_id}")
+                referenced.add(evidence_id)
+    for context in ensure_list(packet.get("secondary_context_assessments")):
+        if context.get("usage") != "framing_and_limitation_only":
+            raise ValueError("Invalid Strategy secondary context usage.")
+        for evidence_id in text_items(context.get("primary_evidence_ids")) + text_items(context.get("secondary_evidence_ids")):
+            if evidence_id not in catalog:
+                raise ValueError(f"Unknown context evidence ID: {evidence_id}")
+            referenced.add(evidence_id)
+    if set(catalog) != referenced:
+        raise ValueError("Strategy evidence_catalog must contain referenced evidence only.")
+    if len(statements) != len(set(statements)):
+        raise ValueError("Strategy packet contains duplicate claim statements.")
+    serialized = compact_json(packet)
+    if re.search(r'"/(?:home|tmp|var|Users)/', serialized):
+        raise ValueError("Strategy LLM packet contains an absolute path.")
+
+
+def build_strategy_decision_packet(
+    llm_packet: dict[str, Any],
+    content_plan: dict[str, Any],
+) -> dict[str, Any]:
+    """Materialize only Planner-selected ledgers for the Decision call."""
+
+    selected_claim_ids = {
+        value
+        for key in (
+            "positive_claim_ids",
+            "negative_claim_ids",
+            "neutral_claim_ids",
+            "catalyst_claim_ids",
+            "risk_claim_ids",
+        )
+        for value in text_items(content_plan.get(key))
+    }
+    selected_context_ids = set(text_items(content_plan.get("context_assessment_ids")))
+    selected_peer_ids = set(text_items(content_plan.get("peer_metric_ids")))
+    selected_limit_ids = set(text_items(content_plan.get("limitation_ids")))
+    for refs in (content_plan.get("section_plan") or {}).values():
+        for value in text_items(refs):
+            if value.startswith("CTX_"):
+                selected_context_ids.add(value)
+            elif value.startswith("PEER_METRIC_"):
+                selected_peer_ids.add(value)
+            elif value.startswith("LIMIT_"):
+                selected_limit_ids.add(value)
+            else:
+                selected_claim_ids.add(value)
+
+    claim_ledger = {
+        domain: [
+            deepcopy(claim)
+            for claim in claims
+            if claim.get("claim_id") in selected_claim_ids
+        ]
+        for domain, claims in (llm_packet.get("claim_ledger") or {}).items()
+    }
+    contexts = [
+        deepcopy(item)
+        for item in ensure_list(llm_packet.get("secondary_context_assessments"))
+        if item.get("context_id") in selected_context_ids
+    ]
+    referenced_ids = {
+        evidence_id
+        for claims in claim_ledger.values()
+        for claim in claims
+        for evidence_id in text_items(claim.get("primary_evidence_ids"))
+    }
+    for item in contexts:
+        referenced_ids.update(text_items(item.get("primary_evidence_ids")))
+        referenced_ids.update(text_items(item.get("secondary_evidence_ids")))
+    source_catalog = llm_packet.get("evidence_catalog") or {}
+    packet = {
+        "agent_name": "Strategy Agent",
+        "packet_version": "2.1-decision",
+        "target_company": deepcopy(llm_packet.get("target_company") or {}),
+        "claim_ledger": claim_ledger,
+        "evidence_catalog": {
+            evidence_id: deepcopy(source_catalog[evidence_id])
+            for evidence_id in sorted(referenced_ids)
+            if evidence_id in source_catalog
+        },
+        "secondary_context_assessments": contexts,
+        "structured_facts": deepcopy(llm_packet.get("structured_facts") or {}),
+        "peer_metric_catalog": {
+            metric_id: deepcopy(metric)
+            for metric_id, metric in (llm_packet.get("peer_metric_catalog") or {}).items()
+            if metric_id in selected_peer_ids
+        },
+        "peer_context": deepcopy(llm_packet.get("peer_context") or {}),
+        "limitations": {
+            limit_id: deepcopy(item)
+            for limit_id, item in (llm_packet.get("limitations") or {}).items()
+            if limit_id in selected_limit_ids
+        },
+        "decision_constraints": deepcopy(llm_packet.get("decision_constraints") or []),
+        "section_plan": deepcopy(content_plan.get("section_plan") or {}),
+        "coverage_summary": deepcopy(llm_packet.get("coverage_summary") or {}),
+    }
+    validate_strategy_llm_packet(packet)
+    return packet
+
+
+def load_news_evidence_catalog(report: dict[str, Any], report_path: Path) -> dict[str, Any]:
+    """Load the News evidence catalog referenced by its verified handoff."""
+
+    output = report.get("output") if isinstance(report.get("output"), dict) else report
+    path_value = output.get("evidence_map_path") if isinstance(output, dict) else None
+    if not path_value:
+        return {}
+    path = Path(str(path_value)).expanduser()
+    if not path.is_absolute():
+        path = report_path.parent / path
+    if not path.exists():
+        return {}
+    payload = load_json(path)
+    return payload if isinstance(payload, dict) else {}
+
+
+def load_financial_evidence_catalog(report: dict[str, Any]) -> dict[str, Any]:
+    """Normalize Financial key evidence without its generated interpretation text."""
+
+    catalog: dict[str, Any] = {}
+    source_date = str(report.get("as_of_date") or "")
+    handoff = report.get("sy_handoff") or {}
+    for item in handoff.get("key_evidence") or []:
+        if not isinstance(item, dict) or str(item.get("source") or "").upper() != "DART":
+            continue
+        evidence_id = clean_text(item.get("evidence_id"))
+        if not evidence_id:
+            continue
+        catalog[evidence_id] = {
+            "evidence_id": evidence_id,
+            "domain": "financial",
+            "origin_type": "raw_source",
+            "source_ref": f"dart_financial_evidence.{clean_text(item.get('metric_or_event')) or evidence_id}",
+            "source_date": source_date,
+            "period": clean_text(item.get("period")),
+            "metric": clean_text(item.get("metric_or_event")),
+            "value": deepcopy(item.get("value")),
+            "unit": clean_text(item.get("period_basis")),
+        }
+    return catalog
+
+
+def load_yfinance_evidence_catalog(report: dict[str, Any]) -> dict[str, Any]:
+    """Merge primary market and referenced secondary catalogs from YFinance."""
+
+    catalog: dict[str, Any] = {}
+    for key in ("primary_evidence_catalog", "secondary_context_catalog"):
+        value = report.get(key)
+        if not isinstance(value, dict):
+            continue
+        for evidence_id, evidence in value.items():
+            if isinstance(evidence, dict):
+                catalog[str(evidence_id)] = deepcopy(evidence)
+    return catalog
+
+
+def run_content_planner(
+    llm_packet: dict[str, Any],
     *,
     llm_provider: str,
     llm_model: str,
@@ -214,22 +1370,19 @@ def run_content_planner(
     """Call the Content Planner LLM and return its JSON plan."""
 
     prompt = read_prompt("content_planner.md")
-    payload = {
-        "strategy_input_bundle": input_bundle,
-        "required_output_schema": content_plan_schema(),
-    }
     return call_llm_json(
         prompt=prompt,
-        payload=payload,
+        payload={"strategy_llm_packet": llm_packet},
         llm_provider=llm_provider,
         llm_model=llm_model,
         llm_timeout=llm_timeout,
         system_message="You are a financial Strategy Agent Content Planner. Return only valid JSON.",
+        response_format=content_plan_response_format(llm_packet),
     )
 
 
 def run_decision_agent(
-    input_bundle: dict[str, Any],
+    decision_packet: dict[str, Any],
     content_plan: dict[str, Any],
     *,
     llm_provider: str,
@@ -238,10 +1391,26 @@ def run_decision_agent(
 ) -> dict[str, Any]:
     """Call the Decision Agent LLM and return its JSON report."""
 
-    prompt = read_prompt("decision_agent.md")
+    prompt = (
+        read_prompt("decision_agent.md")
+        + "\n\nRuntime output-size constraint:\n"
+        + "- Return exactly one top-level JSON object with keys \"strategy_report\" and \"evidence_refs_by_section\".\n"
+        + "- evidence_refs_by_section must include every required top-level report section listed in the output schema.\n"
+        + "- Keep evidence refs compact; do not repeat report prose in the refs map.\n"
+        + "- Keep the report compact enough to remain valid JSON.\n"
+    )
     payload = {
-        "strategy_input_bundle": input_bundle,
-        "strategy_content_plan": content_plan,
+        "strategy_decision_packet": decision_packet,
+        "strategy_content_plan": {
+            key: deepcopy(content_plan.get(key) or [])
+            for key in (
+                "positive_claim_ids",
+                "negative_claim_ids",
+                "neutral_claim_ids",
+                "catalyst_claim_ids",
+                "risk_claim_ids",
+            )
+        },
         "required_output_schema": strategy_decision_output_schema(),
     }
     return call_llm_json(
@@ -251,6 +1420,92 @@ def run_decision_agent(
         llm_model=llm_model,
         llm_timeout=llm_timeout,
         system_message="You are a financial Strategy Decision Agent. Return only valid JSON.",
+    )
+
+
+def run_decision_agent_v2(
+    compact_packet: dict[str, Any],
+    *,
+    llm_provider: str,
+    llm_model: str,
+    llm_timeout: int,
+    decision_horizon_profile: str = DEFAULT_DECISION_HORIZON_PROFILE,
+    generation_payload: dict[str, Any] | None = None,
+    generation_prompt: str | None = None,
+) -> dict[str, Any]:
+    """Call the single v2 Decision LLM with self-contained cards only."""
+
+    profile = resolve_decision_horizon_profile(decision_horizon_profile)
+    output = call_llm_json(
+        prompt=generation_prompt or decision_prompt_v2(decision_horizon_profile),
+        payload=generation_payload or {"strategy_compact_packet_v2": compact_packet},
+        llm_provider=llm_provider,
+        llm_model=llm_model,
+        llm_timeout=llm_timeout,
+        system_message="You are a financial Strategy Decision Agent v2. Return only valid JSON.",
+        response_format=strategy_decision_response_format_v2(
+            compact_packet,
+            required_horizon=str(profile["horizon"]),
+        ),
+    )
+    finalized = finalize_strategy_decision_v2(output, compact_packet)
+    decision = finalized.get("decision")
+    actual_horizon = str(
+        decision.get("horizon") if isinstance(decision, dict) else ""
+    )
+    if actual_horizon != profile["horizon"]:
+        raise ValueError(
+            f"Strategy decision horizon mismatch: expected={profile['horizon']}, "
+            f"actual={actual_horizon}"
+        )
+    return finalized
+
+
+def build_strategy_generation_payload_v2(
+    *,
+    input_bundle: dict[str, Any],
+    compact_packet: dict[str, Any],
+    context_mode: str,
+) -> dict[str, Any]:
+    """Build the exact Decision input for compact and full-context ablations."""
+
+    if context_mode == "compact_cards":
+        return {"strategy_compact_packet_v2": compact_packet}
+    if context_mode != "full_reports":
+        raise ValueError(f"Unknown Strategy context mode: {context_mode}")
+    return {
+        "strategy_compact_packet_v2": compact_packet,
+        "full_context_ablation": {
+            "target_company": deepcopy(input_bundle.get("target_company") or {}),
+            "target_reports": deepcopy(input_bundle.get("target_reports") or {}),
+            "target_validation_evidence": deepcopy(
+                input_bundle.get("target_validation_evidence") or {}
+            ),
+            "peer_comparison": deepcopy(input_bundle.get("peer_comparison") or {}),
+            "decision_constraints": deepcopy(input_bundle.get("decision_constraints") or []),
+        },
+    }
+
+
+def decision_generation_prompt_v2(
+    decision_horizon_profile: str,
+    *,
+    context_mode: str,
+) -> str:
+    """Render the production prompt plus one explicit structural-ablation policy."""
+
+    prompt = decision_prompt_v2(decision_horizon_profile)
+    if context_mode == "compact_cards":
+        return prompt
+    if context_mode != "full_reports":
+        raise ValueError(f"Unknown Strategy context mode: {context_mode}")
+    return (
+        prompt
+        + "\n\n## Full-context ablation\n"
+        + "이번 실험에서는 compact card뿐 아니라 sanitized upstream domain report와 validation ledger도 "
+        + "추가 문맥으로 제공된다. 모든 출력 key와 근거 연결은 여전히 strategy_compact_packet_v2.cards에 "
+        + "한정한다. 추가 문맥에서만 보이는 사실·수치·인과관계를 출력에 새로 만들지 말고, 같은 사실을 "
+        + "여러 domain에서 보았더라도 독립 근거로 중복 계산하지 않는다."
     )
 
 
@@ -266,23 +1521,17 @@ def normalize_strategy_report(report: dict[str, Any], input_bundle: dict[str, An
         "target_news": metadata["target_news_path"],
         "target_yfinance": metadata["target_yfinance_path"],
         "target_validations": metadata.get("target_validation_paths", {}),
-        "competitor_reports": metadata["competitor_report_paths"],
+        "peer_comparison": metadata.get("peer_comparison_path", ""),
     }
 
-    if "final_recommendation" in report and isinstance(report.get("final_recommendation"), dict):
-        normalized = normalize_structured_strategy_report(report)
-    else:
-        normalized = convert_legacy_strategy_report(report)
+    if not isinstance(report.get("final_recommendation"), dict):
+        raise ValueError("strategy_report must use the current structured final_recommendation schema.")
+    normalized = normalize_structured_strategy_report(report)
 
     normalized["agent_name"] = "Strategy Agent"
     normalized["target_company_name"] = target["company_name"]
     normalized["target_run_key"] = target["run_key"]
     normalized["source_files"] = source_files
-    normalized["limitations"] = normalize_limitations(normalized.get("limitations"), input_bundle.get("decision_constraints"))
-    normalized = rewrite_conservative_language(normalized)
-    normalized["limitations"] = normalize_limitations(normalized.get("limitations"), None)
-    normalized = enforce_specific_evidence_language(normalized, input_bundle)
-    normalized["limitations"] = consolidate_limitations(normalized.get("limitations"), normalized)
     normalized["opinion_index"] = build_report_opinion_index(normalized)
     normalized.setdefault("created_at", datetime.now().isoformat(timespec="seconds"))
     normalized.setdefault("output_version", OUTPUT_VERSION)
@@ -294,17 +1543,27 @@ def normalize_strategy_decision_output(output: dict[str, Any], input_bundle: dic
 
     raw_report, raw_basis = split_strategy_decision_output(output)
     strategy_report = normalize_strategy_report(raw_report, input_bundle)
-    decision_basis_by_section = normalize_decision_basis_by_section(raw_basis, strategy_report, input_bundle)
+    basis_packet = (
+        build_strategy_llm_packet(input_bundle)
+        if "target_reports" in input_bundle
+        else input_bundle
+    )
+    decision_basis_by_section = normalize_decision_basis_by_section(
+        raw_basis,
+        strategy_report,
+        basis_packet,
+    )
     return strategy_report, decision_basis_by_section
 
 
 def split_strategy_decision_output(output: dict[str, Any]) -> tuple[dict[str, Any], Any]:
-    """Accept the new wrapped output while preserving old report-only compatibility."""
+    """Split the integrated report and source-reference map."""
 
     if not isinstance(output, dict):
         raise ValueError("strategy decision output must be an object.")
     if isinstance(output.get("strategy_report"), dict):
         return output["strategy_report"], first_non_empty_object(
+            output.get("evidence_refs_by_section"),
             output.get("decision_basis_by_section"),
             output.get("basis_by_section"),
             output.get("decision_basis_card_by_section"),
@@ -312,9 +1571,15 @@ def split_strategy_decision_output(output: dict[str, Any]) -> tuple[dict[str, An
     legacy_report = {
         key: value
         for key, value in output.items()
-        if key not in {"decision_basis_by_section", "basis_by_section", "decision_basis_card_by_section"}
+        if key not in {
+            "evidence_refs_by_section",
+            "decision_basis_by_section",
+            "basis_by_section",
+            "decision_basis_card_by_section",
+        }
     }
     return legacy_report, first_non_empty_object(
+        output.get("evidence_refs_by_section"),
         output.get("decision_basis_by_section"),
         output.get("basis_by_section"),
         output.get("decision_basis_card_by_section"),
@@ -330,24 +1595,63 @@ def first_non_empty_object(*values: Any) -> Any:
     return None
 
 
+def normalize_content_plan(content_plan: dict[str, Any]) -> dict[str, Any]:
+    """Coerce common LLM shape drift in the intermediate content plan."""
+
+    if not isinstance(content_plan, dict):
+        return content_plan
+    plan = dict(content_plan)
+    for key in (
+        "positive_claim_ids",
+        "negative_claim_ids",
+        "neutral_claim_ids",
+        "catalyst_claim_ids",
+        "risk_claim_ids",
+        "context_assessment_ids",
+        "peer_metric_ids",
+        "limitation_ids",
+    ):
+        if not isinstance(plan.get(key), list):
+            plan[key] = text_items(plan.get(key))
+    if not isinstance(plan.get("section_plan"), dict):
+        plan["section_plan"] = {}
+    else:
+        plan["section_plan"] = {
+            str(key): text_items(value)
+            for key, value in plan["section_plan"].items()
+        }
+    return plan
+
+
 def normalize_decision_basis_by_section(
     raw_basis: Any,
     strategy_report: dict[str, Any],
     input_bundle: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Normalize LLM-written basis entries keyed to Strategy Report section paths."""
+    """Normalize source refs produced in the same call as the Strategy report."""
 
-    raw_map = unwrap_decision_basis_map(raw_basis)
+    raw_map = flatten_decision_reference_map(unwrap_decision_basis_map(raw_basis))
+    if not raw_map:
+        raise ValueError("evidence_refs_by_section is required from the Decision Agent output.")
     opinion_ids = {
         clean_text(item.get("section_path")): clean_text(item.get("id"))
         for item in ensure_list(strategy_report.get("opinion_index"))
         if isinstance(item, dict)
     }
     basis_map: dict[str, Any] = {}
+    missing_paths: list[str] = []
     for section_path, opinion_text in iter_editable_report_opinions(strategy_report):
         if not opinion_text:
             continue
-        raw_entry = raw_map.get(section_path) or raw_map.get(opinion_ids.get(section_path, ""))
+        raw_entry = (
+            raw_map.get(section_path)
+            or raw_map.get(opinion_ids.get(section_path, ""))
+            or nearest_section_reference(raw_map, section_path)
+            or final_rationale_reference(raw_map, section_path)
+        )
+        if not raw_entry:
+            missing_paths.append(section_path)
+            continue
         basis_map[section_path] = normalize_decision_basis_entry(
             raw_entry,
             section_path=section_path,
@@ -355,7 +1659,11 @@ def normalize_decision_basis_by_section(
             opinion_text=opinion_text,
             input_bundle=input_bundle,
         )
-    fill_missing_basis_summaries(basis_map, input_bundle)
+    if missing_paths:
+        raise ValueError(
+            "decision_basis_by_section missing path(s): "
+            f"{missing_paths}; available reference keys: {sorted(raw_map)[:30]}"
+        )
     return {
         "target_company_name": clean_text(strategy_report.get("target_company_name")),
         "target_run_key": clean_text(strategy_report.get("target_run_key")),
@@ -371,6 +1679,7 @@ def unwrap_decision_basis_map(raw_basis: Any) -> dict[str, Any]:
 
     if isinstance(raw_basis, dict):
         nested = first_dict(
+            raw_basis.get("evidence_refs_by_section"),
             raw_basis.get("decision_basis_by_section"),
             raw_basis.get("basis_by_section"),
             raw_basis.get("sections"),
@@ -390,6 +1699,135 @@ def unwrap_decision_basis_map(raw_basis: Any) -> dict[str, Any]:
     return {}
 
 
+def flatten_decision_reference_map(raw_map: dict[str, Any], prefix: str = "") -> dict[str, Any]:
+    """Flatten a nested report-shaped refs object into section-path entries."""
+
+    flattened: dict[str, Any] = {}
+    for key, value in raw_map.items():
+        if key in {"strategy_report", "evidence_refs_by_section"} and isinstance(value, dict):
+            flattened.update(flatten_decision_reference_map(value, prefix))
+            continue
+        path = f"{prefix}.{key}" if prefix else clean_text(key)
+        if path.startswith("strategy_report."):
+            path = path.removeprefix("strategy_report.")
+        if is_decision_reference_entry(value):
+            flattened[path] = value
+        elif isinstance(value, dict):
+            flattened.update(flatten_decision_reference_map(value, path))
+    return flattened
+
+
+def content_plan_fingerprint(
+    evidence_packet: dict[str, Any],
+    *,
+    llm_provider: str,
+    llm_model: str,
+) -> str:
+    provider = resolve_llm_provider(llm_provider)
+    model = resolve_llm_model(provider, llm_model)
+    payload = {
+        "packet": evidence_packet,
+        "prompt": read_prompt("content_planner.md"),
+        "response_format": content_plan_response_format(evidence_packet),
+        "provider": provider,
+        "model": model,
+    }
+    return hashlib.sha256(compact_json(payload, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def load_cached_content_plan(
+    content_plan_path: Path,
+    cache_path: Path,
+    expected_fingerprint: str,
+) -> dict[str, Any] | None:
+    if not content_plan_path.exists() or not cache_path.exists():
+        return None
+    try:
+        cache = load_json(cache_path)
+        if cache.get("fingerprint") != expected_fingerprint:
+            return None
+        plan = normalize_content_plan(load_json(content_plan_path))
+        validate_content_plan(plan)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    return plan
+
+
+def decision_fingerprint(
+    evidence_packet: dict[str, Any],
+    content_plan: dict[str, Any],
+    *,
+    llm_provider: str,
+    llm_model: str,
+) -> str:
+    provider = resolve_llm_provider(llm_provider)
+    model = resolve_llm_model(provider, llm_model)
+    payload = {
+        "packet": evidence_packet,
+        "content_plan": content_plan,
+        "prompt": read_prompt("decision_agent.md"),
+        "schema": strategy_decision_output_schema(),
+        "provider": provider,
+        "model": model,
+    }
+    return hashlib.sha256(compact_json(payload, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def load_cached_llm_output(
+    output_path: Path,
+    cache_path: Path,
+    expected_fingerprint: str,
+) -> dict[str, Any] | None:
+    if not output_path.exists() or not cache_path.exists():
+        return None
+    try:
+        cache = load_json(cache_path)
+        output = load_json(output_path)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    return output if cache.get("fingerprint") == expected_fingerprint else None
+
+
+def is_decision_reference_entry(value: Any) -> bool:
+    if isinstance(value, list):
+        return True
+    if not isinstance(value, dict):
+        return False
+    return any(
+        key in value
+        for key in (
+            "source_evidence",
+            "evidence_refs",
+            "sources",
+            "source_section",
+            "claim_id",
+            "evidence_ids",
+            "basis_summary",
+        )
+    )
+
+
+def nearest_section_reference(raw_map: dict[str, Any], section_path: str) -> Any:
+    """Return the nearest ancestor refs when the model cited a whole report section."""
+
+    candidates = [
+        (path, value)
+        for path, value in raw_map.items()
+        if section_path == path or section_path.startswith(path + ".") or section_path.startswith(path + "[")
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: len(item[0]))[1]
+
+
+def final_rationale_reference(raw_map: dict[str, Any], section_path: str) -> Any:
+    """Reuse final decision refs when a duplicate final-rationale ref is omitted."""
+
+    if not section_path.startswith("final_rationale."):
+        return None
+    return raw_map.get("decision_balance") or raw_map.get("final_recommendation")
+
+
 def normalize_decision_basis_entry(
     raw_entry: Any,
     *,
@@ -398,253 +1836,39 @@ def normalize_decision_basis_entry(
     opinion_text: str,
     input_bundle: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Normalize one LLM-written basis entry without inventing analytical claims."""
+    """Normalize one source-reference entry without generating analytical prose."""
 
-    if isinstance(raw_entry, str):
-        payload: dict[str, Any] = {"basis_summary": raw_entry}
+    if isinstance(raw_entry, list):
+        payload: dict[str, Any] = {"source_evidence": raw_entry}
     elif isinstance(raw_entry, dict):
         payload = raw_entry
     else:
         payload = {}
-    basis_summary = first_non_empty(
-        payload.get("basis_summary"),
-        payload.get("why_written"),
-        payload.get("reasoning"),
-        payload.get("evidence_summary"),
-        payload.get("basis"),
+    source_evidence = first_non_empty_object(
+        payload.get("source_evidence"),
+        payload.get("evidence_refs"),
+        payload.get("sources"),
     )
-    if is_stale_path_fallback_basis(basis_summary, section_path):
-        basis_summary = ""
-    if not basis_summary and not raw_entry:
-        basis_summary = infer_system_added_basis_summary(section_path, opinion_text, input_bundle)
-    key_numbers = normalize_key_numbers(payload.get("key_numbers"), opinion_text)
+    if not source_evidence and any(
+        payload.get(key) for key in ("source_section", "claim_id", "evidence_ids")
+    ):
+        source_evidence = [payload]
     return {
         "opinion_id": clean_text(payload.get("opinion_id")) or opinion_id,
         "section_path": section_path,
         "opinion_text": opinion_text,
-        "basis_summary": clean_text(basis_summary),
-        "key_numbers": dedupe(key_numbers, 5),
         "source_evidence": normalize_basis_source_evidence(
-            first_non_empty_object(payload.get("source_evidence"), payload.get("evidence"), payload.get("evidence_refs"))
+            source_evidence,
+            input_bundle=input_bundle,
         )[:2],
-        "limitations": dedupe(text_items(payload.get("limitations")), 2),
     }
 
 
-def fill_missing_basis_summaries(basis_map: dict[str, Any], input_bundle: dict[str, Any] | None = None) -> None:
-    """Fill omitted basis summaries from existing input evidence, not from opinion text."""
-
-    aggregate_fragments = aggregate_input_basis_fragments(basis_map)
-    input_candidates = input_text_candidates(input_bundle)
-    for section_path, entry in basis_map.items():
-        if not isinstance(entry, dict) or clean_text(entry.get("basis_summary")):
-            continue
-        fragments = input_basis_fragments(entry)
-        if section_path == "final_recommendation.summary":
-            fragments = aggregate_fragments or fragments
-        if not fragments:
-            related_input = best_related_input_text(clean_text(entry.get("opinion_text")), input_candidates)
-            if related_input:
-                fragments = [related_input]
-        if fragments:
-            entry["basis_summary"] = render_input_to_opinion_basis(fragments, section_path)
-
-
-def aggregate_input_basis_fragments(basis_map: dict[str, Any]) -> list[str]:
-    """Collect representative input evidence fragments from all basis entries."""
-
-    preferred_prefixes = (
-        "financial_view.",
-        "risk_view.",
-        "market_price_view.",
-        "catalyst_view.",
-        "cross_agent_consistency_check.",
-    )
-    fragments: list[str] = []
-    for prefix in preferred_prefixes:
-        for section_path, entry in basis_map.items():
-            if clean_text(section_path).startswith(prefix):
-                fragments.extend(input_basis_fragments(entry))
-            if len(fragments) >= 4:
-                return dedupe(fragments, 4)
-    return dedupe(fragments, 4)
-
-
-def input_basis_fragments(entry: dict[str, Any]) -> list[str]:
-    """Extract concise input evidence fragments from a normalized basis entry."""
-
-    fragments: list[str] = []
-    for source in normalize_basis_source_evidence(entry.get("source_evidence")):
-        agent = clean_text(source.get("agent"))
-        evidence = clean_text(source.get("evidence_text"))
-        if evidence:
-            fragments.append(f"{agent} 입력의 {evidence}" if agent else evidence)
-    fragments.extend(text_items(entry.get("key_numbers")))
-    fragments.extend(text_items(entry.get("limitations")))
-    return dedupe([truncate_text(item, 90) for item in fragments if item], 4)
-
-
-def render_input_to_opinion_basis(fragments: list[str], section_path: str) -> str:
-    """Render an input-to-opinion basis sentence without repeating the opinion text."""
-
-    evidence = "; ".join(dedupe(fragments, 3))
-    label = section_path_basis_label(section_path)
-    return f"{evidence} 근거가 입력에서 확인되어 {label}{ro_particle(label)} 판단했다."
-
-
-def section_path_basis_label(section_path: str) -> str:
-    """Return a reader-facing label for a Strategy Report path."""
-
-    path = clean_text(section_path)
-    if path.startswith("final_recommendation"):
-        return "최종 투자의견"
-    if path.startswith("investment_thesis"):
-        return "투자 thesis"
-    if path.startswith("financial_view.revenue"):
-        return "매출 의견"
-    if path.startswith("financial_view.profitability"):
-        return "수익성 의견"
-    if path.startswith("financial_view.cash_flow"):
-        return "현금흐름 의견"
-    if path.startswith("financial_view.balance_sheet"):
-        return "재무구조 의견"
-    if path.startswith("financial_view"):
-        return "재무 해석 의견"
-    if path.startswith("catalyst_view"):
-        return "사업 catalyst 의견"
-    if path.startswith("risk_view.regulatory_risks"):
-        return "규제 리스크 의견"
-    if path.startswith("risk_view.market_risks"):
-        return "시장 리스크 의견"
-    if path.startswith("risk_view.execution_risks"):
-        return "실행 리스크 의견"
-    if path.startswith("risk_view.financial_risks"):
-        return "재무 리스크 의견"
-    if path.startswith("market_price_view"):
-        return "시장 가격 의견"
-    if path.startswith("peer_competitor_positioning"):
-        return "경쟁사 비교 의견"
-    if path.startswith("cross_agent_consistency_check"):
-        return "교차 검증 의견"
-    if path.startswith("key_strengths"):
-        return "핵심 강점 의견"
-    if path.startswith("key_risks"):
-        return "핵심 리스크 의견"
-    if path.startswith("limitations"):
-        return "한계 및 모니터링 의견"
-    if path.startswith("final_rationale"):
-        return "최종 판단 근거"
-    return "해당 의견"
-
-
-def is_stale_path_fallback_basis(basis_summary: str, section_path: str) -> bool:
-    """Detect old fallback wording that exposed raw report paths to readers."""
-
-    text = clean_text(basis_summary)
-    if not text or "근거가 입력에서 확인되어" not in text:
-        return False
-    return clean_text(section_path) in text or "의견로 판단했다" in text or "투자의견로 판단했다" in text
-
-
-def ro_particle(text: str) -> str:
-    """Return Korean instrumental particle for labels ending in Hangul."""
-
-    value = clean_text(text)
-    for character in reversed(value):
-        code = ord(character)
-        if 0xAC00 <= code <= 0xD7A3:
-            final = (code - 0xAC00) % 28
-            return "로" if final in {0, 8} else "으로"
-    return "로"
-
-
-def input_text_candidates(input_bundle: dict[str, Any] | None) -> list[str]:
-    """Collect concise source strings from the Strategy input bundle."""
-
-    if not isinstance(input_bundle, dict):
-        return []
-    candidates: list[str] = []
-    collect_input_text_candidates(input_bundle, candidates)
-    return dedupe([truncate_text(item, 220) for item in candidates if item], 1500)
-
-
-def collect_input_text_candidates(value: Any, candidates: list[str]) -> None:
-    """Recursively collect meaningful strings from nested input data."""
-
-    if isinstance(value, dict):
-        for child in value.values():
-            collect_input_text_candidates(child, candidates)
-    elif isinstance(value, list):
-        for child in value:
-            collect_input_text_candidates(child, candidates)
-    else:
-        text = clean_text(value)
-        if len(text) >= 12 and not looks_like_path_or_identifier(text):
-            candidates.append(text)
-
-
-def looks_like_path_or_identifier(text: str) -> bool:
-    """Skip file paths and bare identifiers when searching input basis text."""
-
-    value = clean_text(text)
-    if "/" in value or "\\" in value:
-        return True
-    if re.fullmatch(r"[A-Z_]+_\d+(?:[-_]\d+)*", value):
-        return True
-    return False
-
-
-def infer_system_added_basis_summary(
-    section_path: str,
-    opinion_text: str,
-    input_bundle: dict[str, Any] | None,
-) -> str:
-    """Explain deterministic report additions that come directly from input constraints."""
-
-    if not section_path.startswith("limitations.") or not isinstance(input_bundle, dict):
-        return ""
-    constraints = text_items(input_bundle.get("decision_constraints"))
-    match = best_related_input_text(opinion_text, constraints)
-    if not match:
-        return ""
-    return f"strategy_input_bundle.decision_constraints에 '{match}' 입력이 포함되어 있어 해당 제약을 limitations에 반영했다."
-
-
-def best_related_input_text(target_text: str, candidates: list[str]) -> str:
-    """Return the candidate sharing the most meaningful words with target_text."""
-
-    target_tokens = meaningful_korean_tokens(target_text)
-    best = ""
-    best_score = 0
-    for candidate in candidates:
-        candidate_tokens = meaningful_korean_tokens(candidate)
-        score = len(target_tokens & candidate_tokens)
-        if score > best_score:
-            best = candidate
-            best_score = score
-    return best if best_score >= 1 else ""
-
-
-def meaningful_korean_tokens(text: str) -> set[str]:
-    """Extract coarse Korean/English tokens for fuzzy source matching."""
-
-    stopwords = {
-        "있다",
-        "없다",
-        "해석",
-        "제한",
-        "기준",
-        "직접",
-        "증거",
-        "필요",
-        "있음",
-        "대상",
-        "확인",
-    }
-    return {token for token in re.findall(r"[가-힣A-Za-z0-9]+", clean_text(text)) if len(token) >= 2 and token not in stopwords}
-
-
-def normalize_basis_source_evidence(value: Any) -> list[dict[str, Any]]:
+def normalize_basis_source_evidence(
+    value: Any,
+    *,
+    input_bundle: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     """Normalize source-evidence rows used by a path-level decision basis entry."""
 
     if value is None:
@@ -670,13 +1894,79 @@ def normalize_basis_source_evidence(value: Any) -> list[dict[str, Any]]:
                 + text_items(item.get("evidence_ids_used")),
                 16,
             )
+            agent = clean_text(item.get("agent"))
+            claim_id = clean_text(item.get("claim_id"))
+            limitation_source_section = ""
+            if (
+                input_bundle is not None
+                and claim_id
+                and claim_id in (input_bundle.get("limitations") or {})
+            ):
+                limitation_source_section = f"limitations.{claim_id}"
+            if is_strategy_opinion_id(claim_id) or is_empty_source_identifier(claim_id):
+                claim_id = ""
+            evidence_ids = [evidence_id for evidence_id in evidence_ids if not is_strategy_opinion_id(evidence_id)]
+            if input_bundle is not None and isinstance(input_bundle.get("evidence_catalog"), dict):
+                evidence_ids = [
+                    evidence_id
+                    for evidence_id in evidence_ids
+                    if evidence_id in input_bundle["evidence_catalog"]
+                ]
+                known_claim_ids = {
+                    clean_text(claim.get("claim_id"))
+                    for claims in (input_bundle.get("claim_ledger") or {}).values()
+                    for claim in ensure_list(claims)
+                    if isinstance(claim, dict)
+                }
+                if claim_id and claim_id not in known_claim_ids:
+                    claim_id = ""
+            source_path = first_non_empty(item.get("source_path"), item.get("path"))
+            source_section = normalize_basis_source_section(
+                first_non_empty(item.get("source_section"), item.get("section"), item.get("section_path")),
+                agent=agent,
+                input_bundle=input_bundle,
+            )
+            if not source_section:
+                source_section = normalize_basis_source_section(
+                    source_path,
+                    agent=agent,
+                    input_bundle=input_bundle,
+                )
+            if limitation_source_section and source_section in {"", "limitations", "decision_constraints"}:
+                source_section = normalize_basis_source_section(
+                    limitation_source_section,
+                    agent=agent,
+                    input_bundle=input_bundle,
+                )
+            if not source_section:
+                source_section = source_section_for_validation_claim(
+                    claim_id,
+                    agent=agent,
+                    input_bundle=input_bundle,
+                )
+            if not source_section:
+                source_section = source_section_for_input_file(
+                    source_path,
+                    agent="",
+                    input_bundle=input_bundle,
+                )
+            if not source_section and evidence_ids and input_bundle is not None:
+                source_section = normalize_basis_source_section(
+                    f"evidence_catalog.{evidence_ids[0]}",
+                    agent="",
+                    input_bundle=input_bundle,
+                )
+            evidence_agent = basis_agent_for_evidence_ids(evidence_ids, input_bundle)
+            if evidence_agent:
+                agent = evidence_agent
+            agent = canonical_basis_agent(agent, source_section)
             rows.append(
                 {
-                    "agent": clean_text(item.get("agent")),
-                    "claim_id": clean_text(item.get("claim_id")),
+                    "agent": agent,
+                    "claim_id": claim_id,
                     "evidence_text": truncate_text(evidence_text, 160),
-                    "source_path": first_non_empty(item.get("source_path"), item.get("path")),
-                    "source_section": first_non_empty(item.get("source_section"), item.get("section"), item.get("section_path")),
+                    "source_path": source_path,
+                    "source_section": source_section,
                     "evidence_ids": evidence_ids,
                 }
             )
@@ -693,57 +1983,187 @@ def normalize_basis_source_evidence(value: Any) -> list[dict[str, Any]]:
                         "evidence_ids": [],
                     }
                 )
-    return [row for row in rows if row.get("evidence_text") or row.get("claim_id") or row.get("evidence_ids")]
+    return [
+        row
+        for row in rows
+        if row.get("evidence_text") or row.get("claim_id") or row.get("evidence_ids") or row.get("source_section")
+    ]
 
 
-def extract_numbers(text: str) -> list[str]:
-    """Extract numeric phrases already present in a report opinion."""
+def basis_agent_for_evidence_ids(
+    evidence_ids: list[str],
+    input_bundle: dict[str, Any] | None,
+) -> str:
+    if input_bundle is None:
+        return ""
+    catalog = input_bundle.get("evidence_catalog") or {}
+    domains = {
+        clean_text((catalog.get(evidence_id) or {}).get("domain"))
+        for evidence_id in evidence_ids
+        if isinstance(catalog.get(evidence_id), dict)
+    }
+    domains.discard("")
+    if len(domains) != 1:
+        return ""
+    return {
+        "financial": "Financial",
+        "news": "News",
+        "market": "YFinance",
+    }.get(next(iter(domains)), "")
 
-    pattern = r"[-+]?\d+(?:,\d{3})*(?:\.\d+)?\s*(?:조원|억원|원|%|배|일|년|개월|분기|Q[1-4])?"
-    return dedupe([match.strip() for match in re.findall(pattern, clean_text(text)) if match.strip()], 16)
+
+def is_strategy_opinion_id(value: Any) -> bool:
+    """Return True for Strategy opinion-index IDs, which are not source IDs."""
+
+    return bool(re.fullmatch(r"OP\d+", clean_text(value), flags=re.IGNORECASE))
 
 
-def normalize_key_numbers(value: Any, fallback_text: str) -> list[str]:
-    """Keep only useful numeric, period, and market-metric basis values."""
+def is_empty_source_identifier(value: Any) -> bool:
+    """Return True for placeholder text that is not a provenance identifier."""
 
-    raw_items = text_items(value) or extract_numbers(fallback_text)
-    return dedupe([item for item in raw_items if is_useful_key_number(item)], 16)
+    return clean_text(value).lower() in {"n/a", "na", "none", "null", "not applicable", "not_applicable"}
 
 
-def is_useful_key_number(text: str) -> bool:
-    """Reject evidence-id fragments and bare integers from key_numbers."""
+def normalize_basis_source_section(
+    value: Any,
+    *,
+    agent: str,
+    input_bundle: dict[str, Any] | None,
+) -> str:
+    """Keep only canonical source paths that exist in the supplied input bundle."""
 
-    value = clean_text(text)
-    if not value or not re.search(r"\d", value):
+    source_section = clean_text(value)
+    if not source_section:
+        return ""
+    source_section = re.sub(r"^\$\.?", "", source_section)
+    if source_section.startswith("strategy_input_bundle."):
+        source_section = source_section.removeprefix("strategy_input_bundle.")
+    if source_section.startswith("strategy_llm_packet."):
+        source_section = source_section.removeprefix("strategy_llm_packet.")
+    if source_section.startswith("strategy_decision_packet."):
+        source_section = source_section.removeprefix("strategy_decision_packet.")
+    if not source_section.startswith(BASIS_SOURCE_ROOTS):
+        return ""
+    allowed_roots = basis_source_roots_for_agent(agent)
+    if allowed_roots and not source_section.startswith(allowed_roots):
+        return ""
+    if input_bundle is not None and not input_bundle_path_exists(input_bundle, source_section):
+        return ""
+    return source_section
+
+
+def basis_source_roots_for_agent(agent: str) -> tuple[str, ...]:
+    """Return input-bundle roots allowed for a recognized evidence domain."""
+
+    normalized = re.sub(r"[^a-z]", "", clean_text(agent).lower())
+    common = ("limitations", "decision_constraints")
+    if normalized in {"financial", "financialagent", "dart", "dartagent"}:
+        return ("claim_ledger.financial", "evidence_catalog", "structured_facts.financial", *common)
+    if normalized in {"news", "newsagent"}:
+        return ("claim_ledger.news", "evidence_catalog", "secondary_context_assessments", *common)
+    if normalized in {"yfinance", "yfinanceagent", "market", "marketagent"}:
+        return (
+            "claim_ledger.yfinance",
+            "evidence_catalog",
+            "secondary_context_assessments",
+            "structured_facts.valuation",
+            *common,
+        )
+    if normalized in {"competitor", "competitoragent", "peer", "peercomparison"}:
+        return ("peer_metric_catalog", "peer_context", *common)
+    return ()
+
+
+def canonical_basis_agent(agent: str, source_section: str) -> str:
+    """Align the evidence-domain label with an exact input-bundle section."""
+
+    if source_section.startswith(("claim_ledger.financial", "structured_facts.financial")):
+        return "Financial"
+    if source_section.startswith("claim_ledger.news"):
+        return "News"
+    if source_section.startswith(("claim_ledger.yfinance", "structured_facts.valuation")):
+        return "YFinance"
+    if source_section.startswith(("peer_metric_catalog", "peer_context")):
+        return "Competitor"
+    if source_section.startswith("evidence_catalog"):
+        return agent
+    return agent
+
+
+def input_bundle_path_exists(input_bundle: dict[str, Any], source_section: str) -> bool:
+    """Resolve a dotted path with optional list indexes against strategy_input_bundle."""
+
+    dotted_path = re.sub(r"\[(\d+)\]", r".\1", source_section)
+    tokens = [token for token in dotted_path.split(".") if token]
+    current: Any = input_bundle
+    for token in tokens:
+        if isinstance(current, dict) and token in current:
+            current = current[token]
+            continue
+        if isinstance(current, list) and token.isdigit() and int(token) < len(current):
+            current = current[int(token)]
+            continue
         return False
-    if "NEWS_RAW" in value or "EVIDENCE" in value.upper():
-        return False
-    if re.fullmatch(r"[-+]?\d+(?:,\d{3})*(?:\.\d+)?", value):
-        return False
-    useful_markers = (
-        "조원",
-        "억원",
-        "원",
-        "%",
-        "배",
-        "일",
-        "년",
-        "개월",
-        "분기",
-        "Q1",
-        "Q2",
-        "Q3",
-        "Q4",
-        "YTD",
-        "FULL_YEAR",
-        "초과수익률",
-        "상대강도",
-        "EPS",
-        "매출",
-        "공헌이익률",
-        "판관비율",
-    )
-    return any(marker in value for marker in useful_markers)
+    return bool(tokens)
+
+
+def source_section_for_validation_claim(
+    claim_id: str,
+    *,
+    agent: str,
+    input_bundle: dict[str, Any] | None,
+) -> str:
+    """Resolve a validation claim ID to its exact compact-ledger path."""
+
+    if not claim_id or input_bundle is None:
+        return ""
+    allowed_roots = basis_source_roots_for_agent(agent)
+    validation_root = input_bundle.get("claim_ledger")
+    if not isinstance(validation_root, dict):
+        return ""
+    for domain, payload in validation_root.items():
+        domain_prefix = f"claim_ledger.{domain}"
+        if allowed_roots and not domain_prefix.startswith(allowed_roots):
+            continue
+        for index, claim in enumerate(ensure_list(payload)):
+            if isinstance(claim, dict) and clean_text(claim.get("claim_id")) == claim_id:
+                return f"{domain_prefix}[{index}]"
+    return ""
+
+
+def source_section_for_input_file(
+    source_path: str,
+    *,
+    agent: str,
+    input_bundle: dict[str, Any] | None,
+) -> str:
+    """Map an exact source-file path back to its input-bundle section."""
+
+    if not source_path or input_bundle is None:
+        return ""
+    metadata = input_bundle.get("input_metadata")
+    if not isinstance(metadata, dict):
+        return ""
+    candidates: list[tuple[str, str]] = [
+        (clean_text(metadata.get("target_financial_path")), "target_reports.financial"),
+        (clean_text(metadata.get("target_news_path")), "target_reports.news"),
+        (clean_text(metadata.get("target_yfinance_path")), "target_reports.yfinance"),
+        (clean_text(metadata.get("peer_comparison_path")), "peer_comparison"),
+    ]
+    validation_paths = metadata.get("target_validation_paths")
+    if isinstance(validation_paths, dict):
+        candidates.extend(
+            (clean_text(path), f"target_validation_evidence.{domain}")
+            for domain, path in validation_paths.items()
+        )
+    normalized_source = str(Path(source_path).expanduser().resolve()) if source_path else ""
+    for candidate_path, section in candidates:
+        if not candidate_path:
+            continue
+        if normalized_source != str(Path(candidate_path).expanduser().resolve()):
+            continue
+        return normalize_basis_source_section(section, agent=agent, input_bundle=input_bundle)
+    return ""
 
 
 def normalize_structured_strategy_report(report: dict[str, Any]) -> dict[str, Any]:
@@ -758,30 +2178,34 @@ def normalize_structured_strategy_report(report: dict[str, Any]) -> dict[str, An
         "final_recommendation": {
             "opinion": opinion,
             "summary": summary,
+            "investment_horizon": clean_text(recommendation.get("investment_horizon")),
+            "evidence_sufficiency": clean_text(recommendation.get("evidence_sufficiency")).lower(),
+            "evidence_sufficiency_reason": clean_text(recommendation.get("evidence_sufficiency_reason")),
         },
-        "investment_thesis": normalize_investment_thesis(
+        "investment_thesis": string_fields(
             report.get("investment_thesis"),
-            opinion=opinion,
-            summary=summary,
-            final_rationale=final_rationale_text,
-            risks=report.get("key_risks"),
-            limitations=report.get("limitations"),
+            ("thesis_1", "thesis_2", "thesis_3"),
         ),
         "financial_view": string_fields(
             report.get("financial_view"),
             ("revenue", "profitability", "cash_flow", "balance_sheet", "financial_interpretation"),
         ),
+        "business_mix_view": string_fields(
+            report.get("business_mix_view"),
+            ("revenue_composition", "concentration", "business_mix_interpretation"),
+        ),
         "catalyst_view": list_fields(
             report.get("catalyst_view"),
-            ("positive_catalysts", "business_expansion"),
+            ("observed_catalysts",),
         ),
-        "risk_view": list_fields(
-            report.get("risk_view"),
-            ("financial_risks", "regulatory_risks", "market_risks", "execution_risks"),
-        ),
+        "risk_view": normalize_observed_risks(report.get("risk_view")),
         "market_price_view": string_fields(
             report.get("market_price_view"),
             ("price_trend", "volume", "relative_strength", "market_interpretation"),
+        ),
+        "valuation_view": string_fields(
+            report.get("valuation_view"),
+            ("selected_date_valuation", "peer_valuation_comparison", "valuation_interpretation"),
         ),
         "cross_agent_consistency_check": {
             **list_fields(report.get("cross_agent_consistency_check"), ("confirmed_signals", "mixed_conflicting_signals")),
@@ -790,100 +2214,23 @@ def normalize_structured_strategy_report(report: dict[str, Any]) -> dict[str, An
         "peer_competitor_positioning": {
             **list_fields(
                 report.get("peer_competitor_positioning"),
-                ("competitor_summary", "target_relative_strength", "target_relative_weakness"),
+                ("pairwise_findings", "comparison_limits"),
             ),
             "peer_based_investment_implication": clean_text(
                 get_path(report, ["peer_competitor_positioning", "peer_based_investment_implication"])
             ),
         },
-        "key_strengths": text_items(report.get("key_strengths")),
-        "key_risks": text_items(report.get("key_risks")),
+        "decision_balance": {
+            **list_fields(report.get("decision_balance"), ("positive_evidence", "negative_evidence")),
+            "balance_conclusion": clean_text(get_path(report, ["decision_balance", "balance_conclusion"])),
+        },
         "final_rationale": {
             "why_buy_hold_sell": final_rationale_text,
         },
-        "limitations": normalize_limitations(report.get("limitations"), None),
+        # Limitation meaning and bucket ownership belong to the Decision Agent.
+        "limitations": report.get("limitations"),
     }
     return normalized
-
-
-def convert_legacy_strategy_report(report: dict[str, Any]) -> dict[str, Any]:
-    """Convert the previous Strategy Report schema to the section-based schema."""
-
-    opinion = normalize_recommendation(report.get("final_recommendation"))
-    investment_view = report.get("investment_view") if isinstance(report.get("investment_view"), dict) else {}
-    competitors = [item for item in ensure_list(report.get("competitor_comparison")) if isinstance(item, dict)]
-    competitor_summaries = [
-        f"{clean_text(item.get('competitor'))}: {clean_text(item.get('comparison_summary'))}".strip(": ")
-        for item in competitors
-        if clean_text(item.get("competitor")) or clean_text(item.get("comparison_summary"))
-    ]
-    competitor_strengths: list[str] = []
-    competitor_risks: list[str] = []
-    for item in competitors:
-        competitor_strengths.extend(text_items(item.get("competitor_strengths_considered")))
-        competitor_risks.extend(text_items(item.get("competitor_risks_considered")))
-
-    rationale = text_items(report.get("decision_rationale"))
-    strengths = text_items(report.get("target_strengths"))
-    risks = text_items(report.get("target_risks"))
-    limitations = text_items(report.get("limitations"))
-    summary = clean_text(report.get("recommendation_summary"))
-
-    investment_thesis = {
-        "thesis_1": strengths[0] if strengths else summary,
-        "thesis_2": strengths[1] if len(strengths) > 1 else (rationale[0] if rationale else summary),
-    }
-    if opinion == "Hold":
-        investment_thesis["thesis_3"] = build_hold_buy_blocker_thesis(summary, rationale, risks, limitations)
-
-    return {
-        "target_company_name": clean_text(report.get("target_company")),
-        "final_recommendation": {
-            "opinion": opinion,
-            "summary": summary,
-        },
-        "investment_thesis": investment_thesis,
-        "financial_view": {
-            "revenue": clean_text(investment_view.get("financial_view")),
-            "profitability": clean_text(investment_view.get("financial_view")),
-            "cash_flow": clean_text(investment_view.get("financial_view")),
-            "balance_sheet": clean_text(investment_view.get("financial_view")),
-            "financial_interpretation": clean_text(investment_view.get("financial_view")),
-        },
-        "catalyst_view": {
-            "positive_catalysts": text_items(investment_view.get("news_view")),
-            "business_expansion": text_items(investment_view.get("news_view")),
-        },
-        "risk_view": {
-            "financial_risks": risks,
-            "regulatory_risks": [item for item in risks if "FDA" in item or "규제" in item or "관세" in item],
-            "market_risks": [item for item in risks if "주가" in item or "시장" in item or "상대" in item],
-            "execution_risks": [item for item in risks if "신사업" in item or "지속성" in item or "상업화" in item],
-        },
-        "market_price_view": {
-            "price_trend": clean_text(investment_view.get("market_view")),
-            "volume": clean_text(investment_view.get("market_view")),
-            "relative_strength": clean_text(investment_view.get("market_view")),
-            "market_interpretation": clean_text(investment_view.get("market_view")),
-        },
-        "cross_agent_consistency_check": {
-            "confirmed_signals": strengths,
-            "mixed_conflicting_signals": limitations + risks,
-            "strategy_implication": "; ".join(rationale) if rationale else summary,
-        },
-        "peer_competitor_positioning": {
-            "competitor_summary": competitor_summaries,
-            "target_relative_strength": dedupe(competitor_risks, 8),
-            "target_relative_weakness": dedupe(competitor_strengths, 8),
-            "peer_based_investment_implication": clean_text(investment_view.get("competitor_view")),
-        },
-        "key_strengths": strengths,
-        "key_risks": risks,
-        "final_rationale": {
-            "why_buy_hold_sell": "; ".join(rationale) if rationale else summary,
-        },
-        "limitations": normalize_limitations(limitations, None),
-    }
 
 
 def string_fields(value: Any, keys: tuple[str, ...]) -> dict[str, str]:
@@ -893,44 +2240,6 @@ def string_fields(value: Any, keys: tuple[str, ...]) -> dict[str, str]:
     return {key: clean_text(payload.get(key)) for key in keys}
 
 
-def normalize_investment_thesis(
-    value: Any,
-    *,
-    opinion: str,
-    summary: str,
-    final_rationale: str,
-    risks: Any,
-    limitations: Any,
-) -> dict[str, str]:
-    """Normalize thesis fields with a third balancing thesis for Hold reports."""
-
-    payload = value if isinstance(value, dict) else {}
-    thesis = {
-        "thesis_1": clean_text(payload.get("thesis_1")),
-        "thesis_2": clean_text(payload.get("thesis_2")),
-    }
-    thesis_3 = first_non_empty(payload.get("thesis_3"), payload.get("why_not_buy"))
-    if opinion == "Hold":
-        thesis["thesis_3"] = thesis_3 or build_hold_buy_blocker_thesis(
-            summary,
-            [final_rationale],
-            text_items(risks),
-            limitations_text_items(normalize_limitations(limitations, None)),
-        )
-    elif thesis_3:
-        thesis["thesis_3"] = thesis_3
-    return thesis
-
-
-def build_hold_buy_blocker_thesis(summary: str, rationale: Any, risks: Any, limitations: Any) -> str:
-    """Build a data-derived reason why Hold is not Buy when the LLM omits one."""
-
-    blocker = first_non_empty(*text_items(risks), *text_items(limitations))
-    if blocker:
-        return f"Buy로 상향하기에는 {blocker} 요인이 남아 있어 Hold가 적절하다."
-    return first_non_empty(*text_items(rationale), summary)
-
-
 def list_fields(value: Any, keys: tuple[str, ...]) -> dict[str, list[str]]:
     """Return a dict with required list-of-string keys."""
 
@@ -938,103 +2247,24 @@ def list_fields(value: Any, keys: tuple[str, ...]) -> dict[str, list[str]]:
     return {key: text_items(payload.get(key)) for key in keys}
 
 
-def normalize_limitations(value: Any, constraints: Any) -> dict[str, list[str]]:
-    """Normalize limitations into data, interpretation, and monitoring buckets."""
+def normalize_observed_risks(value: Any) -> dict[str, list[dict[str, str]]]:
+    """Normalize the evidence-backed risk list without inferring categories."""
 
-    if isinstance(value, dict):
-        data_limitations = sanitize_limitation_items(value.get("data_limitations"))
-        interpretation_limitations = sanitize_limitation_items(value.get("interpretation_limitations"))
-        monitoring_points = sanitize_limitation_items(value.get("monitoring_points"))
-    else:
-        items = sanitize_limitation_items(value)
-        data_limitations = [item for item in items if any(token in item for token in ("데이터", "기간", "기준", "집계", "부재"))]
-        interpretation_limitations = [
-            item
-            for item in items
-            if any(token in item for token in ("해석", "직접 증거", "인과관계", "단정", "제한"))
-        ]
-        monitoring_points = [item for item in items if item not in data_limitations and item not in interpretation_limitations]
-    constraint_items = sanitize_limitation_items(constraints)
-    if constraint_items:
-        interpretation_limitations = dedupe(interpretation_limitations + constraint_items, 14)
-    return {
-        "data_limitations": dedupe(data_limitations, 10),
-        "interpretation_limitations": dedupe(interpretation_limitations, 14),
-        "monitoring_points": dedupe(monitoring_points, 10),
-    }
-
-
-def consolidate_limitations(value: Any, strategy_report: dict[str, Any] | None = None) -> dict[str, list[str]]:
-    """Deduplicate limitation buckets without inventing new reader-facing claims."""
-
-    del strategy_report
-    limitations = normalize_limitations(value, None)
-    data_items = consolidate_limitation_bucket(
-        limitations.get("data_limitations"),
-        limit=6,
-    )
-    interpretation_items = consolidate_limitation_bucket(
-        limitations.get("interpretation_limitations"),
-        limit=8,
-    )
-    monitoring_items = consolidate_limitation_bucket(
-        limitations.get("monitoring_points"),
-        limit=6,
-    )
-    return {
-        "data_limitations": data_items,
-        "interpretation_limitations": interpretation_items,
-        "monitoring_points": monitoring_items,
-    }
-
-
-def consolidate_limitation_bucket(value: Any, *, limit: int) -> list[str]:
-    """Deduplicate limitation text while preserving the LLM/source wording."""
-
-    items = [clean_limitation_sentence(item) for item in text_items(value)]
-    items = [item for item in items if item and not is_low_value_limitation(item)]
-    return dedupe(items, limit)
-
-
-def clean_limitation_sentence(text: Any) -> str:
-    """Normalize surface wording in limitation sentences."""
-
-    value = clean_text(text)
-    value = value.replace("대상임", "대상이다")
-    value = value.replace("제한이 있음", "제한이 있다")
-    value = value.replace("부족함", "부족하다")
-    value = value.replace("어려움", "어렵다")
-    value = value.replace("리스크은", "리스크는")
-    value = value.replace("는은", "은").replace("은은", "은")
-    return value
-
-
-def is_low_value_limitation(text: str) -> bool:
-    """Drop generic limitation filler that adds little audit value."""
-
-    generic = {
-        "추가 검토 전까지 해석에 제한이 있다.",
-        "추가 검증 전까지 해석에 제한이 있다.",
-        "추가 확인 전까지 해석에 제한이 있다.",
-    }
-    if text in generic:
-        return True
-    if text.startswith("News SY 검증에서 일부 "):
-        return True
-    if re.fullmatch(r".+지속 관찰 대상이다(?:\.는 지속 관찰 대상이다)*\.?", text):
-        return True
-    return False
-
-
-def sanitize_limitation_items(value: Any) -> list[str]:
-    """Convert internal caution wording into reader-facing limitations."""
-
-    items: list[str] = []
-    for item in text_items(value):
-        text = user_facing_limitation_text(item)
-        if text:
-            items.append(text)
-    return dedupe(items, 20)
+    payload = value if isinstance(value, dict) else {}
+    raw_items = payload.get("observed_risks")
+    if not isinstance(raw_items, list):
+        raise ValueError("risk_view.observed_risks must be a list.")
+    items: list[dict[str, str]] = []
+    for index, item in enumerate(raw_items):
+        if not isinstance(item, dict):
+            raise ValueError(f"risk_view.observed_risks[{index}] must be an object.")
+        items.append(
+            {
+                "category": clean_text(item.get("category")).lower(),
+                "statement": clean_text(item.get("statement")),
+            }
+        )
+    return {"observed_risks": items}
 
 
 def resolve_preferred_report_path(report_path: Path, domain: str) -> Path:
@@ -1131,95 +2361,79 @@ def preferred_validation_candidates(report_path: Path, domain: str) -> list[Path
 
 
 def sanitize_strategy_input_report(report: dict[str, Any], domain: str) -> dict[str, Any]:
-    """Remove upstream agent-internal notes that should not steer Strategy prose."""
+    """Keep decision evidence while removing upstream validation operations."""
 
-    if domain != "news":
-        return report
-    sanitize_news_strategy_handoff_notes(report)
+    cleaned = strip_operational_validation_content(deepcopy(report))
+    return compact_strategy_input_report(cleaned, domain)
+
+
+def compact_strategy_input_report(report: dict[str, Any], domain: str) -> dict[str, Any]:
+    """Return the bounded source sections used by Strategy decision prompts."""
+
+    identity_keys = ("agent_name", "target_company", "ticker", "corp_code", "as_of_date")
+    compact = {key: report.get(key) for key in identity_keys if key in report}
+    if domain == "financial":
+        for key in (
+            "collection_context",
+            "financial_trends",
+            "revenue_breakdown",
+            "share_information",
+            "main_view",
+            "financial_statement_view",
+            "detailed_analysis",
+            "sy_handoff",
+            "secondary_context",
+            "secondary_context_assessment",
+        ):
+            if key in report:
+                compact[key] = report.get(key)
+        return compact
+    if domain == "news":
+        output = report.get("output") if isinstance(report.get("output"), dict) else report
+        compact["output"] = {
+            key: output.get(key)
+            for key in ("target_entity", "analysis_blocks", "secondary_context_assessment")
+            if key in output
+        }
+        return compact
+    if domain == "yfinance":
+        for key in (
+            "main_view",
+            "time_horizon_view",
+            "detailed_analysis",
+            "valuation_snapshot",
+            "primary_evidence_catalog",
+            "secondary_context_catalog",
+            "secondary_context_assessment",
+        ):
+            if key in report:
+                compact[key] = report.get(key)
+        return compact
     return report
 
 
-def sanitize_news_strategy_handoff_notes(report: dict[str, Any]) -> None:
-    """Keep News handoff notes concise and reader-facing for Strategy inputs."""
+def strip_operational_validation_content(value: Any) -> Any:
+    """Recursively remove SY/rewrite mechanics from reader-facing evidence."""
 
-    summary_note = news_validation_summary_note(report)
-    note_paths = (
-        ["output", "analysis_blocks", "news_plus_financial_plus_market", "strategy_handoff_notes"],
-        ["output", "news_plus_financial_plus_market", "strategy_handoff_notes"],
-        ["analysis_blocks", "news_plus_financial_plus_market", "strategy_handoff_notes"],
-    )
-    updated = False
-    for path in note_paths:
-        container = get_path(report, path[:-1])
-        if not isinstance(container, dict) or path[-1] not in container:
-            continue
-        notes = text_items(container.get(path[-1]))
-        cleaned = [note for note in notes if not is_sy_validation_handoff_note(note)]
-        if summary_note:
-            cleaned.append(summary_note)
-        container[path[-1]] = dedupe(cleaned, 12)
-        updated = True
-
-    if not updated and summary_note:
-        container = get_path(report, ["output", "analysis_blocks", "news_plus_financial_plus_market"])
-        if isinstance(container, dict):
-            container["strategy_handoff_notes"] = [summary_note]
-
-
-def is_sy_validation_handoff_note(value: Any) -> bool:
-    """Detect verbose SY claim-level notes that belong in validation evidence, not Strategy context."""
-
-    text = clean_text(value)
-    if not text:
-        return False
-    lowered = text.lower()
-    if re.match(r"^sy\s+(?:keep|revise|revised|weaken|hallucination_candidate|remove|removed|unsupported):", lowered):
-        return True
-    return text.startswith("SY 검증 결과")
-
-
-def news_validation_summary_note(report: dict[str, Any]) -> str:
-    """Render one compact News SY validation note from verified handoff metadata."""
-
-    summary = first_dict(
-        report.get("verification_summary"),
-        report.get("validation_summary"),
-        report.get("summary"),
-        get_path(report, ["output", "verification_summary"]),
-        get_path(report, ["output", "sy_validation", "summary"]),
-    )
-    if not summary:
-        return ""
-    counts = summary.get("decision_counts") if isinstance(summary.get("decision_counts"), dict) else {}
-    total = first_non_empty(summary.get("total_claims"), summary.get("total"), summary.get("total_count"))
-    keep = first_non_empty(summary.get("kept_claims"), summary.get("verified_count"), counts.get("keep"))
-    revise = first_non_empty(
-        summary.get("revised_claims"),
-        summary.get("revised_count"),
-        summary.get("weakened_count"),
-        counts.get("revise"),
-        counts.get("weaken"),
-    )
-    hallucination = first_non_empty(
-        summary.get("hallucination_candidate_count"),
-        summary.get("unsupported_count"),
-        counts.get("hallucination_candidate"),
-    )
-    remove = first_non_empty(summary.get("removed_count"), summary.get("deleted_claims"), counts.get("remove"))
-
-    count_parts = []
-    for label, value in (("keep", keep), ("revise", revise), ("hallucination_candidate", hallucination), ("remove", remove)):
-        if value:
-            count_parts.append(f"{label} {value}건")
-    if not total and not count_parts:
-        return ""
-    total_text = f"{total}건 중 " if total else ""
-    counts_text = ", ".join(count_parts) if count_parts else "일부 claim"
-    return (
-        f"News SY 검증 결과 {total_text}{counts_text}으로 분류되어 "
-        "일부 뉴스-재무-시장 연결 주장은 보조 근거로 제한된다."
-    )
-
+    operational_keys = {
+        "report_status",
+        "sy_validation",
+        "verification_summary",
+        "revision_brief",
+        "rewrite_history",
+        "question_answer_log_path",
+        "source_context_summary",
+    }
+    if isinstance(value, dict):
+        cleaned: dict[str, Any] = {}
+        for key, child in value.items():
+            if key in operational_keys:
+                continue
+            cleaned[key] = strip_operational_validation_content(child)
+        return cleaned
+    if isinstance(value, list):
+        return [strip_operational_validation_content(item) for item in value]
+    return value
 
 
 def compact_validation_evidence(payload: dict[str, Any], *, domain: str, source_path: Path) -> dict[str, Any]:
@@ -1231,9 +2445,16 @@ def compact_validation_evidence(payload: dict[str, Any], *, domain: str, source_
         for claim in claims
         if isinstance(claim, dict) and first_non_empty(claim.get("claim_id"), claim.get("section"), claim.get("claim"))
     ]
+    evidence_use_counts = {
+        status: sum(1 for claim in compact_claims if claim.get("evidence_use") == status)
+        for status in ("strong", "context_only", "exclude")
+    }
     return {
         "source_path": str(source_path.expanduser().resolve()),
-        "summary": validation_summary(payload),
+        "summary": {
+            "claim_count": len(compact_claims),
+            "evidence_use_counts": evidence_use_counts,
+        },
         "claims": compact_claims,
     }
 
@@ -1247,108 +2468,66 @@ def validation_claims(payload: dict[str, Any], domain: str) -> list[dict[str, An
         return payload["claim_validation"]
     if domain == "yfinance":
         claims: list[dict[str, Any]] = []
-        for key in ("verified_claims", "weakened_claims", "hallucination_candidates", "removed_claims"):
+        for key in (
+            "verified_claims",
+            "context_only_claims",
+            "revised_claims",
+            "weakened_claims",
+            "excluded_claims",
+            "hallucination_candidates",
+            "removed_claims",
+        ):
             claims.extend(item for item in ensure_list(payload.get(key)) if isinstance(item, dict))
         return claims
     return []
 
 
-def validation_summary(payload: dict[str, Any]) -> dict[str, Any]:
-    """Extract compact validation summary fields without carrying raw reports."""
-
-    summary = first_dict(payload.get("validation_summary"), payload.get("summary"), payload.get("verification_summary"))
-    if not summary:
-        return {}
-    keep_keys = (
-        "overall_status",
-        "summary_ko",
-        "total_claims",
-        "kept_claims",
-        "revised_claims",
-        "deleted_claims",
-        "verified_count",
-        "weakened_count",
-        "hallucination_candidate_count",
-        "removed_count",
-        "decision_counts",
-    )
-    return {key: summary[key] for key in keep_keys if key in summary}
-
-
 def compact_validation_claim(claim: dict[str, Any], *, domain: str) -> dict[str, Any]:
     """Normalize one validation claim into a small evidence ledger row."""
 
-    answer_1 = first_non_empty(
-        claim.get("answer_1_ko"),
-        claim.get("answer_round_1_summary"),
-        claim.get("yfinance_answer"),
-    )
-    answer_2 = first_non_empty(claim.get("answer_2_ko"), claim.get("answer_round_2_summary"))
     raw_decision = clean_text(claim.get("decision"))
-    decision = normalize_validation_decision(raw_decision)
-    support_level = normalize_validation_support(clean_text(claim.get("support_level")), decision)
-    return {
+    support_level = clean_text(claim.get("support_level"))
+    result = {
         "claim_id": first_non_empty(claim.get("claim_id"), claim.get("section")),
         "section": first_non_empty(claim.get("section"), claim.get("section_path")),
         "claim": first_non_empty(claim.get("claim_ko"), claim.get("claim")),
-        "question_1": first_non_empty(claim.get("question_1_ko"), claim.get("question_round_1"), claim.get("question")),
-        "answer_1": truncate_text(answer_1, VALIDATION_ANSWER_CHAR_LIMIT),
-        "question_2": first_non_empty(claim.get("question_2_ko"), claim.get("question_round_2")),
-        "answer_2": truncate_text(answer_2, VALIDATION_ANSWER_CHAR_LIMIT),
         "evidence_ids": validation_evidence_ids(claim, domain),
-        "support_level": support_level,
-        "decision": decision,
-        "raw_decision": raw_decision,
-        "sy_reason": truncate_text(first_non_empty(claim.get("reason_ko"), claim.get("sy_reason")), VALIDATION_REASON_CHAR_LIMIT),
-        "revision_suggestion": truncate_text(
-            normalize_revision_suggestion(clean_text(claim.get("revision_suggestion")), decision),
-            VALIDATION_REASON_CHAR_LIMIT,
+        "claim_kind": clean_text(claim.get("claim_kind")),
+        "limitations": text_items(claim.get("limitations")),
+        "evidence_use": validation_evidence_use(
+            raw_decision,
+            support_level,
+            explicit=clean_text(claim.get("evidence_use")),
         ),
     }
+    if domain == "news":
+        for key in (
+            "event_status",
+            "company_specificity",
+            "materiality_status",
+            "financial_link_status",
+        ):
+            value = clean_text(claim.get(key))
+            if value:
+                result[key] = value
+    return result
 
 
-def normalize_validation_decision(value: str) -> str:
-    """Normalize validation decisions across agent-specific vocabularies."""
+def validation_evidence_use(decision: str, support_level: str, *, explicit: str = "") -> str:
+    """Map upstream workflow states to a reader-neutral evidence-use contract."""
 
-    mapping = {
-        "keep": "keep",
-        "supported": "keep",
-        "revise": "weaken",
-        "revised": "weaken",
-        "weaken": "weaken",
-        "weakly_supported": "weaken",
-        "hallucination_candidate": "hallucination_candidate",
-        "unsupported": "hallucination_candidate",
-        "remove": "remove",
-        "removed": "remove",
-        "contradicted": "remove",
-    }
-    return mapping.get(clean_text(value), clean_text(value))
-
-
-def normalize_validation_support(value: str, decision: str) -> str:
-    """Fill support level consistently when source validation omits it."""
-
-    if value:
-        return value
-    mapping = {
-        "keep": "supported",
-        "weaken": "weakly_supported",
-        "hallucination_candidate": "unsupported",
-        "remove": "contradicted",
-    }
-    return mapping.get(decision, "")
-
-
-def normalize_revision_suggestion(value: str, decision: str) -> str:
-    """Preserve upstream revision suggestions without fabricating Strategy wording."""
-
-    text = clean_text(value)
-    if normalize_validation_decision(decision) == "keep" and text in {"표현 수정 또는 삭제 필요", "수정 불필요"}:
-        return ""
-    if text == "표현 수정 또는 삭제 필요":
-        return ""
-    return text
+    explicit_value = clean_text(explicit).lower()
+    if explicit_value in {"strong", "context_only", "exclude"}:
+        return explicit_value
+    decision_value = clean_text(decision).lower()
+    support_value = clean_text(support_level).lower()
+    if decision_value in {"remove", "delete", "hallucination_candidate"} or support_value == "unsupported":
+        return "exclude"
+    if decision_value in {"keep", "verified"} and support_value in {"", "supported", "verified"}:
+        return "strong"
+    if not decision_value and support_value in {"supported", "verified"}:
+        return "strong"
+    return "context_only"
 
 
 def validation_evidence_ids(claim: dict[str, Any], domain: str) -> list[str]:
@@ -1356,7 +2535,13 @@ def validation_evidence_ids(claim: dict[str, Any], domain: str) -> list[str]:
 
     del domain
     evidence: list[str] = []
-    for key in ("evidence_refs", "evidence_ids_used", "declared_evidence_ids", "evidence_used"):
+    for key in (
+        "evidence_ids",
+        "evidence_refs",
+        "evidence_ids_used",
+        "declared_evidence_ids",
+        "evidence_used",
+    ):
         evidence.extend(text_items(claim.get(key)))
     return dedupe(evidence, 16)
 
@@ -1379,122 +2564,8 @@ def first_dict(*values: Any) -> dict[str, Any]:
     return {}
 
 
-def enforce_specific_evidence_language(strategy_report: dict[str, Any], input_bundle: dict[str, Any]) -> dict[str, Any]:
-    """Replace vague News risk references with specific source-backed issue names."""
-
-    specific_news_risks = extract_specific_news_risks(input_bundle)
-    if not specific_news_risks:
-        return strategy_report
-    return rewrite_vague_news_risk_text(strategy_report, specific_news_risks)
-
-
-def extract_specific_news_risks(input_bundle: dict[str, Any]) -> list[str]:
-    """Collect concrete News risk issue names from reports and validation answers."""
-
-    news_report = get_path(input_bundle, ["target_reports", "news"]) or {}
-    analysis = get_path(news_report, ["output", "analysis_blocks"]) or {}
-    candidates: list[str] = []
-    for path in (
-        ["news_only", "negative_signals"],
-        ["news_only", "key_risks"],
-        ["news_only", "uncertainties"],
-        ["news_plus_financial_plus_market", "integrated_risks"],
-    ):
-        candidates.extend(text_items(get_path(analysis, path)))
-
-    validation_claims_payload = get_path(input_bundle, ["target_validation_evidence", "news", "claims"]) or []
-    for item in ensure_list(validation_claims_payload):
-        if not isinstance(item, dict):
-            continue
-        section = clean_text(item.get("section"))
-        claim = clean_text(item.get("claim"))
-        if is_news_risk_section(section) or is_specific_risk_phrase(claim):
-            candidates.append(claim)
-        answer = first_non_empty(item.get("answer_1"), item.get("answer_2"))
-        if is_specific_risk_phrase(answer):
-            candidates.append(answer)
-    return dedupe([compact_risk_phrase(item) for item in candidates], 8)
-
-
-def is_news_risk_section(section: str) -> bool:
-    """Detect News sections that intentionally describe risks."""
-
-    return any(token in section for token in ("negative_signals", "key_risks", "integrated_risks", "uncertainties"))
-
-
-def is_specific_risk_phrase(text: str) -> bool:
-    """Return True when text names concrete risk categories or issues."""
-
-    if not text:
-        return False
-    risk_tokens = ("FDA", "안전성", "관세", "무역", "공급망", "제네릭", "경쟁", "규제", "상업화", "시장 점유율")
-    return any(token in text for token in risk_tokens)
-
-
-def compact_risk_phrase(text: str) -> str:
-    """Shorten verbose validation answers into reusable risk phrases."""
-
-    value = clean_text(text)
-    if not value:
-        return ""
-    if len(value) <= 90:
-        return value.rstrip(".")
-    first_sentence = re.split(r"(?<=[.!?。])\s+", value, maxsplit=1)[0]
-    if len(first_sentence) <= 110:
-        return first_sentence.rstrip(".")
-    return first_sentence[:107].rstrip() + "..."
-
-
-def rewrite_vague_news_risk_text(value: Any, specific_news_risks: list[str]) -> Any:
-    """Recursively rewrite generic News risk wording."""
-
-    if isinstance(value, dict):
-        return {key: rewrite_vague_news_risk_text(item, specific_news_risks) for key, item in value.items()}
-    if isinstance(value, list):
-        return [rewrite_vague_news_risk_text(item, specific_news_risks) for item in value]
-    if not isinstance(value, str):
-        return value
-    return enrich_vague_news_risk_text(value, specific_news_risks)
-
-
-def enrich_vague_news_risk_text(text: str, specific_news_risks: list[str]) -> str:
-    """Use concrete News risk names where the model left a placeholder phrase."""
-
-    if not is_vague_news_risk_text(text):
-        return text
-    risk_phrase = render_korean_series(specific_news_risks[:4])
-    replacements = {
-        "뉴스 주요 리스크 이슈": f"{risk_phrase} 등 뉴스상 구체 리스크",
-        "뉴스 주요 리스크": f"{risk_phrase} 등 뉴스상 구체 리스크",
-        "뉴스 리스크": f"{risk_phrase} 등 뉴스상 구체 리스크",
-        "주요 리스크 이슈": f"{risk_phrase} 등 구체 리스크",
-    }
-    rewritten = text
-    for source, target in replacements.items():
-        rewritten = rewritten.replace(source, target)
-    if rewritten == text:
-        rewritten = f"{risk_phrase} 등 뉴스상 구체 리스크가 {text}"
-    return rewritten
-
-
-def is_vague_news_risk_text(text: str) -> bool:
-    """Detect vague News risk wording that needs concrete issue names."""
-
-    if not text:
-        return False
-    vague_markers = ("뉴스 주요 리스크", "뉴스 리스크", "주요 리스크 이슈")
-    return any(marker in text for marker in vague_markers)
-
-
-def render_korean_series(items: list[str]) -> str:
-    """Render a short Korean comma series."""
-
-    cleaned = dedupe(items, 4)
-    return ", ".join(cleaned)
-
-
 def build_report_opinion_index(strategy_report: dict[str, Any]) -> list[dict[str, Any]]:
-    """Create stable edit IDs for critique-agent targeted revisions."""
+    """Create stable audit IDs for reader-facing report opinions."""
 
     items: list[dict[str, Any]] = []
     for section_path, text in iter_editable_report_opinions(strategy_report):
@@ -1505,26 +2576,27 @@ def build_report_opinion_index(strategy_report: dict[str, Any]) -> list[dict[str
                 "id": f"OP{len(items) + 1:03d}",
                 "section_path": section_path,
                 "text": text,
-                "edit_scope": "replace_this_text_only",
+                "audit_scope": "trace_this_text_only",
             }
         )
     return items
 
 
 def iter_editable_report_opinions(strategy_report: dict[str, Any]) -> list[tuple[str, str]]:
-    """Flatten reader-facing Strategy opinions into critique-editable text units."""
+    """Flatten reader-facing Strategy opinions into auditable text units."""
 
     roots = (
         "final_recommendation",
         "investment_thesis",
         "financial_view",
+        "business_mix_view",
         "catalyst_view",
         "risk_view",
         "market_price_view",
+        "valuation_view",
         "cross_agent_consistency_check",
         "peer_competitor_positioning",
-        "key_strengths",
-        "key_risks",
+        "decision_balance",
         "final_rationale",
         "limitations",
     )
@@ -1532,166 +2604,28 @@ def iter_editable_report_opinions(strategy_report: dict[str, Any]) -> list[tuple
     for root in roots:
         value = strategy_report.get(root)
         for section_path, text in iter_report_claims(value, root):
-            if section_path.endswith(".opinion"):
+            if section_path.endswith((".opinion", ".investment_horizon", ".evidence_sufficiency", ".category")):
                 continue
             opinions.append((section_path, text))
     return opinions
 
 
-def user_facing_limitation_text(value: Any) -> str:
-    """Remove instruction-like wording from limitation output."""
+def iter_report_claims(value: Any, prefix: str = "") -> list[tuple[str, str]]:
+    """Flatten nested report values into stable path/text pairs."""
 
-    text = clean_text(value)
-    if not text:
-        return ""
-    if re.match(r"^SY\s+(?:keep|revise|revised|weaken|hallucination_candidate|remove|removed|unsupported):", text, re.I):
-        return ""
-    if text.startswith("SY 검증 결과"):
-        return ""
-    text = text.replace("는은", "은").replace("은은", "은")
-    text = text.replace("이은", "은").replace("가은", "은")
-    text = text.replace("리스크은", "리스크는")
-    if "가격 확인 강도" in text and "낮추" in text:
-        return "시장 가격 신호의 확인 강도는 제한적이다."
-    if "보수적으로 검증" in text:
-        return "추가 검증 전까지 해석에 제한이 있다."
-    if "추가 검증" in text and "필요" in text:
-        return "추가 검증 전까지 해석에 제한이 있다."
-    if "추가 검토" in text and "필요" in text:
-        return "추가 검토 전까지 해석에 제한이 있다."
-    if "추가 확인" in text and "필요" in text:
-        return "추가 확인 전까지 해석에 제한이 있다."
-    if "인과관계" in text and "펀더멘털" in text and any(token in text for token in ("주가", "거래량", "시장", "가격")):
-        return "시장 가격 신호와 펀더멘털 사이의 직접적 인과관계는 제한적이다."
-    monitoring_noun_need = re.match(r"(.+?)\s*모니터링\s*필요(?:가\s*)?(?:있다|있음)?\.?$", text)
-    if monitoring_noun_need:
-        return monitoring_target_text(monitoring_noun_need.group(1))
-    malformed_monitoring = re.match(r"(.+?)\s*(?:지속\s*)?(?:주의\s*깊은\s*)?모니터링이\s*해석에\s*제한이\s*(?:있다|있음).*", text)
-    if malformed_monitoring:
-        return monitoring_target_text(malformed_monitoring.group(1))
-    monitoring_need = re.match(
-        r"(.+?)(?:은|는)?\s*(?:지속\s*)?(?:주의\s*깊은\s*)?모니터링이\s*(?:필요|요구)(?:하다|함|됨|된다)?(?:\s*\(.+\))?\.?$",
-        text,
-    )
-    if monitoring_need:
-        return monitoring_target_text(monitoring_need.group(1))
-    if "신중한 해석" in text and "필요" in text:
-        return text.replace("신중한 해석이 필요하다", "해석의 불확실성이 남아 있다")
-    watch_match = re.match(
-        r"(.+?)(?:을|를)?\s*(?:면밀히\s*)?(?:지속\s*)?(?:모니터링|관찰)할\s*(?:필요가\s*)?(?:있다|있음|것)\.?$",
-        text,
-    )
-    if watch_match:
-        return monitoring_target_text(watch_match.group(1))
-    if "모니터링" in text and "필요" in text:
-        rewritten = re.sub(r"(.+?)에\s*모니터링이\s*필요(?:하다|함)\.?$", r"\1은 지속 관찰 대상이다.", text)
-        if rewritten != text:
-            return rewritten
-    if "대비할 필요" in text:
-        rewritten = re.sub(r"(.+?)에\s*대비할\s*필요가\s*(?:있다|있음)\.?$", r"\1은 지속 관찰 대상이다.", text)
-        if rewritten != text:
-            return rewritten
-    if re.search(r"확인\s*필요", text):
-        confirm_match = re.match(r"(.+?)\s*확인\s*필요\.?$", text)
-        if confirm_match:
-            return topic_sentence(confirm_match.group(1), "확인 전까지 해석에 제한이 있다.")
-    if "해석에 주의" in text:
-        text = text.replace("해석에 주의가 필요하다", "해석에 제한이 있다")
-        text = text.replace("해석에 주의가 필요함", "해석에 제한이 있음")
-    news_risk_match = re.match(r"(?:News|뉴스)\s*주요\s*리스크/주의\s*이슈\((.+?)\).*", text)
-    if news_risk_match:
-        return f"{news_risk_match.group(1)} 관련 이슈는 재무 주장 지속성 해석의 보조 검토 대상이다."
-    if "직접 증거" in text:
-        if any(token in text for token in ("뉴스", "News", "촉매")):
-            return "뉴스 촉매와 재무 수치 사이의 직접 연결성은 제한적이다."
-        if any(token in text for token in ("주가", "시장", "가격", "거래량")):
-            return "시장 가격 신호와 펀더멘털 사이의 직접 연결성은 제한적이다."
-        return "자료 간 직접 연결성은 제한적이다."
-    replacements = {
-        "주장하지 않는다": "확인하기 어렵다",
-        "단정하지 않는다": "단정하기 어렵다",
-        "단정하지 않음": "단정하기 어려움",
-        "검증할 것": "추가 확인 전까지 해석에 제한이 있다",
-        "확인할 것": "추가 확인 전까지 해석에 제한이 있다",
-        "검토할 필요가 있음": "추가 검토 전까지 해석에 제한이 있다",
-        "대비할 필요가 있음": "지속 관찰 대상이다",
-        "요인으로만 사용한다": "요인으로 제한적으로 활용된다",
-        "사용한다": "활용에 제한이 있다",
-        "재무 claim": "재무 주장",
-        "사용할 것": "활용에 제한이 있다",
-        "활용할 것": "활용에 제한이 있다",
-        "낮출 것": "제한적이다",
-        "주의가 필요하다": "해석에 제한이 있다",
-        "주의가 필요함": "해석에 제한이 있음",
-        "필요가 있다": "해석에 제한이 있다",
-        "필요가 있음": "해석에 제한이 있음",
-        "필요가 있어": "해석에 제한이 있어",
-        "필요하다": "해석에 제한이 있다",
-        "필요함": "해석에 제한이 있음",
-    }
-    for source, target in replacements.items():
-        text = text.replace(source, target)
-    if is_internal_instruction_text(text):
-        return ""
-    return text
-
-
-def monitoring_target_text(subject: str) -> str:
-    """Render monitoring subjects without duplicated Korean particles."""
-
-    cleaned = clean_topic_subject(subject)
-    return f"{cleaned}{topic_particle(cleaned)} 모니터링 항목이다." if cleaned else "모니터링 항목이다."
-
-
-def topic_sentence(subject: str, predicate: str) -> str:
-    """Render a Korean topic sentence with a clean subject particle."""
-
-    cleaned = clean_topic_subject(subject)
-    return f"{cleaned}{topic_particle(cleaned)} {predicate}" if cleaned else predicate
-
-
-def clean_topic_subject(subject: str) -> str:
-    """Clean a phrase before adding a topic particle."""
-
-    cleaned = clean_text(subject)
-    cleaned = re.sub(r"\s*\([^)]*\)\s*$", "", cleaned)
-    cleaned = re.sub(r"\s*가능성이\s*있어$", " 가능성", cleaned)
-    return re.sub(r"\s*(?:은|는|이|가|을|를)$", "", cleaned)
-
-
-def topic_particle(text: str) -> str:
-    """Return Korean topic particle for the last Hangul syllable."""
-
-    for character in reversed(clean_text(text)):
-        code = ord(character)
-        if 0xAC00 <= code <= 0xD7A3:
-            return "은" if (code - 0xAC00) % 28 else "는"
-    return "은"
-
-
-def is_internal_instruction_text(text: str) -> bool:
-    """Detect prompt-style instructions that should not be rendered as limitations."""
-
-    lowered = text.lower()
-    english_markers = ("do not ", "must ", "should ", "prefer ", "use only ", "treat ")
-    if any(marker in lowered for marker in english_markers):
-        return True
-    return any(
-        marker in text
-        for marker in (
-            "하지 말",
-            "하지 않는다",
-            "해야 함",
-            "해야 한다",
-            "할 것",
-            "말 것",
-            "낮춰야",
-            "낮출 것",
-            "낮춘다",
-            "검증할 것",
-            "사용한다",
-        )
-    )
+    claims: list[tuple[str, str]] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_prefix = f"{prefix}.{key}" if prefix else key
+            claims.extend(iter_report_claims(child, child_prefix))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            claims.extend(iter_report_claims(child, f"{prefix}[{index}]"))
+    else:
+        text = clean_text(value)
+        if text:
+            claims.append((prefix, text))
+    return claims
 
 
 def validate_input_bundle(bundle: dict[str, Any]) -> None:
@@ -1711,32 +2645,116 @@ def validate_input_bundle(bundle: dict[str, Any]) -> None:
             payload = require_dict(validations.get(key), f"target_validation_evidence.{key}")
             if not isinstance(payload.get("claims"), list):
                 raise ValueError(f"target_validation_evidence.{key}.claims must be a list.")
-    competitors = bundle.get("competitor_reports")
-    if not isinstance(competitors, list):
-        raise ValueError("competitor_reports must be a list.")
-    for index, competitor in enumerate(competitors):
-        require_non_empty(competitor.get("summary"), f"competitor_reports[{index}].summary")
-        if not isinstance(competitor.get("strengths"), list):
-            raise ValueError(f"competitor_reports[{index}].strengths must be a list.")
-        if not isinstance(competitor.get("risks"), list):
-            raise ValueError(f"competitor_reports[{index}].risks must be a list.")
+    peer_comparison = bundle.get("peer_comparison")
+    if peer_comparison:
+        require_dict(peer_comparison, "peer_comparison")
+        if not isinstance(peer_comparison.get("metrics"), list):
+            raise ValueError("peer_comparison.metrics must be a list.")
+        require_non_empty(peer_comparison.get("source_path"), "peer_comparison.source_path")
+    hierarchy = bundle.get("evidence_hierarchy")
+    if not isinstance(hierarchy, list) or not hierarchy:
+        raise ValueError("evidence_hierarchy must be a non-empty list.")
 
 
-def validate_content_plan(content_plan: dict[str, Any]) -> None:
+def validate_content_plan(
+    content_plan: dict[str, Any],
+    *,
+    llm_packet: dict[str, Any] | None = None,
+) -> None:
     """Validate strategy_content_plan.json shape."""
 
     require_dict(content_plan, "content_plan")
-    require_non_empty(content_plan.get("target_core_summary"), "target_core_summary")
-    if not isinstance(content_plan.get("competitor_context"), list):
-        raise ValueError("competitor_context must be a list.")
-    require_dict(content_plan.get("comparison_points"), "comparison_points")
-    if not isinstance(content_plan.get("decision_constraints"), list):
-        raise ValueError("decision_constraints must be a list.")
+    for key in (
+        "positive_claim_ids",
+        "negative_claim_ids",
+        "neutral_claim_ids",
+        "catalyst_claim_ids",
+        "risk_claim_ids",
+        "context_assessment_ids",
+        "peer_metric_ids",
+        "limitation_ids",
+    ):
+        if not isinstance(content_plan.get(key), list):
+            raise ValueError(f"{key} must be a list.")
+    section_plan = require_dict(content_plan.get("section_plan"), "section_plan")
+    required_sections = set(CONTENT_PLAN_SECTIONS)
+    missing_sections = sorted(required_sections - set(section_plan))
+    if missing_sections:
+        raise ValueError(f"section_plan missing sections: {missing_sections}")
+    if any(not isinstance(value, list) for value in section_plan.values()):
+        raise ValueError("section_plan values must be arrays of supplied IDs.")
     if "final_recommendation" in content_plan:
         raise ValueError("content_plan must not include final_recommendation.")
+    if llm_packet is None:
+        return
+    claim_ids = {
+        clean_text(claim.get("claim_id"))
+        for claims in (llm_packet.get("claim_ledger") or {}).values()
+        for claim in claims
+        if clean_text(claim.get("claim_id"))
+    }
+    context_ids = {
+        clean_text(item.get("context_id"))
+        for item in ensure_list(llm_packet.get("secondary_context_assessments"))
+    }
+    peer_ids = set((llm_packet.get("peer_metric_catalog") or {}).keys())
+    limit_ids = set((llm_packet.get("limitations") or {}).keys())
+    selected_claim_ids = {
+        value
+        for key in (
+            "positive_claim_ids",
+            "negative_claim_ids",
+            "neutral_claim_ids",
+            "catalyst_claim_ids",
+            "risk_claim_ids",
+        )
+        for value in text_items(content_plan.get(key))
+    }
+    _assert_known_ids(selected_claim_ids, claim_ids, "claim")
+    _assert_known_ids(set(text_items(content_plan.get("context_assessment_ids"))), context_ids, "context assessment")
+    _assert_known_ids(set(text_items(content_plan.get("peer_metric_ids"))), peer_ids, "peer metric")
+    _assert_known_ids(set(text_items(content_plan.get("limitation_ids"))), limit_ids, "limitation")
+    all_ids = claim_ids | context_ids | peer_ids | limit_ids
+    for section, values in section_plan.items():
+        _assert_known_ids(set(text_items(values)), all_ids, f"section_plan.{section}")
+    if claim_ids and not selected_claim_ids:
+        raise ValueError("Content plan selected no admissible claim IDs.")
+    domain_claim_ids = {
+        domain: {
+            clean_text(claim.get("claim_id"))
+            for claim in claims
+            if clean_text(claim.get("claim_id"))
+        }
+        for domain, claims in (llm_packet.get("claim_ledger") or {}).items()
+    }
+    for domain, available in domain_claim_ids.items():
+        if available and not (available & selected_claim_ids):
+            raise ValueError(f"Content plan omitted the {domain} claim domain.")
+    selected_context_ids = set(text_items(content_plan.get("context_assessment_ids")))
+    conflicting_context_ids = {
+        clean_text(item.get("context_id"))
+        for item in ensure_list(llm_packet.get("secondary_context_assessments"))
+        if item.get("effect") == "contradicts"
+    }
+    if conflicting_context_ids - selected_context_ids:
+        raise ValueError("Content plan omitted conflicting secondary context.")
+    if peer_ids and not set(text_items(content_plan.get("peer_metric_ids"))):
+        raise ValueError("Content plan omitted available peer metrics.")
+    if limit_ids and not set(text_items(content_plan.get("limitation_ids"))):
+        raise ValueError("Content plan omitted available limitations.")
 
 
-def validate_strategy_report(strategy_report: dict[str, Any]) -> None:
+def _assert_known_ids(selected: set[str], available: set[str], label: str) -> None:
+    unknown = sorted(selected - available)
+    if unknown:
+        raise ValueError(f"Unknown {label} IDs: {unknown}")
+
+
+def validate_strategy_report(
+    strategy_report: dict[str, Any],
+    *,
+    input_bundle: dict[str, Any] | None = None,
+) -> None:
     """Validate final strategy_report.json shape."""
 
     require_dict(strategy_report, "strategy_report")
@@ -1745,27 +2763,45 @@ def validate_strategy_report(strategy_report: dict[str, Any]) -> None:
     if recommendation.get("opinion") not in FINAL_RECOMMENDATIONS:
         raise ValueError("final_recommendation.opinion must be one of Buy/Hold/Sell.")
     require_non_empty(recommendation.get("summary"), "final_recommendation.summary")
+    require_non_empty(recommendation.get("investment_horizon"), "final_recommendation.investment_horizon")
+    if recommendation.get("evidence_sufficiency") not in {"high", "medium", "low"}:
+        raise ValueError("final_recommendation.evidence_sufficiency must be high/medium/low.")
+    require_non_empty(
+        recommendation.get("evidence_sufficiency_reason"),
+        "final_recommendation.evidence_sufficiency_reason",
+    )
 
     for section, keys in {
-        "investment_thesis": ("thesis_1", "thesis_2"),
+        "investment_thesis": ("thesis_1", "thesis_2", "thesis_3"),
         "financial_view": ("revenue", "profitability", "cash_flow", "balance_sheet", "financial_interpretation"),
+        "business_mix_view": ("revenue_composition", "concentration", "business_mix_interpretation"),
         "market_price_view": ("price_trend", "volume", "relative_strength", "market_interpretation"),
+        "valuation_view": ("selected_date_valuation", "peer_valuation_comparison", "valuation_interpretation"),
         "final_rationale": ("why_buy_hold_sell",),
     }.items():
         payload = require_dict(strategy_report.get(section), section)
         for key in keys:
             require_non_empty(payload.get(key), f"{section}.{key}")
-    if recommendation.get("opinion") == "Hold":
-        require_non_empty(get_path(strategy_report, ["investment_thesis", "thesis_3"]), "investment_thesis.thesis_3")
-
     for section, keys in {
-        "catalyst_view": ("positive_catalysts", "business_expansion"),
-        "risk_view": ("financial_risks", "regulatory_risks", "market_risks", "execution_risks"),
+        "catalyst_view": ("observed_catalysts",),
     }.items():
         payload = require_dict(strategy_report.get(section), section)
         for key in keys:
             if not isinstance(payload.get(key), list):
                 raise ValueError(f"{section}.{key} must be a list.")
+
+    risk_view = require_dict(strategy_report.get("risk_view"), "risk_view")
+    observed_risks = risk_view.get("observed_risks")
+    if not isinstance(observed_risks, list):
+        raise ValueError("risk_view.observed_risks must be a list.")
+    allowed_risk_categories = {"business", "financial", "regulatory", "market", "execution"}
+    for index, item in enumerate(observed_risks):
+        risk = require_dict(item, f"risk_view.observed_risks[{index}]")
+        if risk.get("category") not in allowed_risk_categories:
+            raise ValueError(
+                f"risk_view.observed_risks[{index}].category must be business/financial/regulatory/market/execution."
+            )
+        require_non_empty(risk.get("statement"), f"risk_view.observed_risks[{index}].statement")
 
     consistency = require_dict(strategy_report.get("cross_agent_consistency_check"), "cross_agent_consistency_check")
     for key in ("confirmed_signals", "mixed_conflicting_signals"):
@@ -1774,91 +2810,99 @@ def validate_strategy_report(strategy_report: dict[str, Any]) -> None:
     require_non_empty(consistency.get("strategy_implication"), "cross_agent_consistency_check.strategy_implication")
 
     peer = require_dict(strategy_report.get("peer_competitor_positioning"), "peer_competitor_positioning")
-    for key in ("competitor_summary", "target_relative_strength", "target_relative_weakness"):
+    for key in ("pairwise_findings", "comparison_limits"):
         if not isinstance(peer.get(key), list):
             raise ValueError(f"peer_competitor_positioning.{key} must be a list.")
     require_non_empty(peer.get("peer_based_investment_implication"), "peer_competitor_positioning.peer_based_investment_implication")
 
-    for key in ("key_strengths", "key_risks"):
-        if not isinstance(strategy_report.get(key), list):
-            raise ValueError(f"{key} must be a list.")
+    balance = require_dict(strategy_report.get("decision_balance"), "decision_balance")
+    for key in ("positive_evidence", "negative_evidence"):
+        items = balance.get(key)
+        if not isinstance(items, list):
+            raise ValueError(f"decision_balance.{key} must be a list.")
+        for index, item in enumerate(items):
+            require_non_empty(item, f"decision_balance.{key}[{index}]")
+    require_non_empty(balance.get("balance_conclusion"), "decision_balance.balance_conclusion")
 
     limitations = require_dict(strategy_report.get("limitations"), "limitations")
+    seen_limitations: dict[str, str] = {}
     for key in ("data_limitations", "interpretation_limitations", "monitoring_points"):
-        if not isinstance(limitations.get(key), list):
+        items = limitations.get(key)
+        if not isinstance(items, list):
             raise ValueError(f"limitations.{key} must be a list.")
-    validate_reader_facing_limitations(limitations)
+        for index, item in enumerate(items):
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError(f"limitations.{key}[{index}] must be a non-empty string.")
+            normalized_item = clean_text(item)
+            if normalized_item in seen_limitations:
+                raise ValueError(
+                    f"limitations contains a duplicate across buckets: {seen_limitations[normalized_item]} and "
+                    f"limitations.{key}[{index}]"
+                )
+            seen_limitations[normalized_item] = f"limitations.{key}[{index}]"
     require_dict(strategy_report.get("source_files"), "source_files")
-    validate_conservative_language(strategy_report)
-    validate_specific_evidence_language(strategy_report)
     validate_opinion_index(strategy_report.get("opinion_index"))
+    if input_bundle is not None:
+        validate_large_number_grounding(strategy_report, input_bundle)
 
 
-def validate_reader_facing_limitations(limitations: dict[str, Any]) -> None:
-    """Reject internal instruction-style wording in Limitations."""
+def validate_large_number_grounding(strategy_report: dict[str, Any], input_bundle: dict[str, Any]) -> None:
+    """Reject full-size integer figures that do not occur in the Strategy input."""
 
-    text = " ".join(limitations_text_items(limitations))
-    bad_markers = (
-        "해야 한다",
-        "해야 함",
-        "하지 않는다",
-        "하지 말",
-        "할 것",
-        "낮추어야",
-        "낮춰야",
-        "낮출 것",
-        "검증할 것",
-        "확인할 것",
-        "사용한다",
-        "주장하지 않는다",
-        "필요하다",
-        "필요함",
-        "필요가 있다",
-        "필요가 있음",
-        "검토가 필요",
-        "모니터링이 필요",
-        "주의가 필요",
-        "확인 필요",
-    )
-    found = [marker for marker in bad_markers if marker in text]
-    if found:
-        raise ValueError(f"limitations contains instruction-style wording: {', '.join(found)}")
+    known_values = collect_large_integer_values(input_bundle)
+    ungrounded: list[str] = []
+    for section_path, opinion_text in iter_editable_report_opinions(strategy_report):
+        for token, number in large_integer_tokens(opinion_text):
+            if number not in known_values:
+                ungrounded.append(f"{section_path}: {token}")
+    if ungrounded:
+        raise ValueError(f"strategy_report contains ungrounded large integer value(s): {ungrounded[:5]}")
 
 
-def validate_conservative_language(strategy_report: dict[str, Any]) -> None:
-    """Reject reports that overstate known source limitations."""
+def collect_large_integer_values(value: Any) -> set[int]:
+    """Collect exact large integer values from nested structured or textual input."""
 
-    text = json.dumps(strategy_report, ensure_ascii=False)
-    period_terms = ("전년 대비", "YoY", "연간 개선")
-    period_cautions = ("동일 기간 YoY", "집계 기준", "단순 비교", "기간 기준")
-    if any(term in text for term in period_terms) and not any(caution in text for caution in period_cautions):
-        raise ValueError("Period comparison is overstated without YTD/FULL_YEAR caution.")
+    values: set[int] = set()
+    if isinstance(value, bool) or value is None:
+        return values
+    if isinstance(value, int):
+        if abs(value) >= 100_000_000:
+            values.add(value)
+        return values
+    if isinstance(value, float):
+        if value.is_integer() and abs(value) >= 100_000_000:
+            values.add(int(value))
+        return values
+    if isinstance(value, str):
+        values.update(number for _, number in large_integer_tokens(value))
+        return values
+    if isinstance(value, dict):
+        for child in value.values():
+            values.update(collect_large_integer_values(child))
+        return values
+    if isinstance(value, list):
+        for child in value:
+            values.update(collect_large_integer_values(child))
+    return values
 
-    if ("주가 상승" in text or "거래량 증가" in text) and "펀더멘털" in text:
-        market_cautions = ("직접적 인과관계", "직접 증거", "직접 연결성", "보조 검증", "신중", "확인하기 어렵", "제한적")
-        if not any(caution in text for caution in market_cautions):
-            raise ValueError("Market movement is being used too strongly as fundamental evidence.")
 
-    recommendation = get_path(strategy_report, ["final_recommendation", "opinion"])
-    if recommendation == "Buy":
-        limitations = " ".join(limitations_text_items(strategy_report.get("limitations")))
-        rationale = clean_text(get_path(strategy_report, ["final_rationale", "why_buy_hold_sell"]))
-        if limitations and not any(token in rationale for token in ("관리 가능", "감안", "제약", "리스크")):
-            raise ValueError("Buy recommendation must explain why constraints do not block Buy.")
+def large_integer_tokens(value: Any) -> list[tuple[str, int]]:
+    """Extract integer tokens large enough to represent exact won-scale figures."""
 
-
-def validate_specific_evidence_language(strategy_report: dict[str, Any]) -> None:
-    """Reject unresolved vague risk placeholders in the final report."""
-
-    text = json.dumps(strategy_report, ensure_ascii=False)
-    vague_markers = ("뉴스 주요 리스크 이슈", "뉴스 주요 리스크", "뉴스 리스크")
-    found = [marker for marker in vague_markers if marker in text]
-    if found:
-        raise ValueError(f"strategy_report contains vague news risk wording: {', '.join(found)}")
+    tokens: list[tuple[str, int]] = []
+    for match in re.finditer(r"(?<![\d.,])[-+]?\d[\d,]*(?![\d.,])", clean_text(value)):
+        token = match.group(0)
+        digits = token.lstrip("+-")
+        if "," in digits and not re.fullmatch(r"\d{1,3}(?:,\d{3})+", digits):
+            continue
+        number = int(token.replace(",", ""))
+        if abs(number) >= 100_000_000:
+            tokens.append((token, number))
+    return tokens
 
 
 def validate_opinion_index(value: Any) -> None:
-    """Validate critique-edit IDs when opinion_index is present."""
+    """Validate audit IDs when opinion_index is present."""
 
     if value is None:
         return
@@ -1884,12 +2928,15 @@ def render_strategy_markdown(strategy_report: dict[str, Any]) -> str:
     recommendation = require_dict(strategy_report.get("final_recommendation"), "final_recommendation")
     thesis = require_dict(strategy_report.get("investment_thesis"), "investment_thesis")
     financial = require_dict(strategy_report.get("financial_view"), "financial_view")
+    business_mix = require_dict(strategy_report.get("business_mix_view"), "business_mix_view")
     catalyst = require_dict(strategy_report.get("catalyst_view"), "catalyst_view")
     risks = require_dict(strategy_report.get("risk_view"), "risk_view")
     market = require_dict(strategy_report.get("market_price_view"), "market_price_view")
+    valuation = require_dict(strategy_report.get("valuation_view"), "valuation_view")
     consistency = require_dict(strategy_report.get("cross_agent_consistency_check"), "cross_agent_consistency_check")
     peer = require_dict(strategy_report.get("peer_competitor_positioning"), "peer_competitor_positioning")
     final_rationale = require_dict(strategy_report.get("final_rationale"), "final_rationale")
+    balance = require_dict(strategy_report.get("decision_balance"), "decision_balance")
     limitations = require_dict(strategy_report.get("limitations"), "limitations")
 
     lines = [
@@ -1898,14 +2945,15 @@ def render_strategy_markdown(strategy_report: dict[str, Any]) -> str:
         "## 1. Final Recommendation",
         f"- Opinion: {clean_text(recommendation.get('opinion')) or 'N/A'}",
         f"- Summary: {clean_text(recommendation.get('summary')) or 'N/A'}",
+        f"- Investment Horizon: {clean_text(recommendation.get('investment_horizon')) or 'N/A'}",
+        f"- Evidence Sufficiency: {clean_text(recommendation.get('evidence_sufficiency')) or 'N/A'}",
+        f"- Sufficiency Basis: {clean_text(recommendation.get('evidence_sufficiency_reason')) or 'N/A'}",
         "",
         "## 2. Investment Thesis",
         f"- Thesis 1: {clean_text(thesis.get('thesis_1')) or 'N/A'}",
         f"- Thesis 2: {clean_text(thesis.get('thesis_2')) or 'N/A'}",
+        f"- Thesis 3: {clean_text(thesis.get('thesis_3')) or 'N/A'}",
     ]
-    thesis_3 = clean_text(thesis.get("thesis_3"))
-    if thesis_3:
-        lines.append(f"- Thesis 3: {thesis_3}")
     lines.extend(
         [
             "",
@@ -1916,48 +2964,47 @@ def render_strategy_markdown(strategy_report: dict[str, Any]) -> str:
         f"- Balance Sheet: {clean_text(financial.get('balance_sheet')) or 'N/A'}",
         f"- Financial Interpretation: {clean_text(financial.get('financial_interpretation')) or 'N/A'}",
         "",
-        "## 4. Catalyst View",
-        f"- Positive Catalysts: {render_inline_items(catalyst.get('positive_catalysts'))}",
-        f"- Business Expansion: {render_inline_items(catalyst.get('business_expansion'))}",
+        "## 4. Business Mix View",
+        f"- Revenue Composition: {clean_text(business_mix.get('revenue_composition')) or 'N/A'}",
+        f"- Concentration: {clean_text(business_mix.get('concentration')) or 'N/A'}",
+        f"- Interpretation: {clean_text(business_mix.get('business_mix_interpretation')) or 'N/A'}",
         "",
-        "## 5. Risk View (분류형 상세 리스크)",
-        f"- Financial Risks: {render_inline_items(risks.get('financial_risks'))}",
-        f"- Regulatory Risks: {render_inline_items(risks.get('regulatory_risks'))}",
-        f"- Market Risks: {render_inline_items(risks.get('market_risks'))}",
-        f"- Execution Risks: {render_inline_items(risks.get('execution_risks'))}",
+        "## 5. Catalyst View",
+        f"- Observed Catalysts: {render_inline_items(catalyst.get('observed_catalysts'))}",
         "",
-        "## 6. Market / Price View",
+        "## 6. Risk View",
+        f"- Observed Risks: {render_observed_risks(risks.get('observed_risks'))}",
+        "",
+        "## 7. Market / Price View",
         f"- Price Trend: {clean_text(market.get('price_trend')) or 'N/A'}",
         f"- Volume: {clean_text(market.get('volume')) or 'N/A'}",
         f"- Relative Strength: {clean_text(market.get('relative_strength')) or 'N/A'}",
         f"- Market Interpretation: {clean_text(market.get('market_interpretation')) or 'N/A'}",
         "",
-        "## 7. Cross-Agent Consistency Check",
+        "## 8. Valuation View",
+        f"- Selected-date Valuation: {clean_text(valuation.get('selected_date_valuation')) or 'N/A'}",
+        f"- Peer Valuation: {clean_text(valuation.get('peer_valuation_comparison')) or 'N/A'}",
+        f"- Interpretation: {clean_text(valuation.get('valuation_interpretation')) or 'N/A'}",
+        "",
+        "## 9. Cross-Agent Consistency Check",
         f"- Confirmed Signals: {render_inline_items(consistency.get('confirmed_signals'))}",
         f"- Mixed / Conflicting Signals: {render_inline_items(consistency.get('mixed_conflicting_signals'))}",
         f"- Strategy Implication: {clean_text(consistency.get('strategy_implication')) or 'N/A'}",
         "",
-        "## 8. Peer / Competitor Positioning",
-        f"- Competitor Summary: {render_inline_items(peer.get('competitor_summary'))}",
-        f"- Target Relative Strength: {render_inline_items(peer.get('target_relative_strength'))}",
-        f"- Target Relative Weakness: {render_inline_items(peer.get('target_relative_weakness'))}",
+        "## 10. Peer / Competitor Positioning",
+        f"- Pairwise Findings: {render_inline_items(peer.get('pairwise_findings'))}",
+        f"- Comparison Limits: {render_inline_items(peer.get('comparison_limits'))}",
         f"- Peer-based Investment Implication: {clean_text(peer.get('peer_based_investment_implication')) or 'N/A'}",
         "",
-        "## 9. Key Strengths",
-        ]
-    )
-    key_strengths = text_items(strategy_report.get("key_strengths"))
-    lines.extend(f"- {item}" for item in key_strengths) if key_strengths else lines.append("- N/A")
-    lines.extend(["", "## 10. Key Risks"])
-    key_risks = text_items(strategy_report.get("key_risks"))
-    lines.extend(f"- {item}" for item in key_risks) if key_risks else lines.append("- N/A")
-    lines.extend(
-        [
+        "## 11. Decision Balance",
+            f"- Positive Evidence: {render_inline_items(balance.get('positive_evidence'))}",
+            f"- Negative Evidence: {render_inline_items(balance.get('negative_evidence'))}",
+            f"- Balance Conclusion: {clean_text(balance.get('balance_conclusion')) or 'N/A'}",
             "",
-            "## 11. Final Rationale",
+            "## 12. Final Rationale",
             f"- Why Buy/Hold/Sell: {clean_text(final_rationale.get('why_buy_hold_sell')) or 'N/A'}",
             "",
-            "## 12. Limitations",
+            "## 13. Limitations",
             f"- Data limitations: {render_inline_items(limitations.get('data_limitations'))}",
             f"- Interpretation limitations: {render_inline_items(limitations.get('interpretation_limitations'))}",
             f"- Monitoring points: {render_inline_items(limitations.get('monitoring_points'))}",
@@ -2006,7 +3053,16 @@ def build_decision_basis_card(
         "risk_items": buckets["risk_items"],
         "decision_constraints_applied": buckets["decision_constraints_applied"],
         "mixed_or_conflicting_signals": buckets["mixed_or_conflicting_signals"],
-        "strong_claims_in_report": build_strong_claim_items(strategy_report),
+        "strong_claims_in_report": [
+            {
+                "id": f"strong_claim_{index}",
+                "claim": clean_text(entry.get("opinion_text")),
+                "source_sections": [section_path],
+                "verification_focus": text_items(entry.get("limitations")),
+            }
+            for index, (section_path, entry) in enumerate(basis_map.items(), start=1)
+            if text_items(entry.get("key_numbers")) or normalize_basis_source_evidence(entry.get("source_evidence"))
+        ],
         "monitoring_points": buckets["monitoring_points"],
         "limitations": buckets["limitations"],
         "source_files": strategy_report.get("source_files") if isinstance(strategy_report.get("source_files"), dict) else {},
@@ -2032,8 +3088,6 @@ def basis_card_destinations_for_path(section_path: str) -> list[tuple[str, str]]
     path = clean_text(section_path)
     if path.startswith("risk_view."):
         return [("risk_items", risk_category_from_path(path))]
-    if path.startswith("key_risks"):
-        return [("risk_items", "summary_risk")]
     if path.startswith("limitations.monitoring_points"):
         return [("monitoring_points", "monitoring")]
     if path.startswith("limitations.data_limitations"):
@@ -2052,31 +3106,27 @@ def basis_category_from_path(section_path: str) -> str:
 
     if section_path.startswith("financial_view"):
         return "financial"
+    if section_path.startswith("business_mix_view"):
+        return "business_mix"
     if section_path.startswith("catalyst_view"):
         return "business_catalyst"
     if section_path.startswith("market_price_view"):
         return "market_price"
+    if section_path.startswith("valuation_view"):
+        return "valuation"
     if section_path.startswith("peer_competitor_positioning"):
         return "peer_positioning"
-    if section_path.startswith("key_strengths"):
-        return "summary_strengths"
     if section_path.startswith("cross_agent_consistency_check"):
         return "cross_agent_consistency"
+    if section_path.startswith("decision_balance"):
+        return "decision_balance"
     return "recommendation"
 
 
 def risk_category_from_path(section_path: str) -> str:
     """Return a risk category label derived from the report section path."""
 
-    if ".financial_risks" in section_path:
-        return "financial"
-    if ".regulatory_risks" in section_path:
-        return "regulatory"
-    if ".market_risks" in section_path:
-        return "market"
-    if ".execution_risks" in section_path:
-        return "execution"
-    return "risk"
+    return "observed_risk" if ".observed_risks" in section_path else "risk"
 
 
 def basis_card_item_from_entry(entry: dict[str, Any], *, item_id: str, category: str) -> dict[str, Any]:
@@ -2091,7 +3141,7 @@ def basis_card_item_from_entry(entry: dict[str, Any], *, item_id: str, category:
         reasoning=clean_text(entry.get("basis_summary")) or clean_text(entry.get("opinion_text")),
         evidence=basis_entry_evidence(entry),
         source_sections=[section_path],
-        critique_focus=basis_entry_critique_focus(entry),
+        evidence_limitations=basis_entry_evidence_limitations(entry),
         opinion_id=clean_text(entry.get("opinion_id")),
         basis_path=section_path,
     )
@@ -2113,75 +3163,10 @@ def basis_entry_evidence(entry: dict[str, Any]) -> list[str]:
     return dedupe(evidence, 12)
 
 
-def basis_entry_critique_focus(entry: dict[str, Any]) -> list[str]:
-    """Use LLM-written limitations as critique focus without adding canned prose."""
+def basis_entry_evidence_limitations(entry: dict[str, Any]) -> list[str]:
+    """Use LLM-written limitations as audit metadata without adding prose."""
 
     return text_items(entry.get("limitations"))
-
-
-def build_strong_claim_items(strategy_report: dict[str, Any]) -> list[dict[str, Any]]:
-    """Extract numeric, comparative, and causal claims that critique should verify first."""
-
-    items: list[dict[str, Any]] = []
-    for source_section, claim in iter_report_claims(strategy_report):
-        claim_type = classify_strong_claim(claim)
-        if not claim_type:
-            continue
-        items.append(
-            {
-                "id": f"strong_claim_{len(items) + 1}",
-                "claim": claim,
-                "source_sections": [source_section],
-                "verification_focus": verification_focus_for_claim_type(claim_type),
-            }
-        )
-        if len(items) >= 24:
-            break
-    return items
-
-
-def iter_report_claims(value: Any, prefix: str = "") -> list[tuple[str, str]]:
-    """Flatten report text into source-section/claim pairs."""
-
-    claims: list[tuple[str, str]] = []
-    if isinstance(value, dict):
-        for key, child in value.items():
-            if key in {"agent_name", "target_company_name", "target_run_key", "source_files", "opinion_index", "created_at", "output_version"}:
-                continue
-            child_prefix = f"{prefix}.{key}" if prefix else key
-            claims.extend(iter_report_claims(child, child_prefix))
-    elif isinstance(value, list):
-        for index, child in enumerate(value):
-            child_prefix = f"{prefix}[{index}]"
-            claims.extend(iter_report_claims(child, child_prefix))
-    else:
-        text = clean_text(value)
-        if text:
-            claims.append((prefix, text))
-    return claims
-
-
-def classify_strong_claim(claim: str) -> str:
-    """Classify a claim worth prioritizing for critique."""
-
-    if re.search(r"\d", claim) or any(token in claim for token in ("억원", "%", "배", "원")):
-        return "numeric_or_metric"
-    if any(token in claim for token in ("대비", "상대", "경쟁사", "우위", "약세", "강세", "증가", "감소", "개선")):
-        return "comparison_or_direction"
-    if any(token in claim for token in ("인해", "작용", "뒷받침", "정당화", "연결", "기여", "제한")):
-        return "causal_or_interpretive"
-    return ""
-
-
-def verification_focus_for_claim_type(claim_type: str) -> list[str]:
-    """Return critique focus by strong claim type."""
-
-    mapping = {
-        "numeric_or_metric": ["수치가 원천 input data와 일치하는지 확인", "기간 기준과 단위가 올바른지 확인"],
-        "comparison_or_direction": ["비교 기준이 동일한지 확인", "상대/방향성 표현이 과장되지 않았는지 확인"],
-        "causal_or_interpretive": ["인과 또는 해석 연결이 input data로 충분히 뒷받침되는지 확인"],
-    }
-    return mapping.get(claim_type, ["input data 근거 확인"])
 
 
 def card_item(
@@ -2193,7 +3178,7 @@ def card_item(
     reasoning: str,
     evidence: list[str],
     source_sections: list[str],
-    critique_focus: list[str],
+    evidence_limitations: list[str],
     opinion_id: str = "",
     basis_path: str = "",
 ) -> dict[str, Any]:
@@ -2207,7 +3192,7 @@ def card_item(
         "reasoning": clean_text(reasoning),
         "evidence": dedupe(text_items(evidence), 12),
         "source_sections": dedupe(text_items(source_sections), 8),
-        "critique_focus": dedupe(text_items(critique_focus), 8),
+        "evidence_limitations": dedupe(text_items(evidence_limitations), 8),
     }
     if opinion_id:
         item["opinion_id"] = clean_text(opinion_id)
@@ -2241,69 +3226,32 @@ def validate_decision_basis_by_section(payload: dict[str, Any], strategy_report:
             raise ValueError(f"decision_basis_by_section.{section_path}.opinion_id does not match opinion_index.")
         require_non_empty(entry.get("section_path"), f"decision_basis_by_section.{section_path}.section_path")
         require_non_empty(entry.get("opinion_text"), f"decision_basis_by_section.{section_path}.opinion_text")
-        require_non_empty(entry.get("basis_summary"), f"decision_basis_by_section.{section_path}.basis_summary")
-        validate_basis_summary_quality(section_path, entry)
-        if not isinstance(entry.get("key_numbers"), list):
-            raise ValueError(f"decision_basis_by_section.{section_path}.key_numbers must be a list.")
         if not isinstance(entry.get("source_evidence"), list):
             raise ValueError(f"decision_basis_by_section.{section_path}.source_evidence must be a list.")
-        if not isinstance(entry.get("limitations"), list):
-            raise ValueError(f"decision_basis_by_section.{section_path}.limitations must be a list.")
+        if not entry.get("source_evidence"):
+            raise ValueError(f"decision_basis_by_section.{section_path}.source_evidence must not be empty.")
+        validate_basis_source_evidence_integrity(section_path, entry.get("source_evidence"))
 
 
-def validate_basis_summary_quality(section_path: str, entry: dict[str, Any]) -> None:
-    """Reject basis text that only repeats the Strategy opinion."""
+def validate_basis_source_evidence_integrity(section_path: str, value: Any) -> None:
+    """Reject Strategy opinion IDs and non-bundle section labels as source metadata."""
 
-    opinion_text = clean_text(entry.get("opinion_text"))
-    basis_summary = clean_text(entry.get("basis_summary"))
-    if normalize_for_basis_comparison(opinion_text) == normalize_for_basis_comparison(basis_summary):
-        raise ValueError(f"decision_basis_by_section.{section_path}.basis_summary repeats opinion_text.")
-    if not has_input_based_basis_signal(entry):
-        raise ValueError(f"decision_basis_by_section.{section_path}.basis_summary lacks input-based evidence.")
-
-
-def normalize_for_basis_comparison(text: str) -> str:
-    """Normalize Korean/English text for exact opinion-vs-basis repetition checks."""
-
-    return re.sub(r"[\W_]+", "", clean_text(text).lower())
-
-
-def has_input_based_basis_signal(entry: dict[str, Any]) -> bool:
-    """Return True when a basis entry points to concrete input evidence or limitations."""
-
-    if text_items(entry.get("key_numbers")):
-        return True
-    if normalize_basis_source_evidence(entry.get("source_evidence")):
-        return True
-    basis_summary = clean_text(entry.get("basis_summary"))
-    input_markers = (
-        "input",
-        "Financial",
-        "News",
-        "YFinance",
-        "Y-Finance",
-        "Competitor",
-        "DART",
-        "SY",
-        "검증",
-        "확인",
-        "근거",
-        "입력",
-        "보고서",
-        "수치",
-        "매출",
-        "공헌이익률",
-        "판관비율",
-        "EPS",
-        "초과수익률",
-        "상대강도",
-        "FDA",
-        "관세",
-        "제네릭",
-    )
-    if any(marker in basis_summary for marker in input_markers):
-        return True
-    return bool(text_items(entry.get("limitations")))
+    for index, row in enumerate(ensure_list(value)):
+        if not isinstance(row, dict):
+            raise ValueError(f"decision_basis_by_section.{section_path}.source_evidence[{index}] must be an object.")
+        if is_strategy_opinion_id(row.get("claim_id")):
+            raise ValueError(
+                f"decision_basis_by_section.{section_path}.source_evidence[{index}].claim_id uses an opinion ID."
+            )
+        if any(is_strategy_opinion_id(evidence_id) for evidence_id in text_items(row.get("evidence_ids"))):
+            raise ValueError(
+                f"decision_basis_by_section.{section_path}.source_evidence[{index}].evidence_ids uses an opinion ID."
+            )
+        source_section = clean_text(row.get("source_section"))
+        if source_section and not source_section.startswith(BASIS_SOURCE_ROOTS):
+            raise ValueError(
+                f"decision_basis_by_section.{section_path}.source_evidence[{index}].source_section is not an input-bundle path."
+            )
 
 
 def validate_decision_basis_card(payload: dict[str, Any]) -> None:
@@ -2339,29 +3287,76 @@ def validate_decision_basis_card(payload: dict[str, Any]) -> None:
     require_non_empty(card.get("basis_card_version"), "decision_basis_card.basis_card_version")
 
 
-def load_competitor_reports(paths: list[Path]) -> list[dict[str, Any]]:
-    """Load N competitor summary reports without hardcoding competitor count."""
+def load_peer_comparison(path: Path | None) -> dict[str, Any]:
+    """Load the explicit pairwise comparison used by the decision agents."""
 
-    competitors: list[dict[str, Any]] = []
-    for path in paths:
-        resolved = path.expanduser().resolve()
-        report = load_required_json(resolved, "Competitor summary")
-        company = report.get("company") if isinstance(report.get("company"), dict) else {}
-        competitor = {
-            "company_name": company.get("company_name") or company_from_run_key(resolved.parent.name),
-            "run_key": company.get("run_key") or resolved.parent.name,
-            "ticker": company.get("ticker"),
-            "as_of_date": company.get("as_of_date"),
-            "summary": clean_text(report.get("summary")),
-            "strengths": text_items(report.get("strengths")),
-            "risks": text_items(report.get("risks")),
-            "data_gaps": text_items(report.get("data_gaps")),
-            "source_path": str(resolved),
+    if path is None:
+        return {}
+    resolved = path.expanduser().resolve()
+    payload = load_required_json(resolved, "Peer comparison")
+    return {
+        "target_company": payload.get("target_company"),
+        "peer_groups": payload.get("peer_groups") or {},
+        "metrics": payload.get("metrics") or [],
+        "comparison_limits": payload.get("comparison_limits") or [],
+        "source_path": str(resolved),
+    }
+
+
+def build_evidence_hierarchy(*, peer_comparison_available: bool) -> list[dict[str, Any]]:
+    """Declare the order in which decision agents should evaluate evidence."""
+
+    hierarchy = [
+        {
+            "priority": 1,
+            "topic": "financial_trends_and_cash_flow",
+            "source_paths": [
+                "target_reports.financial.financial_trends",
+                "target_reports.financial.financial_statement_view.cash_flow",
+                "target_reports.financial.financial_statement_view.balance_sheet",
+            ],
+        },
+        {
+            "priority": 2,
+            "topic": "revenue_composition_and_concentration",
+            "source_paths": ["target_reports.financial.revenue_breakdown"],
+        },
+        {
+            "priority": 3,
+            "topic": "market_reaction",
+            "source_paths": [
+                "target_reports.yfinance.main_view",
+                "target_reports.yfinance.time_horizon_view",
+                "target_reports.yfinance.detailed_analysis.market_relative",
+            ],
+        },
+        {
+            "priority": 4,
+            "topic": "valuation",
+            "source_paths": ["target_reports.yfinance.valuation_snapshot"],
+        },
+        {
+            "priority": 5,
+            "topic": "recent_catalysts_and_risks",
+            "source_paths": ["target_reports.news.output.analysis_blocks"],
+        },
+    ]
+    if peer_comparison_available:
+        hierarchy.append(
+            {
+                "priority": 6,
+                "topic": "explicit_pairwise_peer_comparison",
+                "source_paths": ["peer_comparison.metrics"],
+            }
+        )
+    hierarchy.append(
+        {
+            "priority": 7,
+            "topic": "counter_evidence_and_data_limits",
+            "source_paths": ["target_validation_evidence", "decision_constraints"],
         }
-        if not competitor["summary"]:
-            raise ValueError(f"Competitor report missing summary: {resolved}")
-        competitors.append(competitor)
-    return competitors
+    )
+    return hierarchy
 
 
 def infer_target_company(
@@ -2406,7 +3401,7 @@ def infer_target_company(
 
 
 def extract_decision_constraints(financial: dict[str, Any], news: dict[str, Any], yfinance: dict[str, Any]) -> list[str]:
-    """Extract cautions that must constrain final recommendation."""
+    """Extract analytical cautions without carrying workflow instructions."""
 
     constraints: list[str] = []
     constraints.extend(text_items(get_path(financial, ["main_view", "main_cautions"])))
@@ -2414,10 +3409,14 @@ def extract_decision_constraints(financial: dict[str, Any], news: dict[str, Any]
     for flag in ensure_list(flags):
         if isinstance(flag, dict):
             constraints.append(clean_text(flag.get("flag_ko")))
-    constraints.extend(text_items(get_path(news, ["output", "analysis_blocks", "news_plus_financial_plus_market", "strategy_handoff_notes"])))
-    yfinance_recon = get_path(yfinance, ["cross_data_reconciliation", "news_plus_dart_plus_market", "divergences"]) or []
-    constraints.extend(text_items(yfinance_recon))
-    return dedupe(constraints, 20)
+    for report in (financial, yfinance, get_path(news, ["output"]) or news):
+        for assessment in ensure_list(report.get("secondary_context_assessment")):
+            if not isinstance(assessment, dict):
+                continue
+            if assessment.get("effect") == "contradicts":
+                constraints.append(clean_text(assessment.get("statement")))
+            constraints.append(clean_text(assessment.get("limitation")))
+    return dedupe([clean_text(constraint) for constraint in constraints if clean_text(constraint)], 20)
 
 
 def call_llm_json(
@@ -2428,6 +3427,7 @@ def call_llm_json(
     llm_model: str,
     llm_timeout: int,
     system_message: str,
+    response_format: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Call selected LLM and parse a JSON object response."""
 
@@ -2435,14 +3435,27 @@ def call_llm_json(
     model = resolve_llm_model(provider, llm_model)
     if provider == "none":
         raise RuntimeError("Strategy Agent requires OPENAI_API_KEY.")
-    user_prompt = f"{prompt}\n\nInput JSON:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
+    user_prompt = f"{prompt}\n\nInput JSON:\n{compact_json(payload)}"
     if provider != "openai":
         raise RuntimeError(f"Unsupported LLM provider: {provider}")
-    result = call_openai(user_prompt, model, llm_timeout, system_message=system_message)
+    result = call_openai(
+        user_prompt,
+        model,
+        llm_timeout,
+        system_message=system_message,
+        response_format=response_format,
+    )
     return parse_llm_json(result["text"])
 
 
-def call_openai(prompt: str, model: str, timeout: int, *, system_message: str) -> dict[str, Any]:
+def call_openai(
+    prompt: str,
+    model: str,
+    timeout: int,
+    *,
+    system_message: str,
+    response_format: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Call OpenAI chat completions with urllib."""
 
     api_key = os.getenv("OPENAI_API_KEY")
@@ -2456,7 +3469,7 @@ def call_openai(prompt: str, model: str, timeout: int, *, system_message: str) -
             {"role": "system", "content": system_message},
             {"role": "user", "content": prompt},
         ],
-        "response_format": {"type": "json_object"},
+        "response_format": response_format or {"type": "json_object"},
     }
     if uses_max_completion_tokens(model):
         payload["max_completion_tokens"] = max_tokens
@@ -2465,24 +3478,41 @@ def call_openai(prompt: str, model: str, timeout: int, *, system_message: str) -
         payload["max_tokens"] = max_tokens
     req = request.Request(
         f"{base_url}/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
+        data=compact_json(payload).encode("utf-8"),
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         method="POST",
     )
-    try:
-        with request.urlopen(req, timeout=timeout) as response:
-            raw = response.read().decode("utf-8")
-    except error.HTTPError as exc:
-        body = exc.read().decode("utf-8", "ignore")
-        raise RuntimeError(f"OpenAI HTTP {exc.code}: {body[:500]}") from exc
-    result = json.loads(raw)
+    def send_request() -> dict[str, Any]:
+        try:
+            with request.urlopen(req, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except error.HTTPError as exc:
+            body = exc.read().decode("utf-8", "ignore")
+            raise RuntimeError(f"OpenAI HTTP {exc.code}: {body[:500]}") from exc
+
+    result = execute_with_telemetry(
+        send_request,
+        request_payload=payload,
+        model=model,
+        step=f"strategy:{system_message.split('.')[0].strip().lower().replace(' ', '_')}",
+        usage_getter=lambda response: response.get("usage", {}),
+        max_attempts=max(0, int(os.getenv("LLM_TRANSPORT_RETRIES", "0"))) + 1,
+        retry_predicate=is_transient_transport_error,
+    )
     choices = result.get("choices") or []
     if not choices:
         raise RuntimeError(f"OpenAI returned no choices: {result}")
-    text = choices[0].get("message", {}).get("content", "").strip()
+    choice = choices[0]
+    finish_reason = clean_text(choice.get("finish_reason"))
+    if finish_reason == "length":
+        raise RuntimeError(
+            "OpenAI response was truncated before valid JSON completed. "
+            "Reduce the evidence packet or split the Strategy request."
+        )
+    text = choice.get("message", {}).get("content", "").strip()
     if not text:
-        raise RuntimeError("OpenAI returned empty text")
-    return {"text": text, "usage": result.get("usage", {})}
+        raise RuntimeError(f"OpenAI returned empty text (finish_reason={finish_reason or 'unknown'})")
+    return {"text": text, "usage": result.get("usage", {}), "finish_reason": finish_reason}
 
 
 def uses_max_completion_tokens(model: str) -> bool:
@@ -2529,29 +3559,93 @@ def resolve_llm_model(provider: str, model: str) -> str:
     return model or DEFAULT_OPENAI_MODEL
 
 
-def content_plan_schema() -> dict[str, Any]:
-    """Return required Content Planner schema for prompting."""
+def content_plan_response_format(llm_packet: dict[str, Any]) -> dict[str, Any]:
+    """Constrain Content Planner output to IDs present in the current packet."""
 
-    return {
-        "target_company": "string",
-        "target_core_summary": "string",
-        "target_strength_candidates": ["string"],
-        "target_risk_candidates": ["string - one opinion plus concrete source-backed basis"],
-        "competitor_context": [
-            {
-                "company_name": "string",
-                "summary": "string",
-                "strengths": ["string"],
-                "risks": ["string"],
-            }
-        ],
-        "comparison_points": {
-            "target_possible_advantages": ["string - one opinion plus concrete source-backed basis"],
-            "target_possible_disadvantages": ["string - one opinion plus concrete source-backed basis"],
-            "mixed_or_uncertain_points": ["string - one opinion plus concrete source-backed basis"],
+    claim_ids = sorted(
+        {
+            clean_text(claim.get("claim_id"))
+            for claims in (llm_packet.get("claim_ledger") or {}).values()
+            for claim in ensure_list(claims)
+            if isinstance(claim, dict) and clean_text(claim.get("claim_id"))
+        }
+    )
+    context_ids = sorted(
+        {
+            clean_text(item.get("context_id"))
+            for item in ensure_list(llm_packet.get("secondary_context_assessments"))
+            if isinstance(item, dict) and clean_text(item.get("context_id"))
+        }
+    )
+    peer_ids = sorted(str(value) for value in (llm_packet.get("peer_metric_catalog") or {}))
+    limitation_ids = sorted(str(value) for value in (llm_packet.get("limitations") or {}))
+    all_ids = sorted(set(claim_ids) | set(context_ids) | set(peer_ids) | set(limitation_ids))
+    target_company = clean_text((llm_packet.get("target_company") or {}).get("company_name"))
+
+    def id_schema(allowed_ids: list[str]) -> dict[str, Any]:
+        item_schema: dict[str, Any] = {"type": "string"}
+        if allowed_ids:
+            item_schema["enum"] = allowed_ids
+        return item_schema
+
+    def array_schema(definition: str) -> dict[str, Any]:
+        return {"type": "array", "items": {"$ref": f"#/$defs/{definition}"}}
+
+    target_schema: dict[str, Any] = {"type": "string"}
+    if target_company:
+        target_schema["enum"] = [target_company]
+
+    section_properties = {
+        section: array_schema("supplied_id")
+        for section in CONTENT_PLAN_SECTIONS
+    }
+    schema = {
+        "type": "object",
+        "$defs": {
+            "claim_id": id_schema(claim_ids),
+            "context_id": id_schema(context_ids),
+            "peer_metric_id": id_schema(peer_ids),
+            "limitation_id": id_schema(limitation_ids),
+            "supplied_id": id_schema(all_ids),
         },
-        "decision_constraints": ["string - reader-facing constraint with concrete basis"],
-        "report_outline": ["string"],
+        "properties": {
+            "target_company": target_schema,
+            "positive_claim_ids": array_schema("claim_id"),
+            "negative_claim_ids": array_schema("claim_id"),
+            "neutral_claim_ids": array_schema("claim_id"),
+            "catalyst_claim_ids": array_schema("claim_id"),
+            "risk_claim_ids": array_schema("claim_id"),
+            "context_assessment_ids": array_schema("context_id"),
+            "peer_metric_ids": array_schema("peer_metric_id"),
+            "limitation_ids": array_schema("limitation_id"),
+            "section_plan": {
+                "type": "object",
+                "properties": section_properties,
+                "required": list(CONTENT_PLAN_SECTIONS),
+                "additionalProperties": False,
+            },
+        },
+        "required": [
+            "target_company",
+            "positive_claim_ids",
+            "negative_claim_ids",
+            "neutral_claim_ids",
+            "catalyst_claim_ids",
+            "risk_claim_ids",
+            "context_assessment_ids",
+            "peer_metric_ids",
+            "limitation_ids",
+            "section_plan",
+        ],
+        "additionalProperties": False,
+    }
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "strategy_content_plan",
+            "strict": True,
+            "schema": schema,
+        },
     }
 
 
@@ -2564,11 +3658,14 @@ def strategy_report_schema() -> dict[str, Any]:
         "final_recommendation": {
             "opinion": "Buy | Hold | Sell",
             "summary": "string",
+            "investment_horizon": "string - explicit horizon used for the recommendation",
+            "evidence_sufficiency": "high | medium | low - independent from Buy/Hold/Sell",
+            "evidence_sufficiency_reason": "string - explain source coverage and material gaps",
         },
         "investment_thesis": {
             "thesis_1": "string - opinion plus concrete basis",
             "thesis_2": "string - opinion plus concrete basis",
-            "thesis_3": "Required when final_recommendation.opinion is Hold: explain why Buy is not yet justified using risks, market uncertainty, or limitations from the inputs.",
+            "thesis_3": "string - strongest counterpoint and how it affects the chosen opinion",
         },
         "financial_view": {
             "revenue": "string - opinion plus concrete financial basis",
@@ -2577,15 +3674,21 @@ def strategy_report_schema() -> dict[str, Any]:
             "balance_sheet": "string - opinion plus concrete financial basis",
             "financial_interpretation": "string - opinion plus concrete financial basis and limitation",
         },
+        "business_mix_view": {
+            "revenue_composition": "string - disclosed revenue composition or explicit not_disclosed status",
+            "concentration": "string - concentration interpretation with concrete shares when available",
+            "business_mix_interpretation": "string - implication and evidence limitation",
+        },
         "catalyst_view": {
-            "positive_catalysts": ["string - one catalyst plus concrete evidence"],
-            "business_expansion": ["string - one expansion opinion plus concrete evidence"],
+            "observed_catalysts": ["string - one supplied event or development that may change future expectations, plus concrete evidence"],
         },
         "risk_view": {
-            "financial_risks": ["string - one risk plus concrete evidence"],
-            "regulatory_risks": ["string - one risk plus concrete News/validation evidence"],
-            "market_risks": ["string - one risk plus concrete market or News evidence"],
-            "execution_risks": ["string - one risk plus concrete News/validation evidence"],
+            "observed_risks": [
+                {
+                    "category": "business | financial | regulatory | market | execution",
+                    "statement": "string - one observed adverse exposure, condition, obligation, or event plus concrete evidence",
+                }
+            ],
         },
         "market_price_view": {
             "price_trend": "string - opinion plus concrete market basis",
@@ -2593,32 +3696,45 @@ def strategy_report_schema() -> dict[str, Any]:
             "relative_strength": "string - opinion plus concrete relative performance basis",
             "market_interpretation": "string - opinion plus limitation on fundamental inference",
         },
+        "valuation_view": {
+            "selected_date_valuation": "string - selected-date P/E, P/B, P/S with provenance",
+            "peer_valuation_comparison": "string - explicit pairwise comparison when provided",
+            "valuation_interpretation": "string - price-level implication and date/input limitation",
+        },
         "cross_agent_consistency_check": {
             "confirmed_signals": ["string - one confirmed signal plus concrete basis"],
             "mixed_conflicting_signals": ["string - one conflicting signal plus concrete basis"],
             "strategy_implication": "string - conclusion plus concrete basis",
         },
         "peer_competitor_positioning": {
-            "competitor_summary": ["string - competitor name plus concrete summary basis"],
-            "target_relative_strength": ["string - one relative strength plus concrete basis"],
-            "target_relative_weakness": ["string - one relative weakness plus concrete basis"],
+            "pairwise_findings": ["string - one finding that names both target and peer and compares a fact or metric supplied for both"],
+            "comparison_limits": ["string - one material dimension unavailable for one side or otherwise not comparable"],
             "peer_based_investment_implication": "string - conclusion plus concrete basis",
         },
-        "key_strengths": ["string - one strength plus concrete basis"],
-        "key_risks": ["string - one risk plus concrete basis"],
+        "decision_balance": {
+            "positive_evidence": ["string - supplied evidence supporting upside or resilience; empty only when none exists"],
+            "negative_evidence": ["string - supplied evidence supporting downside or limiting upside; empty only when none exists"],
+            "balance_conclusion": "string - why the chosen side outweighs, is outweighed, or remains balanced",
+        },
         "final_rationale": {
             "why_buy_hold_sell": "string - final opinion plus concrete basis and risk balancing",
         },
         "limitations": {
-            "data_limitations": ["string - concrete data limitation"],
-            "interpretation_limitations": ["string - concrete interpretation limitation"],
-            "monitoring_points": ["string - concrete issue to monitor"],
+            "data_limitations": [
+                "string - unavailable, stale, mismatched-period, or insufficient source-data limitation"
+            ],
+            "interpretation_limitations": [
+                "string - causal, generalization, comparability, or evidence-strength limitation"
+            ],
+            "monitoring_points": [
+                "string - unresolved concrete event or variable whose future observation may change the view"
+            ],
         },
         "source_files": {
             "target_financial": "string",
             "target_news": "string",
             "target_yfinance": "string",
-            "competitor_reports": ["string"],
+            "peer_comparison": "string",
         },
     }
 
@@ -2628,32 +3744,21 @@ def strategy_decision_output_schema() -> dict[str, Any]:
 
     return {
         "strategy_report": strategy_report_schema(),
-        "decision_basis_by_section": {
-            "<every non-empty editable strategy_report path>": decision_basis_entry_schema(),
+        "evidence_refs_by_section": {
+            section: [decision_source_ref_schema()]
+            for section in DECISION_REFERENCE_SECTIONS
         },
     }
 
 
-def decision_basis_entry_schema() -> dict[str, Any]:
-    """Return one path-level decision basis entry schema for prompting."""
+def decision_source_ref_schema() -> dict[str, Any]:
+    """Return one compact source reference generated with the report."""
 
     return {
-        "opinion_id": "string - leave blank; system will assign OP ids after normalization if omitted",
-        "section_path": "string - exact path in strategy_report, e.g. financial_view.revenue or risk_view.market_risks[0]",
-        "opinion_text": "string - exact text written at the same strategy_report path",
-        "basis_summary": "string - one concise Korean sentence, under 180 chars preferred; explain which input facts caused this opinion, without restating opinion_text",
-        "key_numbers": ["string - max 5 numeric values, units, periods, or market indicators used"],
-        "source_evidence": [
-            {
-                "agent": "Financial | News | YFinance | Competitor | Strategy",
-                "claim_id": "string - validation claim id when available",
-                "evidence_text": "string - concise evidence summary under 160 chars, not a long copied passage",
-                "source_path": "string - source artifact path when available",
-                "source_section": "string - source section or evidence id when available",
-                "evidence_ids": ["string"],
-            }
-        ],
-        "limitations": ["string - max 2 evidence limitations or uncertainties that affect this exact opinion"],
+        "agent": "Financial | News | YFinance | Competitor",
+        "claim_id": "supplied claim id or blank",
+        "source_section": "exact strategy_decision_packet path",
+        "evidence_ids": ["supplied evidence id"],
     }
 
 
@@ -2664,6 +3769,33 @@ def read_prompt(filename: str) -> str:
     if not path.exists():
         raise FileNotFoundError(f"Prompt file not found: {path}")
     return path.read_text(encoding="utf-8")
+
+
+def resolve_decision_horizon_profile(profile: str) -> dict[str, str]:
+    """Return one validated Strategy decision-horizon profile."""
+
+    normalized = str(profile or DEFAULT_DECISION_HORIZON_PROFILE).strip().lower()
+    if normalized not in DECISION_HORIZON_PROFILES:
+        raise ValueError(
+            "decision_horizon_profile must be one of: "
+            + ", ".join(DECISION_HORIZON_PROFILES)
+        )
+    return DECISION_HORIZON_PROFILES[normalized]
+
+
+def decision_prompt_v2(
+    profile: str = DEFAULT_DECISION_HORIZON_PROFILE,
+) -> str:
+    """Render the shared v2 prompt with one isolated horizon policy."""
+
+    resolved = resolve_decision_horizon_profile(profile)
+    template = read_prompt("decision_agent_v2.md")
+    placeholder = "{{DECISION_HORIZON_POLICY}}"
+    if template.count(placeholder) != 1:
+        raise ValueError(
+            "decision_agent_v2.md must contain exactly one horizon-policy placeholder."
+        )
+    return template.replace(placeholder, str(resolved["policy"]))
 
 
 def load_required_json(path: Path, label: str) -> dict[str, Any]:
@@ -2686,15 +3818,32 @@ def load_json(path: Path) -> Any:
 def save_json(path: Path, payload: Any) -> None:
     """Write formatted JSON."""
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
 
 def save_text(path: Path, content: str) -> None:
     """Write UTF-8 text."""
 
+    _atomic_write_text(path, content)
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=path.parent,
+    )
+    temporary_path = Path(temporary)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            file.write(content)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary_path, path)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
 
 
 def load_env_file(path: Path) -> None:
@@ -2734,22 +3883,6 @@ def load_identity_from_config(path: Path | None) -> dict[str, str]:
     }
 
 
-def discover_competitor_reports(*, output_root: Path, target_run_key: str) -> list[Path]:
-    """Find competitor_summary_report.json files under Output_total/Competitor."""
-
-    root = output_root / "Competitor"
-    if not root.exists():
-        return []
-    reports: list[Path] = []
-    for child in sorted(root.iterdir()):
-        if not child.is_dir() or child.name == target_run_key:
-            continue
-        path = child / "competitor_summary_report.json"
-        if path.exists():
-            reports.append(path)
-    return reports
-
-
 def infer_run_key_from_paths(paths: list[Path | None]) -> str | None:
     """Infer run_key from a final_report.json source path."""
 
@@ -2770,9 +3903,6 @@ def normalize_recommendation(value: Any) -> str:
     }
     if text in mapping:
         return mapping[text]
-    for key, normalized in mapping.items():
-        if key in text:
-            return normalized
     raise ValueError(f"Invalid final_recommendation: {value}")
 
 
@@ -2862,17 +3992,6 @@ def text_items(value: Any) -> list[str]:
     return items
 
 
-def limitations_text_items(value: Any) -> list[str]:
-    """Flatten structured limitation buckets into a string list."""
-
-    if not isinstance(value, dict):
-        return text_items(value)
-    items: list[str] = []
-    for key in ("data_limitations", "interpretation_limitations", "monitoring_points"):
-        items.extend(text_items(value.get(key)))
-    return items
-
-
 def render_inline_items(value: Any) -> str:
     """Render a list-like field as one Markdown line."""
 
@@ -2880,49 +3999,18 @@ def render_inline_items(value: Any) -> str:
     return "; ".join(items) if items else "N/A"
 
 
-def merge_limitations(base: Any, constraints: Any) -> list[str]:
-    """Preserve model limitations and append source-derived decision constraints."""
+def render_observed_risks(value: Any) -> str:
+    """Render categorized risk objects for the Markdown report."""
 
-    return dedupe(text_items(base) + text_items(constraints), 14)
-
-
-def rewrite_conservative_language(value: Any) -> Any:
-    """Rewrite common overstatements into period-aware conservative wording."""
-
-    if isinstance(value, dict):
-        return {key: rewrite_conservative_language(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [rewrite_conservative_language(item) for item in value]
-    if not isinstance(value, str):
-        return value
-
-    text = value
-    replacements = {
-        "2024년 연간 대비 증가 추세(단순 비교 제한)": (
-            "2024 ANNUAL FULL_YEAR와 단순 비교 시 높은 수준이나 동일 기간 YoY로 단정하지 않음"
-        ),
-        "2024년 연간 대비 증가 추세": (
-            "2024 ANNUAL FULL_YEAR와 단순 비교 시 높은 수준이나 동일 기간 YoY로 단정하지 않음"
-        ),
-        "2024 연간 대비 증가 추세 확인(단, 기간 기준 차이 유의)": (
-            "2024 ANNUAL FULL_YEAR와 단순 비교 시 높은 수준이나 동일 기간 YoY로 단정하지 않음"
-        ),
-        "2024 연간 대비 증가 추세": (
-            "2024 ANNUAL FULL_YEAR와 단순 비교 시 높은 수준이나 동일 기간 YoY로 단정하지 않음"
-        ),
-        "2024 연간 대비": "2024 ANNUAL FULL_YEAR와 단순 비교 시",
-        "2024년 대비 개선되어": "2024 ANNUAL FULL_YEAR 대비 개선 방향이나 동일 기간 YoY로 단정하지 않으며",
-        "전년 대비 개선되어": "비교 기준 대비 개선 방향이나 동일 기간 YoY로 단정하지 않으며",
-        "전년 대비 소폭 개선": "비교 기준 대비 소폭 개선 방향이나 동일 기간 YoY로 단정하지 않음",
-        "전년 대비": "비교 기준 대비(동일 기간 YoY 아님)",
-        "연간 개선 단정": "연간 개선으로 단정",
-        "명확히 우위": "상대적으로 강하게 보임",
-        "상대적으로 우위에 있다": "상대적으로 강하게 보인다",
-        "동일 기간 YoY로 단정하지 않음이나": "동일 기간 YoY로 단정하지 않으며",
-    }
-    for source, target in replacements.items():
-        text = text.replace(source, target)
-    return text
+    rendered: list[str] = []
+    for item in ensure_list(value):
+        if not isinstance(item, dict):
+            continue
+        category = clean_text(item.get("category")) or "risk"
+        statement = clean_text(item.get("statement"))
+        if statement:
+            rendered.append(f"[{category}] {statement}")
+    return "; ".join(rendered) if rendered else "N/A"
 
 
 def dedupe(items: list[str], limit: int | None = None) -> list[str]:

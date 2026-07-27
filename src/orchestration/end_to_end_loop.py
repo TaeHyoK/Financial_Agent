@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from tqdm.auto import tqdm
@@ -21,6 +23,10 @@ from .run_state import FAILED, SUCCESS, StepRecord
 
 DEFAULT_KOSPI_TICKER = "^KS11"
 DEFAULT_FX_TICKER = "KRW=X"
+DEFAULT_NEWS_GRANULARITY = "day"
+DEFAULT_NEWS_RAW_PERIOD_COUNT = 1
+STEP_FINGERPRINT_VERSION = "1"
+FINGERPRINT_SOURCE_SUFFIXES = {".py", ".md", ".json", ".yaml", ".yml", ".toml"}
 
 
 class AgentTeamOrchestrator:
@@ -32,7 +38,12 @@ class AgentTeamOrchestrator:
         self.paths = resolve_run_paths(self.run_config, args.output_root)
         self.paths.ensure_directories()
         write_run_config_copy(self.paths, self.run_config)
-        write_financial_runtime_manifest(self.paths, self.run_config)
+        write_financial_runtime_manifest(
+            self.paths,
+            self.run_config,
+            primary_data_only=self.args.primary_data_only,
+        )
+        self.fingerprint_state = load_fingerprint_state(self.paths.step_fingerprints)
         self.steps: list[StepRecord] = []
         self.step_by_name: dict[str, StepRecord] = {}
         self.progress: tqdm | None = None
@@ -53,6 +64,12 @@ class AgentTeamOrchestrator:
                 command = self.command_for_step(spec.name)
                 record.command = command
                 record.outputs = self.outputs_for_step(spec.name)
+                record.input_fingerprint = self._step_fingerprint(
+                    step_name=spec.name,
+                    command=command,
+                    dependencies=spec.dependencies,
+                    outputs=record.outputs,
+                )
 
                 if spec.name in self.args.skip_step:
                     record.skip("Skipped by --skip-step.")
@@ -60,8 +77,8 @@ class AgentTeamOrchestrator:
                     self._finish_progress_step(record)
                     continue
 
-                if self.args.reuse_existing and outputs_exist(record.outputs):
-                    record.reuse("Reused existing outputs because --reuse-existing was set.")
+                if spec.name not in self.args.force_step and self._can_reuse(record):
+                    record.reuse("Reused outputs with matching input, code, dependency, and output fingerprints.")
                     self._write_state()
                     self._finish_progress_step(record)
                     continue
@@ -88,6 +105,8 @@ class AgentTeamOrchestrator:
                 progress.set_postfix_str(f"{spec.name}: running")
                 self._run_record(record)
                 self._post_step(spec.name, record)
+                if record.status == SUCCESS:
+                    self._save_step_fingerprint(record)
                 self._write_state()
                 self._finish_progress_step(record)
 
@@ -106,16 +125,18 @@ class AgentTeamOrchestrator:
             return self._yfinance_layer_1_command()
         if step_name == "financial_layer_1":
             return self._financial_layer_1_command()
+        if step_name == "news_sy" and self.args.no_sy:
+            return self._news_no_sy_command()
         if step_name.startswith("news_"):
             return self._news_phase_command(step_name.removeprefix("news_"))
         if step_name == "financial_analyst":
             return self._financial_analyst_command()
         if step_name == "financial_sy":
-            return self._financial_sy_command()
+            return self._financial_no_sy_command() if self.args.no_sy else self._financial_sy_command()
         if step_name == "yfinance_report":
             return self._yfinance_report_command()
         if step_name == "yfinance_sy":
-            return self._yfinance_sy_command()
+            return self._yfinance_no_sy_command() if self.args.no_sy else self._yfinance_sy_command()
         raise KeyError(f"Unknown step: {step_name}")
 
     def common_llm_model(self) -> str:
@@ -130,6 +151,7 @@ class AgentTeamOrchestrator:
             return {
                 "market_summary": str(self.paths.market_summary),
                 "market_summary_dated": str(self.paths.market_summary_dated),
+                "valuation_snapshot": str(self.paths.valuation_snapshot),
             }
         if step_name == "financial_layer_1":
             return {
@@ -139,7 +161,11 @@ class AgentTeamOrchestrator:
         if step_name == "news_collect":
             return {"report_context": str(self.paths.news_report_context)}
         if step_name == "news_export":
-            return {"llm_summary_request": str(self.paths.news_context_export_month_dir / "llm_summary_request.json")}
+            return {
+                "llm_summary_request": str(
+                    self.paths.news_context_export_dir / self.args.news_granularity / "llm_summary_request.json"
+                )
+            }
         if step_name == "news_llm":
             return {"llm_period_summaries": str(self.paths.news_llm_period_summaries)}
         if step_name == "news_analysis":
@@ -150,23 +176,30 @@ class AgentTeamOrchestrator:
                 "verified_report": str(self.paths.news_verified_report),
             }
         if step_name == "financial_analyst":
-            return {"analyst_report": str(self.paths.financial_analyst_report)}
+            return {
+                "analyst_report": str(self.paths.financial_analyst_report),
+                "analyst_trace": str(self.paths.financial_analyst_trace),
+            }
         if step_name == "financial_sy":
             return {
                 "sy_validation": str(self.paths.financial_validation),
+                "sy_validation_trace": str(self.paths.financial_validation_trace),
                 "verified_report": str(self.paths.financial_verified_report),
             }
         if step_name == "yfinance_report":
-            return {"analyst_report": str(self.paths.yfinance_analyst_report)}
+            return {
+                "analyst_report": str(self.paths.yfinance_analyst_report),
+                "analyst_report_md": str(self.paths.yfinance_analyst_report_md),
+            }
         if step_name == "yfinance_sy":
             return {
                 "verified_report": str(self.paths.yfinance_verified_report),
                 "strategy_verified_report": str(self.paths.yfinance_strategy_verified_report),
-                "question_answer_log": str(self.paths.yfinance_question_answer_log),
             }
         return {}
 
     def _yfinance_layer_1_command(self) -> list[str]:
+        start_date, end_date = self._market_date_range()
         return [
             sys.executable,
             str(self.paths.project_root / "src" / "Agent_Team" / "YFinance_Agent" / "main.py"),
@@ -175,9 +208,9 @@ class AgentTeamOrchestrator:
             "--output-dir",
             str(self.paths.yfinance_dir),
             "--start-date",
-            self.run_config.start_date,
+            start_date,
             "--end-date",
-            self.run_config.end_date,
+            end_date,
             "--selected-date",
             self.run_config.selected_date,
             "--kospi-ticker",
@@ -203,7 +236,35 @@ class AgentTeamOrchestrator:
             self.args.log_level,
         ]
 
+    def _market_date_range(self) -> tuple[str, str]:
+        if self.args.market_window_days is None:
+            return self.run_config.start_date, self.run_config.end_date
+        selected = datetime.strptime(self.run_config.selected_date, "%Y%m%d").date()
+        window_days = max(1, int(self.args.market_window_days))
+        end = selected - timedelta(days=1)
+        start = end - timedelta(days=window_days - 1)
+        return start.strftime("%Y%m%d"), end.strftime("%Y%m%d")
+
+    def _date_range_days(self) -> int:
+        start = datetime.strptime(self.run_config.start_date, "%Y%m%d").date()
+        end = datetime.strptime(self.run_config.end_date, "%Y%m%d").date()
+        return max(1, (end - start).days + 1)
+
+    def _news_collection_days(self) -> int:
+        if self.args.news_collection_days is not None:
+            return max(1, int(self.args.news_collection_days))
+        return self._date_range_days()
+
+    def _news_period_count(self) -> int:
+        if self.args.news_period_count is not None:
+            return max(1, int(self.args.news_period_count))
+        if self.args.news_granularity == "day":
+            return self._news_collection_days()
+        return max(1, int(self.args.news_period_count or 1))
+
     def _news_phase_command(self, phase: str) -> list[str]:
+        news_collection_days = self._news_collection_days()
+        news_period_count = self._news_period_count()
         command = [
             sys.executable,
             "-m",
@@ -211,7 +272,7 @@ class AgentTeamOrchestrator:
             "--phase",
             phase,
             "--collect-date",
-            self.run_config.selected_date_iso,
+            self.run_config.information_cutoff_date_iso,
             "--company-id",
             self.run_config.company_code,
             "--company-name",
@@ -220,8 +281,14 @@ class AgentTeamOrchestrator:
             self.run_config.ticker,
             "--corp-code",
             self.run_config.corp_code,
+            "--as-of-date",
+            self.run_config.selected_date_iso,
             "--granularity",
-            "month",
+            self.args.news_granularity,
+            "--period-count",
+            str(news_period_count),
+            "--raw-period-count",
+            str(self.args.news_raw_period_count),
             "--min-mention-count",
             str(self.args.news_min_mention_count),
             "--context-export-dir",
@@ -241,8 +308,9 @@ class AgentTeamOrchestrator:
         ]
         if self.args.news_split_by_period:
             command.append("--split-by-period")
-        if self.args.news_collection_days is not None:
-            command.extend(["--collection-days", str(self.args.news_collection_days)])
+        if self.args.primary_data_only:
+            command.append("--primary-data-only")
+        command.extend(["--collection-days", str(news_collection_days)])
         if self.args.news_max_results is not None:
             command.extend(["--max-results", str(self.args.news_max_results)])
         command.extend(["--llm-model", self.args.news_llm_model or self.common_llm_model()])
@@ -260,14 +328,7 @@ class AgentTeamOrchestrator:
             str(self.paths.financial_analyst_report),
             "--trace-output",
             str(self.paths.financial_analyst_trace),
-            "--env-file",
-            str(self.args.env_file),
-            "--llm-provider",
-            self.args.llm_provider,
-            "--llm-model",
-            self.common_llm_model(),
         ]
-        command.append("--use-llm")
         return command
 
     def _financial_sy_command(self) -> list[str]:
@@ -296,6 +357,38 @@ class AgentTeamOrchestrator:
         command.append("--use-llm")
         return command
 
+    def _financial_no_sy_command(self) -> list[str]:
+        return [
+            sys.executable,
+            "-m",
+            "orchestration.ablation_adapters",
+            "--domain",
+            "financial",
+            "--input",
+            str(self.paths.financial_analyst_report),
+            "--verified-report",
+            str(self.paths.financial_verified_report),
+            "--validation",
+            str(self.paths.financial_validation),
+            "--trace-output",
+            str(self.paths.financial_validation_trace),
+        ]
+
+    def _news_no_sy_command(self) -> list[str]:
+        return [
+            sys.executable,
+            "-m",
+            "orchestration.ablation_adapters",
+            "--domain",
+            "news",
+            "--input",
+            str(self.paths.news_handoff),
+            "--verified-report",
+            str(self.paths.news_verified_report),
+            "--validation",
+            str(self.paths.news_sy_validations),
+        ]
+
     def _yfinance_report_command(self) -> list[str]:
         command = [
             sys.executable,
@@ -305,7 +398,9 @@ class AgentTeamOrchestrator:
             "--dart-json",
             str(self.paths.dart_lightweight),
             "--news-json",
-            str(self.paths.news_llm_period_summaries),
+            str(self.paths.news_verified_report),
+            "--valuation-json",
+            str(self.paths.valuation_snapshot),
             "--report-md",
             str(self.paths.yfinance_analyst_report_md),
             "--report-json",
@@ -318,6 +413,8 @@ class AgentTeamOrchestrator:
             str(self.args.env_file),
         ]
         command.extend(["--model", self.args.yfinance_model or self.common_llm_model()])
+        if self.args.primary_data_only:
+            command.append("--primary-data-only")
         return command
 
     def _yfinance_sy_command(self) -> list[str]:
@@ -330,12 +427,27 @@ class AgentTeamOrchestrator:
             str(self.paths.yfinance_verified_report),
             "--strategy-output",
             str(self.paths.yfinance_strategy_verified_report),
-            "--question-log",
-            str(self.paths.yfinance_question_answer_log),
             "--env-file",
             str(self.args.env_file),
             "--model",
             self.common_llm_model(),
+        ]
+
+    def _yfinance_no_sy_command(self) -> list[str]:
+        return [
+            sys.executable,
+            "-m",
+            "orchestration.ablation_adapters",
+            "--domain",
+            "yfinance",
+            "--input",
+            str(self.paths.yfinance_analyst_report),
+            "--verified-report",
+            str(self.paths.yfinance_strategy_verified_report),
+            "--validation",
+            str(self.paths.yfinance_verified_report),
+            "--strategy-report",
+            str(self.paths.yfinance_strategy_verified_report),
         ]
 
     def _run_record(self, record: StepRecord) -> None:
@@ -369,7 +481,90 @@ class AgentTeamOrchestrator:
         env["OPENAI_MODEL"] = self.common_llm_model()
         env["NEWS_AGENT_LLM_MODEL"] = self.common_llm_model()
         env["NEWS_SY_AGENT_LLM_MODEL"] = self.common_llm_model()
+        env["LLM_USAGE_MANIFEST"] = str(self.args.llm_usage_manifest or self.paths.llm_usage_manifest)
+        env["LLM_RUN_ID"] = self.args.llm_run_id or self.paths.run_key
+        env["LLM_RUN_ROLE"] = self.args.llm_run_role
+        env["LLM_COMPANY_NAME"] = self.run_config.company_name
+        env["LLM_EXECUTION_ID"] = self.args.llm_execution_id
         return env
+
+    def _step_fingerprint(
+        self,
+        *,
+        step_name: str,
+        command: list[str],
+        dependencies: tuple[str, ...],
+        outputs: dict[str, str],
+    ) -> str:
+        output_paths = {str(Path(path).expanduser().resolve()) for path in outputs.values()}
+        command_inputs: dict[str, str] = {}
+        for raw_value in command[1:]:
+            candidate = Path(raw_value).expanduser()
+            if not candidate.exists() or not candidate.is_file():
+                continue
+            resolved = candidate.resolve()
+            if str(resolved) in output_paths or resolved == self.args.env_file:
+                continue
+            command_inputs[str(resolved)] = file_sha256(resolved)
+
+        dependency_outputs: dict[str, dict[str, str]] = {}
+        for dependency in dependencies:
+            dependency_outputs[dependency] = {
+                name: file_sha256(Path(path))
+                for name, path in self.outputs_for_step(dependency).items()
+                if Path(path).exists()
+            }
+        payload = {
+            "version": STEP_FINGERPRINT_VERSION,
+            "step": step_name,
+            "command": command,
+            "command_inputs": command_inputs,
+            "dependency_outputs": dependency_outputs,
+            "source_hash": self._step_source_hash(step_name),
+        }
+        return hashlib.sha256(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+
+    def _step_source_hash(self, step_name: str) -> str:
+        if step_name.startswith("news_"):
+            agent_dir = self.paths.project_root / "src" / "Agent_Team" / "News_Agent"
+        elif step_name.startswith("financial_"):
+            agent_dir = self.paths.project_root / "src" / "Agent_Team" / "Financial_Agent"
+        elif step_name.startswith("yfinance_"):
+            agent_dir = self.paths.project_root / "src" / "Agent_Team" / "YFinance_Agent"
+        else:
+            raise KeyError(f"Unknown step source root: {step_name}")
+        roots = [agent_dir, self.paths.project_root / "src" / "shared"]
+        return hash_source_trees(roots)
+
+    def _can_reuse(self, record: StepRecord) -> bool:
+        if not outputs_exist(record.outputs):
+            return False
+        previous = (self.fingerprint_state.get("steps") or {}).get(record.name)
+        if not isinstance(previous, dict) or previous.get("input_fingerprint") != record.input_fingerprint:
+            return False
+        current_outputs = {
+            name: file_sha256(Path(path))
+            for name, path in record.outputs.items()
+        }
+        return previous.get("output_hashes") == current_outputs
+
+    def _save_step_fingerprint(self, record: StepRecord) -> None:
+        steps = self.fingerprint_state.setdefault("steps", {})
+        steps[record.name] = {
+            "input_fingerprint": record.input_fingerprint,
+            "output_hashes": {
+                name: file_sha256(Path(path))
+                for name, path in record.outputs.items()
+                if Path(path).exists()
+            },
+        }
+        self.fingerprint_state["version"] = STEP_FINGERPRINT_VERSION
+        self.paths.step_fingerprints.write_text(
+            json.dumps(self.fingerprint_state, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
     def _post_step(self, step_name: str, record: StepRecord) -> None:
         if record.status != SUCCESS:
@@ -377,7 +572,11 @@ class AgentTeamOrchestrator:
         if step_name == "yfinance_layer_1":
             ensure_market_summary_alias(self.paths)
         if step_name == "financial_layer_1":
-            write_financial_runtime_manifest(self.paths, self.run_config)
+            write_financial_runtime_manifest(
+                self.paths,
+                self.run_config,
+                primary_data_only=self.args.primary_data_only,
+            )
         if step_name == "financial_sy":
             self._write_financial_pipeline_manifest()
 
@@ -401,7 +600,15 @@ class AgentTeamOrchestrator:
             self._finish_progress_step(record)
 
     def _write_state(self) -> dict:
-        return write_run_files(self.paths, self.run_config, self.steps, dry_run=self.args.dry_run)
+        return write_run_files(
+            self.paths,
+            self.run_config,
+            self.steps,
+            dry_run=self.args.dry_run,
+            llm_usage_manifest=self.args.llm_usage_manifest,
+            llm_execution_id=self.args.llm_execution_id,
+            llm_run_id=self.args.llm_run_id or self.paths.run_key,
+        )
 
     def _write_financial_pipeline_manifest(self) -> None:
         self.paths.financial_pipeline_manifest.write_text(
@@ -447,33 +654,120 @@ def outputs_exist(outputs: dict[str, str]) -> bool:
     return bool(outputs) and all(Path(path).exists() for path in outputs.values())
 
 
+def load_fingerprint_state(path: Path) -> dict:
+    if not path.exists():
+        return {"version": STEP_FINGERPRINT_VERSION, "steps": {}}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {"version": STEP_FINGERPRINT_VERSION, "steps": {}}
+    if not isinstance(payload, dict) or payload.get("version") != STEP_FINGERPRINT_VERSION:
+        return {"version": STEP_FINGERPRINT_VERSION, "steps": {}}
+    if not isinstance(payload.get("steps"), dict):
+        payload["steps"] = {}
+    return payload
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def hash_source_trees(roots: list[Path]) -> str:
+    digest = hashlib.sha256()
+    files: list[tuple[Path, Path]] = []
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in FINGERPRINT_SOURCE_SUFFIXES:
+                continue
+            if "__pycache__" in path.parts or "tests" in path.parts:
+                continue
+            if path.suffix.lower() == ".md" and "prompts" not in path.parts:
+                continue
+            files.append((root, path))
+    for root, path in sorted(files, key=lambda item: (str(item[0]), str(item[1]))):
+        digest.update(str(path.relative_to(root)).encode("utf-8"))
+        digest.update(file_sha256(path).encode("ascii"))
+    return digest.hexdigest()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run Agent_Team Layer 1 to Layer 2 orchestration.")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH), help="Common run config JSON.")
     parser.add_argument("--env-file", default=str(DEFAULT_ENV_FILE), type=Path, help="Env file for API keys.")
     parser.add_argument("--output-root", default=None, help="Override Output_total root.")
     parser.add_argument("--use-llm", action="store_true", help="Run LLM-dependent Layer 2 phases.")
+    parser.add_argument(
+        "--no-sy",
+        action="store_true",
+        help="Replace Financial, News, and YFinance SY steps with unverified passthrough adapters.",
+    )
+    parser.add_argument(
+        "--primary-data-only",
+        action="store_true",
+        help="Remove cross-domain secondary/subdata from each domain-agent request.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Write commands/manifest without executing team CLIs.")
     parser.add_argument("--no-progress", action="store_true", help="Disable top-level tqdm progress output.")
-    parser.add_argument("--reuse-existing", action="store_true", help="Mark a step successful when its expected outputs already exist.")
+    parser.add_argument(
+        "--reuse-existing",
+        action="store_true",
+        help="Deprecated compatibility flag. Exact fingerprint reuse is automatic.",
+    )
+    parser.add_argument(
+        "--force-step",
+        action="append",
+        default=[],
+        choices=[spec.name for spec in STEP_SPECS],
+        help="Force one step to run even when its fingerprint matches. Can be repeated.",
+    )
     parser.add_argument("--continue-on-error", action="store_true", help="Continue independent steps after a failure.")
     parser.add_argument("--skip-step", action="append", default=[], help="Skip a step by name. Can be repeated.")
     parser.add_argument("--log-level", default="INFO")
     parser.add_argument("--kospi-ticker", default=DEFAULT_KOSPI_TICKER)
     parser.add_argument("--fx-ticker", default=DEFAULT_FX_TICKER)
+    parser.add_argument("--market-window-days", type=int, default=None)
     parser.add_argument("--news-config", default=str(DEFAULT_NEWS_CONFIG_PATH), type=Path)
     parser.add_argument("--news-collection-days", type=int, default=None)
     parser.add_argument("--news-max-results", type=int, default=None)
     parser.add_argument("--news-min-mention-count", type=int, default=1)
+    parser.add_argument("--news-granularity", default=DEFAULT_NEWS_GRANULARITY, choices=["day", "month"])
+    parser.add_argument("--news-period-count", type=int, default=None)
+    parser.add_argument("--news-raw-period-count", type=int, default=DEFAULT_NEWS_RAW_PERIOD_COUNT)
     parser.add_argument("--news-llm-model", default=None)
     parser.add_argument("--news-analysis-model", default=None)
     parser.add_argument("--news-sy-model", default=None)
+    parser.add_argument(
+        "--news-split-by-period",
+        dest="news_split_by_period",
+        action="store_true",
+        help="Call the News summary LLM once per period instead of using the default batched request.",
+    )
     parser.add_argument("--no-news-split-by-period", dest="news_split_by_period", action="store_false")
-    parser.set_defaults(news_split_by_period=True)
+    parser.set_defaults(news_split_by_period=False)
     parser.add_argument("--timeout-seconds", type=float, default=300.0)
     parser.add_argument("--llm-provider", default="openai", choices=["auto", "openai"])
     parser.add_argument("--llm-model", default="auto")
     parser.add_argument("--yfinance-model", default=None)
+    parser.add_argument(
+        "--llm-usage-manifest",
+        default=None,
+        type=Path,
+        help="Optional central JSONL path for this execution's transport-attempt telemetry.",
+    )
+    parser.add_argument("--llm-run-id", default="", help="Telemetry run ID. Defaults to this company run key.")
+    parser.add_argument(
+        "--llm-run-role",
+        default="target",
+        choices=["target", "peer", "final", "evaluation"],
+        help="Logical role used in full-pipeline usage summaries.",
+    )
+    parser.add_argument("--llm-execution-id", default="", help="Full-pipeline execution ID for telemetry grouping.")
     return parser
 
 
@@ -482,6 +776,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     args.env_file = Path(args.env_file).expanduser().resolve()
     args.news_config = Path(args.news_config).expanduser().resolve()
+    if args.llm_usage_manifest is not None:
+        args.llm_usage_manifest = args.llm_usage_manifest.expanduser().resolve()
     orchestrator = AgentTeamOrchestrator(args)
     return orchestrator.run()
 

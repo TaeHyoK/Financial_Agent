@@ -10,6 +10,48 @@
 
 > 연구 및 실험 목적의 프로토타입입니다. 생성 결과는 투자 자문이나 매매 권유가 아닙니다.
 
+## 빠른 시작: 일반 1개월 파이프라인
+
+아래 명령은 ablation이 아닌 일반 파이프라인을 실행합니다. 대상 기업과 국내 peer의 Financial·News·YFinance 수집, SY 검증, peer 비교, Strategy, Writer와 최종 HTML 검증이 순서대로 실행됩니다.
+
+```bash
+git clone https://github.com/TaeHyoK/Financial_Agent.git
+cd Financial_Agent
+
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+```
+
+`configs/.env`에 API key를 설정합니다.
+
+```dotenv
+OPENAI_API_KEY=your_openai_api_key
+DART_API_KEY=your_opendart_api_key
+```
+
+```bash
+PYTHONPATH=src python -m orchestration.full_report_pipeline \
+  --company-name SK바이오팜 \
+  --selected-date 20251031 \
+  --news-window 1m \
+  --decision-horizon-profile short_term \
+  --semantic-attempts 2 \
+  --llm-model gpt-5.4-mini \
+  --no-progress
+```
+
+`--news-window 1m`은 수집할 뉴스 기간이고, `--decision-horizon-profile short_term`은 Strategy의 투자 판단 기간인 `1개월`입니다. 두 옵션은 서로 독립적이므로 1개월 데이터·1개월 예측을 원하면 둘 다 지정해야 합니다.
+
+성공 시 핵심 산출물은 다음 위치에 생성됩니다.
+
+```text
+Output_total/Writer/SK바이오팜_20251031/report.html
+Output_total/runs/SK바이오팜_20251031/full_pipeline_manifest.json
+Output_total/runs/SK바이오팜_20251031/run_status.json
+```
+
 ## 초록
 
 LLM 기반 금융 보고서는 서로 다른 데이터 도메인을 자연스럽게 연결할 수 있지만, 다음 문제가 발생하기 쉽습니다.
@@ -156,14 +198,14 @@ Strategy LLM은 모든 card에 대해 `investment_effect`, `materiality`, `secti
 | 필드 | 의미 |
 | --- | --- |
 | `current_price_rationale` | 현재 가격·시장 상태가 판단에 반영된 방식 |
-| `forward_support` | 6~12개월 전망을 지지하는 forward evidence |
+| `forward_support` | 선택한 Strategy 기간 전망을 지지하는 forward evidence |
 | `valuation_counterweight` | 절대 또는 selected-peer valuation의 상쇄 요인 |
 | `residual_uncertainty` | 확인되지 않은 사업·재무·시장 불확실성 |
 | `decision_confidence` | 판단 확신도. `data_coverage`와 별도 관리 |
 
 LLM이 중복 free-form `strategy_report`를 생성하지는 않습니다. 검증이 끝난 typed decision을 코드가 `strategy_report.json`과 `strategy_report.md`로 투영하므로, Strategy 판단과 Writer 입력 사이에 두 번째 해석본이 생기지 않습니다.
 
-Buy/Hold/Sell은 정량 점수 합산이나 고정 임계값으로 계산하지 않습니다. LLM이 6~12개월 관점에서 `decisive`·`supporting` 긍정/부정 factor의 상대적 중요도를 비교해 의견을 선택하고, 코드는 해당 선택이 사용할 수 있는 근거의 자격과 일관성을 검증합니다. Buy와 Sell에는 방향이 일치하는 독립 forward evidence family가 최소 2개 필요합니다. Hold에는 데이터 부족을 이유로 한 기본 우선순위가 없으며, 실제 긍정·부정 상쇄 논리가 recommendation bridge에 제시돼야 합니다. 따라서 구조적 근거 요건은 재현 가능하지만 세 의견 사이의 절대 경계는 LLM의 정성적 calibration에 의존합니다.
+Buy/Hold/Sell은 정량 점수 합산이나 고정 임계값으로 계산하지 않습니다. LLM이 선택된 기간 profile에서 `decisive`·`supporting` 긍정/부정 factor의 상대적 중요도를 비교해 의견을 선택하고, 코드는 해당 선택이 사용할 수 있는 근거의 자격과 일관성을 검증합니다. 지원 profile은 `default=6~12개월`, `unspecified=기간 미지정`, `short_term=1개월`, `medium_term=3개월`, `long_term=6개월`입니다. Buy와 Sell에는 방향이 일치하는 독립 forward evidence family가 최소 2개 필요합니다. Hold에는 데이터 부족을 이유로 한 기본 우선순위가 없으며, 실제 긍정·부정 상쇄 논리가 recommendation bridge에 제시돼야 합니다. 따라서 구조적 근거 요건은 재현 가능하지만 세 의견 사이의 절대 경계는 LLM의 정성적 calibration에 의존합니다.
 
 ### Writer 정보 계층화
 
@@ -191,7 +233,7 @@ Writer editorial packet은 Strategy packet 전체를 다시 전달하지 않고 
 | Gate C | Writer 호출 후 | component card coverage, 문장별 grounding, Strategy 의미·시간 의미 보존, 필수 limitation, 내부 ID 유출, 표 순서 |
 | HTML Validator | 렌더링 후 | 필수 section/table, A4 print layout, 숫자 표시, 숨김 metadata, 금지 콘텐츠와 문서 구조 |
 
-검증 실패 시 Review 또는 Repair LLM을 추가 호출하지 않고 실행을 실패시킵니다. 실패 payload는 성공 execution cache로 인정하지 않지만, 동일 fingerprint의 raw Writer 응답은 보존해 코드 변경 후 추가 API 호출 없이 다시 정규화·검증할 수 있습니다.
+별도의 Review 또는 Repair 역할은 호출하지 않습니다. Gate B 또는 Gate C가 실패하면 실패 payload를 성공 cache로 인정하지 않고, `--semantic-attempts` 범위가 남아 있을 때 같은 단계의 새 응답을 생성합니다. 모든 semantic attempt가 실패하면 단계와 전체 실행이 실패합니다. 동일 fingerprint의 raw Writer 응답은 보존하므로 정규화·validator 코드만 바뀐 경우에는 추가 API 호출 없이 다시 검증할 수 있습니다.
 
 ## 재현 방법
 
@@ -223,6 +265,8 @@ PYTHONPATH=src python -m orchestration.full_report_pipeline \
   --company-name SK바이오팜 \
   --selected-date 20251031 \
   --news-window 1m \
+  --decision-horizon-profile short_term \
+  --semantic-attempts 2 \
   --llm-model gpt-5.4-mini \
   --no-progress
 ```
@@ -233,8 +277,12 @@ PYTHONPATH=src python -m orchestration.full_report_pipeline \
 financial-report \
   --company-name SK바이오팜 \
   --selected-date 20251031 \
-  --news-window 1m
+  --news-window 1m \
+  --decision-horizon-profile short_term \
+  --semantic-attempts 2
 ```
+
+일반 실행에서는 `--no-sy`, `--exclude-domain`, `--only-domain`, `--primary-data-only`, `--no-competitor`, `--full-context`, `--free-form-writer`를 지정하지 않습니다. 이 옵션들은 아래의 ablation 실험용입니다.
 
 ### Ablation CLI
 
@@ -300,6 +348,7 @@ PYTHONPATH=src python -m orchestration.full_report_pipeline \
   --company-name SK바이오팜 \
   --selected-date 20251031 \
   --news-window 1m \
+  --decision-horizon-profile short_term \
   --dry-run
 ```
 
@@ -321,6 +370,35 @@ SK바이오팜 사례의 실제 경로는 다음과 같습니다.
 Output_total/Writer/SK바이오팜_20251031/report.html
 ```
 
+### 실행 상태와 오류 확인
+
+일반 파이프라인의 최종 성공 여부는 HTML 파일의 존재만으로 판단하지 않고 manifest와 status를 함께 확인합니다.
+
+```bash
+jq '{status, error, steps: [.steps[] | {name, status, elapsed_seconds, failure_class}]}' \
+  Output_total/runs/SK바이오팜_20251031/full_pipeline_manifest.json
+
+jq '{status, pipeline_completed, steps}' \
+  Output_total/runs/SK바이오팜_20251031/run_status.json
+```
+
+정상 완료 조건은 full pipeline manifest의 `status=success`와 domain `run_status.json`의 `status=success`, `pipeline_completed=true`입니다. 일부 단계만 성공한 실행은 더 이상 성공으로 기록되지 않고 실행 중에는 `status=running`, `pipeline_completed=false`를 유지합니다.
+
+| 중단 위치 | 우선 확인할 파일 | 의미와 대응 |
+| --- | --- | --- |
+| peer 자동 선택 | `Competitor/{run_key}/peer_resolution.json` | FG000의 시가총액이 비면 같은 후보 집합의 Naver item page 값을 최대 20개까지 보완합니다. 계속 실패하면 `reason`을 확인하고 필요한 경우에만 `--peer-stock-code`를 사용합니다. |
+| Strategy Gate B | `Strategy/{run_key}/strategy_failure_report_v2.json` | 비교 범위, factor 방향, recommendation bridge 또는 독자용 문장의 내부 field/card key 누출 오류입니다. 실패 응답은 `attempts/attempt_XX/`에 보존됩니다. |
+| Writer 입력 계약 | `Writer/{run_key}/writer_editorial_packet_v2.json` | Strategy에서 넘어온 독자용 문장에 내부 metadata가 있으면 Writer LLM 호출 전에 중단합니다. 먼저 Strategy 산출물을 다시 생성해야 합니다. |
+| Writer Gate C | `Writer/{run_key}/writer_failure_report.json` | grounding, Strategy 의미 보존, limitation, 내부 metadata 또는 HTML 계약 오류입니다. `writer_validation_report.json`의 `blocking_failures`를 확인합니다. |
+| subprocess/timeout | `runs/{run_key}/executions/{execution_id}/stage_logs/*.log` | 실패 단계의 stdout/stderr와 timeout 여부를 확인합니다. Strategy와 Writer 기본 제한은 단계별 900초입니다. |
+
+최종 HTML에서 내부 metadata가 노출되지 않았는지는 다음 값으로도 확인할 수 있습니다.
+
+```bash
+jq '{status, blocking_failures, internal_metadata_hidden, card_key_coverage, strategy_meaning_preservation}' \
+  Output_total/Writer/SK바이오팜_20251031/writer_validation_report.json
+```
+
 ## 입력 계약
 
 ### 사용자 입력
@@ -330,6 +408,8 @@ Output_total/Writer/SK바이오팜_20251031/report.html
 | `company_name` | `SK바이오팜` | 거래소에서 사용하는 기업 표시명 |
 | `selected_date` | `20251031` | 장 시작 전 보고서 시점 |
 | `news_window` | `1m` | 뉴스와 출력 시장 데이터 window |
+| `decision_horizon_profile` | `short_term` | Strategy 투자 판단 기간. `news_window`와 독립 |
+| `semantic_attempts` | `2` | Strategy Gate B와 Writer Gate C 실패 시 단계별 최대 생성 횟수 |
 
 영문 약어와 OpenDART 법인명의 한글 표기가 다른 경우 문자명 alias를 사용합니다. 예를 들어 `SK바이오팜`은 OpenDART의 `에스케이바이오팜`과 연결됩니다. 출력에는 사용자가 입력한 기업명을 유지합니다.
 
@@ -726,15 +806,15 @@ Output_total/
 | 최신 DART | 2025-06-30 반기 누적, 2025-08-14 제출 |
 | 시장 snapshot | 2025-10-30 |
 | 최종 의견 | Hold |
-| 투자기간 | 6~12개월 |
-| data coverage | high |
+| 투자기간 | 1개월 |
+| data coverage | medium |
 | decision confidence | medium |
-| Strategy / Writer card | 21개 / 16개 |
+| Strategy / Writer card | 22개 / 21개 |
 | 핵심 근거표 / risk matrix | 8개 / 5개 행 |
 | Strategy validation | Gate A/B pass |
 | Writer validation | 전체 Gate C/HTML check pass, notes 0건 |
 
-최종 Hold 판단은 재무·현금흐름 개선과 일성아이에스 대비 성장성·수익성 우위가 긍정적이지만, KOSPI 대비 상대성과와 절대·상대 valuation 부담이 이를 상쇄한다고 평가한 결과입니다. 제품 비중은 `주요 제품·서비스 공시표 기준`으로 한정하고, filing lag, 단일 비교기업 범위, valuation 입력일 혼합, 제품 표 범위와 뉴스의 미확인 재무 연결을 필수 limitation으로 명시합니다. data coverage와 판단 confidence는 각각 `high`, `medium`으로 분리합니다.
+최종 Hold 판단은 반기 누적 실적과 영업현금흐름 개선이 1개월 관점의 하방을 제한하지만, KOSPI 대비 상대성과 열위와 절대·상대 valuation 부담이 단기 상승 여지를 제한한다고 평가한 결과입니다. 제품 비중은 `주요 제품·서비스 공시표 기준`으로 한정하고, filing lag, 단일 비교기업 범위, valuation 입력일 혼합, 제품 표 범위와 뉴스의 미확인 재무 연결을 필수 limitation으로 명시합니다. data coverage와 판단 confidence는 각각 `medium`, `medium`으로 분리합니다.
 
 이 사례는 시스템이 설계한 의미 계약과 point-in-time 동작을 검증하는 회귀 사례입니다. 한 기업의 Hold 결과만으로 추천 성능이나 초과수익을 주장하지 않습니다.
 
@@ -760,7 +840,7 @@ pytest -q src/orchestration/tests src/shared/tests
 
 테스트는 point-in-time cutoff, adjusted/raw close 분리, identity alias, Naver peer parser fixture, evidence contract, Strategy source refs, Writer grounding, retry/token 집계, full pipeline command와 cache를 포함합니다.
 
-2026-07-13 기준 전체 회귀 suite의 기준은 `207 passed`입니다.
+2026-07-28 기준 전체 회귀 suite의 기준은 `279 passed`입니다.
 
 ## 저장소 구조
 

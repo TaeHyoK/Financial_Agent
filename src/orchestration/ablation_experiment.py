@@ -101,6 +101,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--selected-date", required=True, help="YYYYMMDD, before market open.")
     parser.add_argument("--news-window", default="1m", choices=["2w", "1m", "3m"])
     parser.add_argument(
+        "--news-total-max-results",
+        type=_positive_int,
+        default=None,
+        help="Maximum deduplicated News articles per company across the selected window.",
+    )
+    parser.add_argument(
         "--decision-horizon-profile",
         default=DEFAULT_DECISION_HORIZON_PROFILE,
         choices=list(DECISION_HORIZON_PROFILES),
@@ -109,6 +115,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV_FILE)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--suite-id", default="")
+    parser.add_argument(
+        "--reuse-collected-from",
+        type=Path,
+        default=None,
+        metavar="FULL_PIPELINE_MANIFEST",
+        help=(
+            "Reuse the successful Full run's fixed DART, market, and News collection/summary snapshot "
+            "for full, no_sy, and primary_only instead of collecting providers again."
+        ),
+    )
     parser.add_argument(
         "--condition",
         action="append",
@@ -169,6 +185,13 @@ def run_ablation_suite(args: argparse.Namespace) -> dict[str, Any]:
         manifest["resume_code"] = code_identity()
         request = manifest.setdefault("request", {})
         request["freeze_upstream"] = bool(args.freeze_upstream)
+        request["reuse_collected_from"] = (
+            str(Path(args.reuse_collected_from).expanduser().resolve())
+            if args.reuse_collected_from
+            else ""
+        )
+        request["replicates"] = args.replicates
+        request["news_total_max_results"] = args.news_total_max_results
         for old_record in manifest.get("runs") or []:
             if not isinstance(old_record, dict) or old_record.get("execution_mode"):
                 continue
@@ -188,12 +211,18 @@ def run_ablation_suite(args: argparse.Namespace) -> dict[str, Any]:
                 "company_name": args.company_name,
                 "selected_date": args.selected_date,
                 "news_window": args.news_window,
+                "news_total_max_results": args.news_total_max_results,
                 "decision_horizon_profile": args.decision_horizon_profile,
                 "llm_model": args.llm_model,
                 "replicates": args.replicates,
                 "peer_stock_code": args.peer_stock_code,
                 "dry_run": bool(args.dry_run),
                 "freeze_upstream": bool(args.freeze_upstream),
+                "reuse_collected_from": (
+                    str(Path(args.reuse_collected_from).expanduser().resolve())
+                    if args.reuse_collected_from
+                    else ""
+                ),
             },
             "code": code_identity(),
             "conditions": [
@@ -207,6 +236,16 @@ def run_ablation_suite(args: argparse.Namespace) -> dict[str, Any]:
             "runs": [],
         }
     _write_json(manifest_path, manifest)
+    reuse_snapshot_root = (
+        _snapshot_root_from_full_manifest(
+            Path(args.reuse_collected_from).expanduser().resolve(),
+            company_name=args.company_name,
+            selected_date=args.selected_date,
+            news_window=args.news_window,
+        )
+        if args.reuse_collected_from
+        else None
+    )
 
     for condition in selected_conditions:
         for replicate in range(1, args.replicates + 1):
@@ -231,7 +270,16 @@ def run_ablation_suite(args: argparse.Namespace) -> dict[str, Any]:
                 print(f"[ablation] SKIP {run_name} status={existing['status']}", flush=True)
                 continue
             previous_attempt = int(existing.get("attempt", 1)) if existing else 0
-            attempt = previous_attempt + 1 if force_condition and existing else max(previous_attempt, 1)
+            rerun_incomplete = bool(
+                args.resume
+                and existing
+                and existing.get("status") not in {"success", "dry_run"}
+            )
+            attempt = (
+                previous_attempt + 1
+                if existing and (force_condition or rerun_incomplete)
+                else max(previous_attempt, 1)
+            )
             condition_root = (
                 replicate_root if attempt == 1 else replicate_root / f"attempt_{attempt:02d}"
             )
@@ -240,8 +288,9 @@ def run_ablation_suite(args: argparse.Namespace) -> dict[str, Any]:
                 execution_id += f"__attempt{attempt:02d}"
             log_dir = suite_root / "logs"
             log_dir.mkdir(parents=True, exist_ok=True)
-            stdout_path = log_dir / f"{run_name}.stdout.log"
-            stderr_path = log_dir / f"{run_name}.stderr.log"
+            log_stem = run_name if attempt == 1 else f"{run_name}__attempt{attempt:02d}"
+            stdout_path = log_dir / f"{log_stem}.stdout.log"
+            stderr_path = log_dir / f"{log_stem}.stderr.log"
             use_frozen_upstream = bool(
                 args.freeze_upstream
                 and not args.dry_run
@@ -255,7 +304,13 @@ def run_ablation_suite(args: argparse.Namespace) -> dict[str, Any]:
                 "attempt": attempt,
                 "execution_id": execution_id,
                 "execution_mode": (
-                    "frozen_upstream_final_stage" if use_frozen_upstream else "full_pipeline"
+                    "frozen_upstream_final_stage"
+                    if use_frozen_upstream
+                    else (
+                        "reused_domain_snapshot_pipeline"
+                        if reuse_snapshot_root and condition.name in FULL_PIPELINE_CONDITIONS
+                        else "full_pipeline"
+                    )
                 ),
                 "status": "running",
                 "started_at": _utc_now(),
@@ -296,8 +351,18 @@ def run_ablation_suite(args: argparse.Namespace) -> dict[str, Any]:
                     condition=condition,
                     condition_root=condition_root,
                     execution_id=execution_id,
+                    reuse_domain_data_from=(
+                        reuse_snapshot_root
+                        if condition.name in FULL_PIPELINE_CONDITIONS
+                        else None
+                    ),
                 )
                 record["command"] = command
+                if reuse_snapshot_root and condition.name in FULL_PIPELINE_CONDITIONS:
+                    record["source_snapshot_manifest"] = str(
+                        Path(args.reuse_collected_from).expanduser().resolve()
+                    )
+                    record["source_snapshot_root"] = str(reuse_snapshot_root)
                 with stdout_path.open("w", encoding="utf-8") as stdout_handle, stderr_path.open(
                     "w", encoding="utf-8"
                 ) as stderr_handle:
@@ -365,6 +430,7 @@ def build_condition_command(
     condition: AblationCondition,
     condition_root: Path,
     execution_id: str,
+    reuse_domain_data_from: Path | None = None,
 ) -> list[str]:
     command = [
         sys.executable,
@@ -399,12 +465,51 @@ def build_condition_command(
     ]
     if args.peer_stock_code and condition.name != "no_competitor":
         command.extend(["--peer-stock-code", args.peer_stock_code])
+    if args.news_total_max_results is not None:
+        command.extend(
+            ["--news-total-max-results", str(args.news_total_max_results)]
+        )
+    if reuse_domain_data_from is not None:
+        command.extend(
+            [
+                "--reuse-domain-data-from",
+                str(Path(reuse_domain_data_from).expanduser().resolve()),
+            ]
+        )
     if args.no_progress:
         command.append("--no-progress")
     if args.dry_run:
         command.append("--dry-run")
     command.extend(condition.flags)
     return command
+
+
+def _snapshot_root_from_full_manifest(
+    manifest_path: Path,
+    *,
+    company_name: str,
+    selected_date: str,
+    news_window: str,
+) -> Path:
+    source = _load_json(manifest_path)
+    if source.get("status") != "success":
+        raise ValueError(f"Collected snapshot Full manifest is not successful: {manifest_path}")
+    request = source.get("request") if isinstance(source.get("request"), dict) else {}
+    target = source.get("target") if isinstance(source.get("target"), dict) else {}
+    if str(target.get("company_name") or "") != company_name:
+        raise ValueError("Collected snapshot company does not match the requested company.")
+    if str(request.get("selected_date") or "") != selected_date:
+        raise ValueError("Collected snapshot selected date does not match the requested date.")
+    if str(request.get("news_window") or "") != news_window:
+        raise ValueError("Collected snapshot news window does not match the requested window.")
+    outputs = source.get("outputs") if isinstance(source.get("outputs"), dict) else {}
+    strategy_report = Path(str(outputs.get("strategy_report") or "")).expanduser()
+    if not strategy_report.is_file():
+        raise ValueError(f"Collected snapshot has no Strategy report: {strategy_report}")
+    root = strategy_report.resolve().parents[2]
+    if not root.is_dir():
+        raise ValueError(f"Collected snapshot output root does not exist: {root}")
+    return root
 
 
 def run_frozen_final_stage(
@@ -460,6 +565,13 @@ def run_frozen_final_stage(
     usage_summary_path = execution_dir / "llm_usage_summary.json"
     final_manifest_path = execution_dir / "final_stage_manifest.json"
     included_domains = _condition_domains(condition.name)
+    condition_flags = set(condition.flags)
+    use_sy = "--no-sy" not in condition_flags
+    primary_data_only = "--primary-data-only" in condition_flags
+    include_competitor = (
+        condition.name != "no_competitor"
+        and "--no-competitor" not in condition_flags
+    )
     reuse_full_strategy = condition.name == "free_form_writer"
     reused_strategy_artifacts: dict[str, str] = {}
     if reuse_full_strategy:
@@ -527,12 +639,16 @@ def run_frozen_final_stage(
     ]
     for domain in included_domains:
         strategy_command.extend(["--include-domain", domain])
-    if condition.name != "no_competitor":
+    if include_competitor:
         if not _path_exists(required_inputs.get("peer_comparison")):
             raise ValueError("Frozen Full upstream has no peer comparison dataset.")
         strategy_command.extend(["--peer-comparison", str(required_inputs["peer_comparison"])])
     else:
         strategy_command.append("--no-competitor")
+    if not use_sy:
+        strategy_command.append("--no-sy")
+    if primary_data_only:
+        strategy_command.append("--primary-data-only")
     if condition.name == "full_context":
         strategy_command.append("--full-context")
 

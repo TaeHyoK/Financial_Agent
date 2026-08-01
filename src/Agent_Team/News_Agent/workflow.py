@@ -25,6 +25,7 @@ class WorkflowRequest:
     query: str | None = None
     collection_days: int | None = None
     max_results: int | None = None
+    total_max_results: int | None = None
     dedup_on_url: bool = True
 
 
@@ -225,6 +226,7 @@ class DailyNewsPipelineService:
             query_override=request.query,
             collection_days_override=request.collection_days,
             max_results_override=request.max_results,
+            total_max_results_override=request.total_max_results,
             dedup_on_url_override=request.dedup_on_url,
         )
         report_context_path = self.layout.report_context_path(request.collect_date, request.company_name)
@@ -295,6 +297,8 @@ class NewsWorkflow:
                     "company_name": request.company_name,
                     "query": request.query or request.company_name,
                     "collection_days": request.collection_days,
+                    "max_results_per_day": request.max_results,
+                    "total_max_results": request.total_max_results,
                 },
                 "dart_report": {
                     "report_key": report.report_key,
@@ -304,6 +308,14 @@ class NewsWorkflow:
                     "receipt_no": report.receipt_no,
                     "xml_path": str(report.xml_path),
                     "metadata_path": str(report.metadata_path),
+                },
+                "news_collection": {
+                    "raw_news_count_before_total_cap": news_result.get(
+                        "raw_news_count_before_total_cap"
+                    ),
+                    "raw_news_count": news_result.get("raw_news_count"),
+                    "news_event_count": news_result.get("news_event_count"),
+                    "total_max_results": news_result.get("total_max_results"),
                 },
                 "artifacts": asdict(artifacts),
             },

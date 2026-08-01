@@ -27,6 +27,14 @@ _PAREN_LOSS_RE = re.compile(r"\((손실)\)")
 _HEADER_LABELS = {"", "과목", "계정과목", "항목", "구분", "주석", "비고"}
 _PERIOD_HINT_RE = re.compile(r"제\s*\d+\s*기|20\d{2}|당기|전기|분기|반기|기말|누적|3개월")
 _AMOUNT_RE = re.compile(r"^\(?-?\d+(?:,\d{3})*(?:\.\d+)?\)?$")
+_ROW_UNIT_RE = re.compile(r"단위\s*[:：]?\s*(원|천원|백만원|억원)")
+
+_UNIT_MULTIPLIERS_TO_KRW = {
+    "원": 1,
+    "천원": 1_000,
+    "백만원": 1_000_000,
+    "억원": 100_000_000,
+}
 
 _TABLE_KEY_PREFIX = {
     "4-1": "balance_sheet",
@@ -97,7 +105,7 @@ class PeriodItems:
     fiscal_year: int | None
     period_type: str
     period_end: str
-    items: list[dict[str, str | None]]
+    items: list[dict[str, Any]]
 
 
 def build_single_report_canonical(master: dict[str, Any], primary_target: TargetReport) -> dict[str, Any]:
@@ -449,7 +457,7 @@ def _annual_history_sources(
         fiscal_year = _parse_year_from_descriptor(descriptors[col]) or target.fiscal_year - col_offset
         if fiscal_year in excluded_years:
             continue
-        items: list[dict[str, str | None]] = []
+        items: list[dict[str, Any]] = []
         used_keys: set[str] = set()
         for row in matrix[header_count:]:
             display_name = _display_label(row[0] if row else "")
@@ -459,7 +467,14 @@ def _annual_history_sources(
             if value == "":
                 continue
             item_key = _dedupe_key(_stable_key(display_name, namespace="item"), used_keys)
-            items.append({"key": item_key, "display_name": display_name, "value": value})
+            items.append(
+                {
+                    "key": item_key,
+                    "display_name": display_name,
+                    "value": value,
+                    "unit_multiplier_to_krw": _item_unit_multiplier(table, display_name),
+                }
+            )
         if not items:
             continue
         period_key = _historical_period_key(len(sources))
@@ -759,7 +774,7 @@ def _single_period_table(table: dict[str, Any] | None, target_year: int | None) 
     if data_col is None:
         return PeriodItems(label="", fiscal_year=None, period_type="", period_end="", items=[])
 
-    items: list[dict[str, str | None]] = []
+    items: list[dict[str, Any]] = []
     used_keys: set[str] = set()
     for row in matrix[header_count:]:
         display_name = _display_label(row[0] if row else "")
@@ -770,7 +785,14 @@ def _single_period_table(table: dict[str, Any] | None, target_year: int | None) 
             continue
         base_key = _stable_key(display_name, namespace="item")
         item_key = _dedupe_key(base_key, used_keys)
-        items.append({"key": item_key, "display_name": display_name, "value": value})
+        items.append(
+            {
+                "key": item_key,
+                "display_name": display_name,
+                "value": value,
+                "unit_multiplier_to_krw": _item_unit_multiplier(table, display_name),
+            }
+        )
 
     descriptor = descriptors[data_col]
     period_dates = _parse_dates(descriptor)
@@ -830,7 +852,7 @@ def _annual_period_sources(
     for offset, col in enumerate(data_cols[:3]):
         fiscal_year = _parse_year_from_descriptor(descriptors[col]) or starting_fiscal_year - offset
         period_key = _historical_period_key(offset)
-        items: list[dict[str, str | None]] = []
+        items: list[dict[str, Any]] = []
         used_keys: set[str] = set()
         for row in matrix[header_count:]:
             display_name = _display_label(row[0] if row else "")
@@ -841,7 +863,14 @@ def _annual_period_sources(
                 continue
             base_key = _stable_key(display_name, namespace="item")
             item_key = _dedupe_key(base_key, used_keys)
-            items.append({"key": item_key, "display_name": display_name, "value": value})
+            items.append(
+                {
+                    "key": item_key,
+                    "display_name": display_name,
+                    "value": value,
+                    "unit_multiplier_to_krw": _item_unit_multiplier(table, display_name),
+                }
+            )
         sources.append(
             {
                 "period_key": period_key,
@@ -882,7 +911,7 @@ def _canonical_pair_items(
             continue
         target = ensure_item(key, display_name)
         target["current_value"] = item.get("value")
-        target["current_numeric"] = _parse_numeric(item.get("value"))
+        target["current_numeric"] = _item_numeric_krw(item)
 
     for item in previous_items:
         key = str(item.get("key") or "")
@@ -891,7 +920,7 @@ def _canonical_pair_items(
             continue
         target = ensure_item(key, display_name)
         target["previous_value"] = item.get("value")
-        target["previous_numeric"] = _parse_numeric(item.get("value"))
+        target["previous_numeric"] = _item_numeric_krw(item)
 
     return items_by_key, item_order
 
@@ -927,16 +956,16 @@ def _canonical_multi_period_items(period_sources: list[dict[str, Any]]) -> tuple
             value = item.get("value")
             target = ensure_item(key, display_name)
             target["values_by_period_key"][period_key] = value
-            target["numeric_values_by_period_key"][period_key] = _parse_numeric(value)
+            target["numeric_values_by_period_key"][period_key] = _item_numeric_krw(item)
             if period_key == "current_fiscal_year":
                 target["current_value"] = value
-                target["current_numeric"] = _parse_numeric(value)
+                target["current_numeric"] = _item_numeric_krw(item)
             elif period_key == "same_period_previous_year":
                 target["previous_value"] = value
-                target["previous_numeric"] = _parse_numeric(value)
+                target["previous_numeric"] = _item_numeric_krw(item)
             elif period_key == "previous_fiscal_year" and target["previous_value"] is None:
                 target["previous_value"] = value
-                target["previous_numeric"] = _parse_numeric(value)
+                target["previous_numeric"] = _item_numeric_krw(item)
 
     return items_by_key, item_order
 
@@ -970,8 +999,9 @@ def _equity_block(table: dict[str, Any] | None, *, basis: PeriodBasis, period_me
             for column in columns
             if _cell(row, int(column["index"])) != ""
         }
+        multiplier = _table_unit_multiplier(table)
         numeric_values_by_column_key = {
-            column_key: _parse_numeric(value)
+            column_key: _parse_krw_numeric(value, multiplier)
             for column_key, value in values_by_column_key.items()
         }
         rows_by_key[row_key] = {
@@ -1400,6 +1430,36 @@ def _parse_numeric(value: Any) -> int | float | None:
     except ValueError:
         return None
     return -number if negative else number
+
+
+def _table_unit_multiplier(table: dict[str, Any] | None) -> int:
+    if not isinstance(table, dict):
+        return 1
+    multiplier = table.get("unit_multiplier_to_krw", 1)
+    if isinstance(multiplier, bool) or not isinstance(multiplier, int) or multiplier <= 0:
+        raise ValueError(f"Invalid financial table unit multiplier: {multiplier!r}")
+    return multiplier
+
+
+def _item_unit_multiplier(table: dict[str, Any] | None, display_name: str) -> int:
+    match = _ROW_UNIT_RE.search(str(display_name or ""))
+    if match:
+        return _UNIT_MULTIPLIERS_TO_KRW[match.group(1)]
+    return _table_unit_multiplier(table)
+
+
+def _parse_krw_numeric(value: Any, multiplier: int) -> int | float | None:
+    number = _parse_numeric(value)
+    if number is None:
+        return None
+    return number * multiplier
+
+
+def _item_numeric_krw(item: dict[str, Any]) -> int | float | None:
+    multiplier = item.get("unit_multiplier_to_krw", 1)
+    if isinstance(multiplier, bool) or not isinstance(multiplier, int) or multiplier <= 0:
+        raise ValueError(f"Invalid financial item unit multiplier: {multiplier!r}")
+    return _parse_krw_numeric(item.get("value"), multiplier)
 
 
 def _format_date(value: date) -> str:

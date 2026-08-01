@@ -19,7 +19,54 @@ from html_report_writer import (
     writer_request_fingerprint,
     writer_report_response_format,
 )
-from writer_handoff import build_writer_editorial_packet, validate_writer_editorial_packet
+from writer_handoff import (
+    build_writer_editorial_packet,
+    reformat_financial_reader_observations,
+    validate_writer_editorial_packet,
+)
+
+
+def test_reformats_million_krw_financial_observations_without_touching_eps() -> None:
+    packet = {
+        "cards": {
+            "financial.same_period_trend": {
+                "card_key": "financial.same_period_trend",
+                "primary_observation": {
+                    "current_period": {"fiscal_year": 2025, "period_type": "HALF"},
+                    "previous_period": {"fiscal_year": 2024, "period_type": "HALF"},
+                    "current_values": {"revenue": 18_343_470, "eps": 12_332},
+                    "previous_values": {"revenue": 18_401_166, "eps": 13_649},
+                },
+            },
+            "financial.balance_sheet": {
+                "card_key": "financial.balance_sheet",
+                "primary_observation": {
+                    "as_of_date": "2025-06-30",
+                    "values": {
+                        "total_assets": 37_982_102,
+                        "total_liabilities": 8_193_009,
+                        "total_equity": 29_789_093,
+                    },
+                },
+            },
+        }
+    }
+
+    repaired = reformat_financial_reader_observations(packet, source_unit="백만원")
+
+    trend = repaired["cards"]["financial.same_period_trend"]["reader_observation"]
+    balance = repaired["cards"]["financial.balance_sheet"]["reader_observation"]
+    assert trend["당기"]["매출"] == "183,434.7억원"
+    assert trend["당기"]["EPS"] == "12,332원"
+    assert balance["총자산"] == "379,821.0억원"
+    assert balance["총부채"] == "81,930.1억원"
+    assert balance["총자본"] == "297,890.9억원"
+    assert "reader_observation" not in packet["cards"]["financial.same_period_trend"]
+
+
+def test_rejects_unknown_financial_source_unit() -> None:
+    with pytest.raises(ValueError, match="Unsupported KRW source unit"):
+        reformat_financial_reader_observations({"cards": {}}, source_unit="달러")
 
 
 def test_writer_editorial_packet_keeps_strategy_meaning_and_external_provenance() -> None:

@@ -7,10 +7,13 @@ import sys
 from orchestration.company_resolver import CompanyIdentity
 from orchestration.company_resolver import CompanyResolutionError
 from orchestration.full_report_pipeline import (
+    FullPipelinePaths,
     _execute_stage,
+    build_domain_pipeline_command,
     build_parser,
     run_full_pipeline,
 )
+from orchestration.ablation import config_from_args
 
 
 def _identity(name: str, corp_code: str, stock_code: str, market: str) -> CompanyIdentity:
@@ -36,6 +39,8 @@ def test_full_pipeline_resolves_configs_and_builds_all_stages(tmp_path, monkeypa
             "20251031",
             "--news-window",
             "1m",
+            "--news-total-max-results",
+            "40",
             "--decision-horizon-profile",
             "short_term",
             "--semantic-attempts",
@@ -128,6 +133,7 @@ def test_full_pipeline_resolves_configs_and_builds_all_stages(tmp_path, monkeypa
     target_command = executed[0][1]
     assert target_command[target_command.index("--llm-run-role") + 1] == "target"
     assert target_command[target_command.index("--llm-execution-id") + 1] == "exec-test"
+    assert target_command[target_command.index("--news-total-max-results") + 1] == "40"
     strategy_command = executed[3][1]
     writer_command = executed[4][1]
     assert strategy_command[strategy_command.index("--packet-version") + 1] == "v2"
@@ -148,6 +154,7 @@ def test_full_pipeline_resolves_configs_and_builds_all_stages(tmp_path, monkeypa
     assert all(env["LLM_TIMEOUT_SECONDS"] == "300" for env in stage_envs.values())
     assert all(env["LLM_TRANSPORT_RETRIES"] == "1" for env in stage_envs.values())
     assert manifest["request"]["news_window"] == "1m"
+    assert manifest["request"]["news_total_max_results"] == 40
     assert manifest["request"]["decision_horizon_profile"] == "short_term"
     assert manifest["request"]["decision_horizon"] == "1개월"
     assert manifest["request"]["semantic_attempts"] == 3
@@ -169,6 +176,33 @@ def test_news_window_does_not_select_strategy_horizon() -> None:
 
     assert args.news_window == "3m"
     assert args.decision_horizon_profile == "default"
+
+
+def test_domain_pipeline_command_propagates_reused_snapshot(tmp_path) -> None:
+    snapshot_root = tmp_path / "snapshot"
+    args = build_parser().parse_args(
+        [
+            "--company-name",
+            "Target",
+            "--selected-date",
+            "20250102",
+            "--reuse-domain-data-from",
+            str(snapshot_root),
+        ]
+    )
+    paths = FullPipelinePaths(tmp_path / "output", "Target_20250102", "exec")
+
+    command = build_domain_pipeline_command(
+        config_path=tmp_path / "target.json",
+        paths=paths,
+        run_id=paths.run_key,
+        run_role="target",
+        args=args,
+        ablation=config_from_args(args),
+        env_file=tmp_path / ".env",
+    )
+
+    assert command[command.index("--reuse-domain-data-from") + 1] == str(snapshot_root.resolve())
 
 
 def test_semantic_attempts_must_be_positive() -> None:

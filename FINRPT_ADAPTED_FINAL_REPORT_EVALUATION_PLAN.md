@@ -142,9 +142,9 @@ Judge가 평가하는 후보 내용은 `writer_report_payload.json` 전체나 St
 
 HTML extractor는 section과 table 구조를 보존한 JSON을 생성한다. Judge가 HTML markup이나 숨김 내부 정보를 평가하지 않도록 한다.
 
-## 7. 공통 평가 근거 Bundle
+## 7. 평가 근거 Bundle
 
-두 후보에 동일한 candidate-neutral evidence bundle을 제공한다. 이 bundle은 공통 `strategy_compact_packet_v2.json`에서 생성한다.
+각 후보에는 해당 후보의 `strategy_compact_packet_v2.json`에서 해석을 제거한 `candidate_accessible_evidence`를 연결한다. 사실성, 근거 누락과 불가피한 정보 부재는 이 후보별 접근 가능 범위 안에서만 판정한다. 서로 다른 evidence scope를 의도적으로 비교하는 ablation에서 한쪽 packet만 공통 reference로 쓰면 다른 후보의 유효한 관찰을 근거 없음으로 오판할 수 있으므로, 양쪽의 candidate-neutral 관찰을 합친 evidence union도 함께 제공한다. 이 합집합에는 어느 후보에서 온 관찰인지 표시하지 않으며 전체 커버리지 비교에만 사용한다.
 
 ### 7.1 포함 필드
 
@@ -530,21 +530,18 @@ Output_total/Evaluation/Final_Report_Model_Comparison/{evaluation_id}/
 
 ## 19. 현재 상태
 
-- mini와 full Strategy는 동일 packet을 사용했다.
-- 확인된 packet SHA-256은 `a4ebea11ccb5daada40f4583d48e50110d329a98b03931efde5af0e0095c11d3`이다.
-- mini 경로에는 현재 최종 `report.html`이 있다.
-- `gpt-5.4` 평가 경로에는 Strategy output과 `writer_editorial_packet_preview.json`만 있고 최종 `report.html`은 없다.
-- 따라서 현재 결과만으로는 FinRpt-adapted 최종 리포트 비교를 수행할 수 없다.
+- HTML visible-content extractor와 candidate-neutral evidence bundle builder가 구현되었다.
+- strict-schema 6축 Judge, A/B·B/A 순서 교차, 보수적 Win/Loss/Tie reconciliation이 구현되었다.
+- 여러 ablation suite를 입력받는 평가 CLI, 추천 변경률·반복 안정성 집계, 기업 cluster bootstrap 95% CI와 evaluation-role token telemetry가 구현되었다.
+- SK바이오팜의 `full`, `no_sy`, `no_competitor`, `primary_only` 세 report pair에 대해 A/B·B/A 총 6회의 실제 Judge 판정이 완료되었다.
+- 논문용 유효 실행은 `pilot_skbiopharm_20251031_judge_v4`이다. `v1`부터 `v3`은 근거 접근 범위 계약을 교정하는 과정에서 생성된 방법론 감사 artifact이므로 결과 집계에서 제외한다.
+- 유효 실행의 Full 기준 Adjusted Win Rate는 `no_competitor` 0.583, `no_sy` 0.250, `primary_only` 0.750이며 세 조건 모두 추천 변경은 없었다.
+- 현재 기업 cluster는 SK바이오팜 1개뿐이므로 95% CI는 `insufficient_company_clusters`, 반복은 1회뿐이므로 반복 안정성은 산출 불가 상태이다.
+- 나머지 5개 기업의 실제 판정과 6개 기업 통합 CI는 아직 실행되지 않았다.
 
 ## 20. 작업 순서
 
-1. 공시 시차 limitation이 risk로 중복되는 구조 문제를 먼저 차단한다.
-2. 최종 리포트 HTML visible content extractor를 구현한다.
-3. 공통 candidate-neutral evidence bundle builder를 구현한다.
-4. deterministic final report metrics를 구현한다.
-5. batched A/B 및 B/A pairwise Judge를 구현한다.
-6. evaluation aggregation, token telemetry와 cache를 구현한다.
-7. 동일 Writer 조건으로 mini와 full 최종 리포트를 격리 생성한다.
-8. SK바이오팜으로 2-call mode와 12-call mode를 교차 검증한다.
-9. 6~8개 pilot case와 사람 calibration을 수행한다.
-10. 최소 20개 model-selection dataset으로 확대하고 최종 모델을 결정한다.
+1. 조건별 3회 반복 결과를 생성해 recommendation stability를 확인한다.
+2. 나머지 5개 기업 suite를 같은 입력 계약으로 생성한다.
+3. 6개 기업 suite를 한 evaluation에 입력해 기업 cluster bootstrap CI를 계산한다.
+4. 숫자 grounding precision과 required numeric recall의 결정론적 지표는 별도 모듈로 추가한다.

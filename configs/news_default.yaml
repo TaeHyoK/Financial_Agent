@@ -6,6 +6,7 @@ news:
   collection_days: 14
   query_language: "ko"
   max_results: 200
+  total_max_results: null
   dedup_on_url: true
 
 dart:

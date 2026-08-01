@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 
 ReportRole = Literal["primary", "secondary", "same_period_previous", "annual_history"]
@@ -16,6 +16,8 @@ class TableJson(TypedDict):
 
     table_title: str
     matrix: list[list[str]]
+    source_unit: NotRequired[str]
+    unit_multiplier_to_krw: NotRequired[int]
 
 
 class SectionJson(TypedDict):

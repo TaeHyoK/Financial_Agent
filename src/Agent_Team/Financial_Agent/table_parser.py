@@ -16,6 +16,13 @@ except ImportError:  # pragma: no cover - supports direct script execution
 
 _STATEMENT_NAMES = ("재무상태표", "포괄손익계산서", "손익계산서", "자본변동표", "현금흐름표")
 _NUMERIC_RE = re.compile(r"\(?\d{1,3}(?:,\d{3})+(?:\.\d+)?\)?|\(?\d{4,}(?:\.\d+)?\)?")
+_UNIT_RE = re.compile(r"단위[:：]?(원|천원|백만원|억원)")
+_UNIT_MULTIPLIERS_TO_KRW = {
+    "원": 1,
+    "천원": 1_000,
+    "백만원": 1_000_000,
+    "억원": 100_000_000,
+}
 
 
 def parse_statement_tables(fragment_html: str, fallback_title: str) -> list[TableJson]:
@@ -24,20 +31,33 @@ def parse_statement_tables(fragment_html: str, fallback_title: str) -> list[Tabl
     soup = BeautifulSoup(fragment_html or "", "html.parser")
     tables: list[TableJson] = []
     current_title = fallback_title
+    current_unit = "원"
 
     for table in soup.find_all("table"):
         matrix = parse_table_matrix(table)
         if not matrix:
             continue
 
+        is_data_table = _looks_like_data_table(matrix)
+        detected_unit = _unit_from_matrix(matrix, header_only=is_data_table)
+        if detected_unit:
+            current_unit = detected_unit
+
         metadata_title = _title_from_metadata_matrix(matrix)
         if metadata_title:
             current_title = metadata_title
 
-        if not _looks_like_data_table(matrix):
+        if not is_data_table:
             continue
 
-        tables.append({"table_title": current_title or fallback_title, "matrix": matrix})
+        tables.append(
+            {
+                "table_title": current_title or fallback_title,
+                "matrix": matrix,
+                "source_unit": current_unit,
+                "unit_multiplier_to_krw": _UNIT_MULTIPLIERS_TO_KRW[current_unit],
+            }
+        )
 
     return tables
 
@@ -131,6 +151,19 @@ def _looks_like_data_table(matrix: list[list[str]]) -> bool:
         return True
     header_text = " ".join(_logic_text(cell) for row in matrix[:3] for cell in row)
     return any(token in header_text for token in ("제", "당기", "전기", "누적", "3개월"))
+
+
+def _unit_from_matrix(matrix: list[list[str]], *, header_only: bool) -> str:
+    rows = matrix[:3] if header_only else matrix
+    for row in rows:
+        for cell in row:
+            compact = re.sub(r"\s+", "", str(cell or ""))
+            match = _UNIT_RE.search(compact)
+            if match:
+                return match.group(1)
+        if header_only and any(_NUMERIC_RE.search(_logic_text(cell)) for cell in row[1:]):
+            break
+    return ""
 
 
 def _logic_text(value: Any) -> str:

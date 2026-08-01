@@ -28,6 +28,20 @@ WRITER_COMPONENTS = (
     "data_limits",
 )
 
+_KRW_UNIT_MULTIPLIERS = {
+    "원": 1,
+    "KRW": 1,
+    "천원": 1_000,
+    "백만원": 1_000_000,
+    "억원": 100_000_000,
+    "100m_KRW": 100_000_000,
+}
+_FINANCIAL_AMOUNT_CARD_KEYS = {
+    "financial.same_period_trend",
+    "financial.cash_flow",
+    "financial.balance_sheet",
+}
+
 
 def build_writer_editorial_packet(
     *,
@@ -348,28 +362,63 @@ def _writer_card(source: dict[str, Any], assessment: dict[str, Any]) -> dict[str
     return card
 
 
-def _reader_observation(source: dict[str, Any]) -> dict[str, Any]:
+def reformat_financial_reader_observations(
+    packet: dict[str, Any],
+    *,
+    source_unit: str,
+) -> dict[str, Any]:
+    """Rebuild deterministic financial displays without regenerating LLM prose."""
+
+    _krw_unit_multiplier(source_unit)
+    reformatted = deepcopy(packet)
+    for card_key, card in _dict(reformatted.get("cards")).items():
+        if card_key not in _FINANCIAL_AMOUNT_CARD_KEYS or not isinstance(card, dict):
+            continue
+        card["reader_observation"] = _reader_observation(
+            card,
+            financial_source_unit=source_unit,
+        )
+    return reformatted
+
+
+def _reader_observation(
+    source: dict[str, Any],
+    *,
+    financial_source_unit: str = "원",
+) -> dict[str, Any]:
     card_key = str(source.get("card_key") or "")
     observation = _dict(source.get("primary_observation"))
     if card_key == "financial.same_period_trend":
         return {
             "비교 기준": _period_pair_display(observation),
-            "당기": _financial_value_display(_dict(observation.get("current_values"))),
-            "전년 동기": _financial_value_display(_dict(observation.get("previous_values"))),
+            "당기": _financial_value_display(
+                _dict(observation.get("current_values")),
+                source_unit=financial_source_unit,
+            ),
+            "전년 동기": _financial_value_display(
+                _dict(observation.get("previous_values")),
+                source_unit=financial_source_unit,
+            ),
         }
     if card_key == "financial.cash_flow":
         return {
             "비교 기준": _period_pair_display(observation),
-            "당기 영업현금흐름": _krw_100m(observation.get("current_operating_cash_flow")),
-            "전년 동기 영업현금흐름": _krw_100m(observation.get("previous_operating_cash_flow")),
+            "당기 영업현금흐름": _krw_100m(
+                observation.get("current_operating_cash_flow"),
+                source_unit=financial_source_unit,
+            ),
+            "전년 동기 영업현금흐름": _krw_100m(
+                observation.get("previous_operating_cash_flow"),
+                source_unit=financial_source_unit,
+            ),
         }
     if card_key == "financial.balance_sheet":
         values = _dict(observation.get("values"))
         return {
             "기준일": observation.get("as_of_date"),
-            "총자산": _krw_100m(values.get("total_assets")),
-            "총부채": _krw_100m(values.get("total_liabilities")),
-            "총자본": _krw_100m(values.get("total_equity")),
+            "총자산": _krw_100m(values.get("total_assets"), source_unit=financial_source_unit),
+            "총부채": _krw_100m(values.get("total_liabilities"), source_unit=financial_source_unit),
+            "총자본": _krw_100m(values.get("total_equity"), source_unit=financial_source_unit),
             "유동비율": _ratio_percent(values.get("current_ratio")),
             "현금비율": _ratio_percent(values.get("cash_ratio")),
             "부채비율": _ratio_percent(values.get("debt_to_equity")),
@@ -478,7 +527,11 @@ def _peer_basis_display(value: Any) -> str:
     return text
 
 
-def _financial_value_display(values: dict[str, Any]) -> dict[str, str]:
+def _financial_value_display(
+    values: dict[str, Any],
+    *,
+    source_unit: str = "원",
+) -> dict[str, str]:
     labels = {
         "revenue": "매출",
         "operating_profit": "영업이익",
@@ -486,7 +539,7 @@ def _financial_value_display(values: dict[str, Any]) -> dict[str, str]:
         "operating_cash_flow": "영업현금흐름",
     }
     displayed = {
-        label: _krw_100m(values.get(key))
+        label: _krw_100m(values.get(key), source_unit=source_unit)
         for key, label in labels.items()
         if values.get(key) is not None
     }
@@ -512,11 +565,19 @@ def _period_display(period: dict[str, Any]) -> str:
     return " ".join(value for value in (f"{year}년" if year else "", labels.get(period_type, period_type)) if value)
 
 
-def _krw_100m(value: Any) -> str:
+def _krw_100m(value: Any, *, source_unit: str = "원") -> str:
     try:
-        return f"{float(value) / 100_000_000:,.1f}억원"
+        value_krw = float(value) * _krw_unit_multiplier(source_unit)
+        return f"{value_krw / 100_000_000:,.1f}억원"
     except (TypeError, ValueError):
         return "데이터 추가 필요"
+
+
+def _krw_unit_multiplier(source_unit: str) -> int:
+    unit = str(source_unit or "").strip()
+    if unit not in _KRW_UNIT_MULTIPLIERS:
+        raise ValueError(f"Unsupported KRW source unit: {source_unit}")
+    return _KRW_UNIT_MULTIPLIERS[unit]
 
 
 def _ratio_percent(value: Any) -> str:

@@ -92,6 +92,54 @@ def _reindex_records(records: list[RawNewsRecord]) -> list[RawNewsRecord]:
     return reindexed
 
 
+def _cap_records_across_window(
+    records: list[RawNewsRecord],
+    total_max_results: int | None,
+) -> list[RawNewsRecord]:
+    """Apply one deterministic article budget across the complete collection window.
+
+    Daily Google News results arrive in provider-ranked order, with collection days
+    ordered from newest to oldest.  Round-robin selection across date buckets keeps
+    the provider's within-day ranking while preventing one news-heavy day from
+    consuming the entire monthly budget.
+    """
+
+    if total_max_results is None:
+        return list(records)
+    limit = int(total_max_results)
+    if limit <= 0:
+        raise ValueError("total_max_results must be >= 1")
+    if len(records) <= limit:
+        return list(records)
+
+    buckets: dict[str, list[RawNewsRecord]] = {}
+    bucket_order: list[str] = []
+    for record in records:
+        metadata = record.metadata or {}
+        bucket = str(record.article_date or metadata.get("query_day") or "unknown")
+        if bucket not in buckets:
+            buckets[bucket] = []
+            bucket_order.append(bucket)
+        buckets[bucket].append(record)
+
+    selected: list[RawNewsRecord] = []
+    rank = 0
+    while len(selected) < limit:
+        added = False
+        for bucket in bucket_order:
+            bucket_records = buckets[bucket]
+            if rank >= len(bucket_records):
+                continue
+            selected.append(bucket_records[rank])
+            added = True
+            if len(selected) >= limit:
+                break
+        if not added:
+            break
+        rank += 1
+    return selected
+
+
 def _clustering_date_bucket(record: RawNewsRecord, collect_date: date) -> str:
     """Date key used to prevent cross-day clustering leakage."""
     if record.article_date:
@@ -113,6 +161,7 @@ def run_daily_news(
     query_override: str | None = None,
     collection_days_override: int | None = None,
     max_results_override: int | None = None,
+    total_max_results_override: int | None = None,
     dedup_on_url_override: bool | None = None,
 ) -> dict[str, Any]:
     data_root = resolve_data_root(config)
@@ -131,6 +180,13 @@ def run_daily_news(
         raise ValueError("collection_days must be >= 1")
 
     max_results = max_results_override if max_results_override is not None else news_cfg.get("max_results")
+    total_max_results = (
+        total_max_results_override
+        if total_max_results_override is not None
+        else news_cfg.get("total_max_results")
+    )
+    if total_max_results is not None and int(total_max_results) <= 0:
+        raise ValueError("total_max_results must be >= 1")
     dedup_on_url = (
         bool(dedup_on_url_override)
         if dedup_on_url_override is not None
@@ -175,6 +231,8 @@ def run_daily_news(
     raw_records = filtered_records
 
     raw_records = _dedupe_records(raw_records, dedup_on_url=dedup_on_url)
+    raw_news_count_before_total_cap = len(raw_records)
+    raw_records = _cap_records_across_window(raw_records, total_max_results)
     raw_records = _reindex_records(raw_records)
 
     if raw_records:
@@ -185,6 +243,10 @@ def run_daily_news(
                 **(record.metadata or {}),
                 "collection_notes": collection_notes,
                 "collection_total": len(raw_records),
+                "collection_total_before_window_cap": raw_news_count_before_total_cap,
+                "window_total_max_results": (
+                    int(total_max_results) if total_max_results is not None else None
+                ),
             }
             enriched_records.append(RawNewsRecord(**record_dict))
         raw_records = enriched_records
@@ -200,8 +262,12 @@ def run_daily_news(
             "news_events_path": "",
             "report_context_path": "",
             "raw_news_count": 0,
+            "raw_news_count_before_total_cap": raw_news_count_before_total_cap,
             "news_event_count": 0,
             "query_used": query,
+            "total_max_results": (
+                int(total_max_results) if total_max_results is not None else None
+            ),
         }
 
     model_cfg = config.get("models", {})
@@ -554,6 +620,10 @@ def run_daily_news(
         "news_events_path": str(news_events_path),
         "report_context_path": str(report_context_path),
         "raw_news_count": len(raw_records),
+        "raw_news_count_before_total_cap": raw_news_count_before_total_cap,
         "news_event_count": len(event_records),
         "query_used": query,
+        "total_max_results": (
+            int(total_max_results) if total_max_results is not None else None
+        ),
     }

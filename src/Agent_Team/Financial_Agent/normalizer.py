@@ -79,6 +79,7 @@ def _normalize_column_section(
             {
                 "table_title": str(table.get("table_title") or ""),
                 "matrix": _filter_columns(matrix, keep_cols),
+                **_unit_metadata(table),
             }
         )
     return section_out
@@ -92,6 +93,7 @@ def _normalize_equity_section(section: SectionJson | None, *, fiscal_year: int) 
             {
                 "table_title": str(table.get("table_title") or ""),
                 "matrix": _filter_equity_rows(matrix, fiscal_year=fiscal_year),
+                **_unit_metadata(table),
             }
         )
     return section_out
@@ -141,6 +143,17 @@ def _filter_columns(matrix: list[list[str]], keep_cols: list[int]) -> list[list[
         if any(_logic_text(cell) for cell in new_row):
             filtered.append(new_row)
     return filtered
+
+
+def _unit_metadata(table: dict[str, Any]) -> dict[str, Any]:
+    unit = str(table.get("source_unit") or "").strip()
+    multiplier = table.get("unit_multiplier_to_krw")
+    if not unit or not isinstance(multiplier, int) or multiplier <= 0:
+        return {}
+    return {
+        "source_unit": unit,
+        "unit_multiplier_to_krw": multiplier,
+    }
 
 
 def _filter_equity_rows(matrix: list[list[str]], *, fiscal_year: int) -> list[list[str]]:

@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import json
 
-from orchestration.end_to_end_loop import build_parser, file_sha256, hash_source_trees, load_fingerprint_state
+from orchestration.end_to_end_loop import (
+    REUSED_DOMAIN_SNAPSHOT_STEPS,
+    build_parser,
+    file_sha256,
+    hash_source_trees,
+    load_fingerprint_state,
+    materialize_reused_domain_snapshot,
+)
 from orchestration.config import RunConfig
 from orchestration.manifest import infer_overall_status, is_pipeline_completed, write_run_files
 from orchestration.paths import RunPaths
@@ -16,8 +23,10 @@ def test_orchestration_parser_keeps_single_company_defaults() -> None:
     assert args.dry_run is True
     assert args.skip_step == []
     assert args.reuse_existing is False
+    assert args.reuse_domain_data_from is None
     assert args.force_step == []
     assert args.news_split_by_period is False
+    assert args.news_total_max_results is None
     assert args.llm_usage_manifest is None
     assert args.llm_run_role == "target"
     assert args.llm_execution_id == ""
@@ -27,6 +36,14 @@ def test_news_period_split_is_explicit_opt_in() -> None:
     args = build_parser().parse_args(["--dry-run", "--news-split-by-period"])
 
     assert args.news_split_by_period is True
+
+
+def test_news_total_window_cap_is_explicit() -> None:
+    args = build_parser().parse_args(
+        ["--dry-run", "--news-total-max-results", "40"]
+    )
+
+    assert args.news_total_max_results == 40
 
 
 def test_force_step_can_be_repeated() -> None:
@@ -42,6 +59,76 @@ def test_ablation_flags_are_explicit_opt_ins() -> None:
 
     assert args.no_sy is True
     assert args.primary_data_only is True
+
+
+def test_materialize_reused_domain_snapshot_copies_only_fixed_inputs(tmp_path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}", encoding="utf-8")
+    config = RunConfig(
+        config_path=config_path,
+        company_code="sample",
+        company_name="Sample",
+        ticker="000000.KS",
+        corp_code="00000000",
+        date_range="20251001-20251030",
+        selected_date="20251031",
+        raw={},
+    )
+    source = RunPaths(
+        project_root=tmp_path,
+        output_root=tmp_path / "source",
+        run_key=config.run_key,
+        selected_date=config.selected_date,
+    )
+    destination = RunPaths(
+        project_root=tmp_path,
+        output_root=tmp_path / "destination",
+        run_key=config.run_key,
+        selected_date=config.selected_date,
+    )
+    source.ensure_directories()
+    destination.ensure_directories()
+    source.run_status.write_text(
+        json.dumps({"status": "success", "pipeline_completed": True}),
+        encoding="utf-8",
+    )
+    required = [
+        source.yfinance_dir / "market_full_dataset.json",
+        source.yfinance_dir / "market_full_dataset.csv",
+        source.market_summary_dated,
+        source.market_summary,
+        source.valuation_snapshot,
+        source.dart_main,
+        source.dart_master,
+        source.dart_lightweight,
+        source.output_root
+        / "News"
+        / "artifacts"
+        / "reports"
+        / "packs"
+        / f"{config.company_name}_{config.information_cutoff_date}"
+        / "report_context.json",
+        source.news_context_export_day_dir / "llm_summary_request.json",
+        source.news_context_export_day_dir / "llm_period_summaries.json",
+        source.news_context_export_day_dir / "summary_prompt_input.json",
+        source.news_context_export_day_dir / "recent_raw_input.json",
+        source.news_context_export_day_dir / "context_export_manifest.json",
+    ]
+    for index, path in enumerate(required):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"index": index}), encoding="utf-8")
+
+    snapshot = materialize_reused_domain_snapshot(
+        run_config=config,
+        source_root=source.output_root,
+        destination_paths=destination,
+    )
+
+    assert snapshot["status"] == "materialized"
+    assert set(snapshot["reused_steps"]) == set(REUSED_DOMAIN_SNAPSHOT_STEPS)
+    assert destination.dart_main.read_bytes() == source.dart_main.read_bytes()
+    assert destination.news_llm_period_summaries.read_bytes() == source.news_llm_period_summaries.read_bytes()
+    assert not destination.news_handoff.exists()
 
 
 def test_source_hash_changes_when_source_changes(tmp_path) -> None:

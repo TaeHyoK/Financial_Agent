@@ -36,7 +36,7 @@ from Agent_Team.Financial_Agent.report_selector import parse_period_end_from_rep
 from Agent_Team.Financial_Agent.revenue_breakdown_extractor import extract_revenue_breakdown
 from Agent_Team.Financial_Agent.share_information_extractor import extract_share_information
 from Agent_Team.Financial_Agent.SY_Agent.run_pipeline import resolve_pipeline_output_dir
-from Agent_Team.Financial_Agent.table_parser import parse_table_matrix
+from Agent_Team.Financial_Agent.table_parser import parse_statement_tables, parse_table_matrix
 
 
 class ReportResolutionTests(unittest.TestCase):
@@ -227,6 +227,42 @@ class TableParserTests(unittest.TestCase):
                 ["매출액", "10", "30"],
             ],
         )
+
+    def test_statement_table_inherits_preceding_million_krw_unit(self) -> None:
+        html = """
+        <table><tr><td>(단위 : 백만원)</td></tr></table>
+        <table>
+          <tr><th>과목</th><th>제 15 기 반기</th></tr>
+          <tr><td>매출액</td><td>18,343,470</td></tr>
+          <tr><td>기본주당이익 (단위 : 원)</td><td>12,332</td></tr>
+        </table>
+        """
+
+        tables = parse_statement_tables(html, "포괄손익계산서")
+
+        self.assertEqual(len(tables), 1)
+        self.assertEqual(tables[0]["source_unit"], "백만원")
+        self.assertEqual(tables[0]["unit_multiplier_to_krw"], 1_000_000)
+
+    def test_normalizer_preserves_financial_table_unit_metadata(self) -> None:
+        raw = _empty_section_map()
+        raw["4-1"] = {
+            "section_title": "재무상태표",
+            "tables": [
+                {
+                    "table_title": "재무상태표",
+                    "matrix": [["과목", "2025-09-30", "2024-12-31"], ["자산총계", "100", "90"]],
+                    "source_unit": "백만원",
+                    "unit_multiplier_to_krw": 1_000_000,
+                }
+            ],
+        }
+
+        normalized = normalize_primary_report(raw, _q3_target())
+
+        table = normalized["4-1"]["tables"][0]
+        self.assertEqual(table["source_unit"], "백만원")
+        self.assertEqual(table["unit_multiplier_to_krw"], 1_000_000)
 
 
 class RevenueBreakdownTests(unittest.TestCase):
@@ -657,6 +693,52 @@ class HandoffBuilderTests(unittest.TestCase):
         self.assertEqual(table["items_by_key"]["revenue"]["previous_value"], "400")
         self.assertEqual(table["items_by_key"]["revenue"]["previous_numeric"], 400)
         self.assertEqual(table["item_order"], ["revenue"])
+
+    def test_financial_statement_numeric_values_are_normalized_to_krw(self) -> None:
+        current = _empty_section_map()
+        secondary = _empty_section_map()
+        current["4-2"] = {
+            "section_title": "포괄손익계산서",
+            "tables": [
+                {
+                    "table_title": "포괄손익계산서",
+                    "matrix": [
+                        ["과목", "제 15 기 반기"],
+                        ["매출액", "18,343,470"],
+                        ["기본주당이익 (단위 : 원)", "12,332"],
+                    ],
+                    "source_unit": "백만원",
+                    "unit_multiplier_to_krw": 1_000_000,
+                }
+            ],
+        }
+        secondary["4-2"] = {
+            "section_title": "포괄손익계산서",
+            "tables": [
+                {
+                    "table_title": "포괄손익계산서",
+                    "matrix": [["과목", "제 14 기"], ["매출액", "36,604,026"]],
+                    "source_unit": "백만원",
+                    "unit_multiplier_to_krw": 1_000_000,
+                }
+            ],
+        }
+
+        handoff = build_2y_handoff(
+            {"primary": current, "secondary": secondary},
+            _secondary_annual_target(),
+        )
+
+        revenue = handoff["4-2"]["tables"][0]["items_by_key"]["revenue"]
+        self.assertEqual(revenue["current_value"], "18,343,470")
+        self.assertEqual(revenue["current_numeric"], 18_343_470_000_000)
+        self.assertEqual(revenue["previous_numeric"], 36_604_026_000_000)
+        eps = _find_item_by_display_name(
+            handoff["4-2"]["tables"][0],
+            "기본주당이익 (단위 : 원)",
+        )
+        self.assertEqual(eps["current_numeric"], 12_332)
+        self.assertEqual(handoff["4-2"]["tables"][0]["unit"], "원")
 
     def test_4_4_uses_ytd_and_full_year_basis_with_item_rows(self) -> None:
         current = _empty_section_map()

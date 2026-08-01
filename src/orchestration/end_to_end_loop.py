@@ -27,6 +27,15 @@ DEFAULT_NEWS_GRANULARITY = "day"
 DEFAULT_NEWS_RAW_PERIOD_COUNT = 1
 STEP_FINGERPRINT_VERSION = "1"
 FINGERPRINT_SOURCE_SUFFIXES = {".py", ".md", ".json", ".yaml", ".yml", ".toml"}
+REUSED_DOMAIN_SNAPSHOT_STEPS = frozenset(
+    {
+        "yfinance_layer_1",
+        "financial_layer_1",
+        "news_collect",
+        "news_export",
+        "news_llm",
+    }
+)
 
 
 class AgentTeamOrchestrator:
@@ -38,6 +47,18 @@ class AgentTeamOrchestrator:
         self.paths = resolve_run_paths(self.run_config, args.output_root)
         self.paths.ensure_directories()
         write_run_config_copy(self.paths, self.run_config)
+        self.reused_domain_snapshot: dict[str, object] = {}
+        if self.args.reuse_domain_data_from:
+            self.reused_domain_snapshot = materialize_reused_domain_snapshot(
+                run_config=self.run_config,
+                source_root=self.args.reuse_domain_data_from,
+                destination_paths=self.paths,
+            )
+            snapshot_manifest = self.paths.run_dir / "reused_domain_snapshot.json"
+            snapshot_manifest.write_text(
+                json.dumps(self.reused_domain_snapshot, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
         write_financial_runtime_manifest(
             self.paths,
             self.run_config,
@@ -73,6 +94,16 @@ class AgentTeamOrchestrator:
 
                 if spec.name in self.args.skip_step:
                     record.skip("Skipped by --skip-step.")
+                    self._write_state()
+                    self._finish_progress_step(record)
+                    continue
+
+                if self.reused_domain_snapshot and spec.name in REUSED_DOMAIN_SNAPSHOT_STEPS:
+                    record.reuse(
+                        "Reused the fixed collected-domain snapshot; no provider or news collection call was made."
+                    )
+                    self._post_step(spec.name, record)
+                    self._save_step_fingerprint(record)
                     self._write_state()
                     self._finish_progress_step(record)
                     continue
@@ -313,6 +344,10 @@ class AgentTeamOrchestrator:
         command.extend(["--collection-days", str(news_collection_days)])
         if self.args.news_max_results is not None:
             command.extend(["--max-results", str(self.args.news_max_results)])
+        if self.args.news_total_max_results is not None:
+            command.extend(
+                ["--total-max-results", str(self.args.news_total_max_results)]
+            )
         command.extend(["--llm-model", self.args.news_llm_model or self.common_llm_model()])
         command.extend(["--analysis-model", self.args.news_analysis_model or self.common_llm_model()])
         command.extend(["--sy-model", self.args.news_sy_model or self.common_llm_model()])
@@ -651,6 +686,129 @@ def ensure_market_summary_alias(paths: RunPaths) -> None:
         shutil.copyfile(paths.market_summary_dated, paths.market_summary)
 
 
+def materialize_reused_domain_snapshot(
+    *,
+    run_config,
+    source_root: str | Path,
+    destination_paths: RunPaths,
+) -> dict[str, object]:
+    """Copy only the fixed provider/News-summary inputs needed by downstream agents."""
+
+    source_paths = resolve_run_paths(run_config, source_root)
+    if source_paths.output_root == destination_paths.output_root:
+        raise ValueError("Reused domain snapshot source and destination roots must differ.")
+    source_status = _load_json_object(source_paths.run_status)
+    if source_status.get("status") != SUCCESS or source_status.get("pipeline_completed") is not True:
+        raise ValueError(
+            f"Reused domain snapshot must come from a completed successful run: {source_paths.run_status}"
+        )
+
+    file_pairs = [
+        (source_paths.yfinance_dir / "market_full_dataset.json", destination_paths.yfinance_dir / "market_full_dataset.json"),
+        (source_paths.yfinance_dir / "market_full_dataset.csv", destination_paths.yfinance_dir / "market_full_dataset.csv"),
+        (source_paths.market_summary_dated, destination_paths.market_summary_dated),
+        (source_paths.market_summary, destination_paths.market_summary),
+        (source_paths.valuation_snapshot, destination_paths.valuation_snapshot),
+        (source_paths.dart_main, destination_paths.dart_main),
+        (source_paths.dart_master, destination_paths.dart_master),
+        (source_paths.dart_lightweight, destination_paths.dart_lightweight),
+        (
+            source_paths.output_root
+            / "News"
+            / "artifacts"
+            / "reports"
+            / "packs"
+            / f"{run_config.company_name}_{run_config.information_cutoff_date}"
+            / "report_context.json",
+            destination_paths.news_report_context,
+        ),
+    ]
+    copied: list[dict[str, str]] = []
+    for source, destination in file_pairs:
+        copied.append(_copy_snapshot_file(source, destination))
+
+    context_source = source_paths.news_context_export_dir
+    if not context_source.is_dir():
+        raise ValueError(f"Missing News context export snapshot: {context_source}")
+    for source in sorted(path for path in context_source.rglob("*") if path.is_file()):
+        relative = source.relative_to(context_source)
+        destination = destination_paths.news_context_export_dir / relative
+        copied.append(_copy_snapshot_file(source, destination))
+
+    required_outputs = {
+        step: destination_paths_for_step(destination_paths, step)
+        for step in REUSED_DOMAIN_SNAPSHOT_STEPS
+    }
+    missing = [
+        str(path)
+        for outputs in required_outputs.values()
+        for path in outputs.values()
+        if not Path(path).exists()
+    ]
+    if missing:
+        raise ValueError(f"Reused domain snapshot is incomplete after materialization: {missing}")
+    return {
+        "status": "materialized",
+        "source_root": str(source_paths.output_root),
+        "destination_root": str(destination_paths.output_root),
+        "run_key": destination_paths.run_key,
+        "selected_date": destination_paths.selected_date,
+        "reused_steps": sorted(REUSED_DOMAIN_SNAPSHOT_STEPS),
+        "files": copied,
+    }
+
+
+def destination_paths_for_step(paths: RunPaths, step_name: str) -> dict[str, str]:
+    """Return snapshot-stage outputs without requiring an orchestrator instance."""
+
+    if step_name == "yfinance_layer_1":
+        return {
+            "market_summary": str(paths.market_summary),
+            "market_summary_dated": str(paths.market_summary_dated),
+            "valuation_snapshot": str(paths.valuation_snapshot),
+        }
+    if step_name == "financial_layer_1":
+        return {
+            "dart_main": str(paths.dart_main),
+            "dart_lightweight": str(paths.dart_lightweight),
+        }
+    if step_name == "news_collect":
+        return {"report_context": str(paths.news_report_context)}
+    if step_name == "news_export":
+        return {
+            "llm_summary_request": str(paths.news_context_export_day_dir / "llm_summary_request.json")
+        }
+    if step_name == "news_llm":
+        return {"llm_period_summaries": str(paths.news_llm_period_summaries)}
+    raise KeyError(f"Step cannot be provided by a reused domain snapshot: {step_name}")
+
+
+def _copy_snapshot_file(source: Path, destination: Path) -> dict[str, str]:
+    if not source.is_file():
+        raise ValueError(f"Missing reused domain snapshot file: {source}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+    source_hash = file_sha256(source)
+    destination_hash = file_sha256(destination)
+    if source_hash != destination_hash:
+        raise ValueError(f"Snapshot copy hash mismatch: {source} -> {destination}")
+    return {
+        "source": str(source.resolve()),
+        "destination": str(destination.resolve()),
+        "sha256": source_hash,
+    }
+
+
+def _load_json_object(path: Path) -> dict:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        raise ValueError(f"Unable to read reused domain snapshot status: {path}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"Reused domain snapshot status must be a JSON object: {path}")
+    return payload
+
+
 def outputs_exist(outputs: dict[str, str]) -> bool:
     return bool(outputs) and all(Path(path).exists() for path in outputs.values())
 
@@ -721,6 +879,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Deprecated compatibility flag. Exact fingerprint reuse is automatic.",
     )
     parser.add_argument(
+        "--reuse-domain-data-from",
+        type=Path,
+        default=None,
+        metavar="OUTPUT_ROOT",
+        help=(
+            "Reuse a completed run's DART, market, and News collection/summary snapshot, "
+            "then rerun downstream domain analysis and report generation."
+        ),
+    )
+    parser.add_argument(
         "--force-step",
         action="append",
         default=[],
@@ -736,6 +904,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--news-config", default=str(DEFAULT_NEWS_CONFIG_PATH), type=Path)
     parser.add_argument("--news-collection-days", type=int, default=None)
     parser.add_argument("--news-max-results", type=int, default=None)
+    parser.add_argument(
+        "--news-total-max-results",
+        type=int,
+        default=None,
+        help="Maximum deduplicated News articles across the full collection window.",
+    )
     parser.add_argument("--news-min-mention-count", type=int, default=1)
     parser.add_argument("--news-granularity", default=DEFAULT_NEWS_GRANULARITY, choices=["day", "month"])
     parser.add_argument("--news-period-count", type=int, default=None)

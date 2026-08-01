@@ -21,6 +21,8 @@ def _args(tmp_path):
             "20251031",
             "--peer-stock-code",
             "003120",
+            "--news-total-max-results",
+            "40",
             "--output-root",
             str(tmp_path),
             "--no-progress",
@@ -62,7 +64,25 @@ def test_condition_command_isolates_output_and_propagates_flags(tmp_path) -> Non
     assert command[1:3] == ["-m", "orchestration.full_report_pipeline"]
     assert command[command.index("--output-root") + 1] == str(tmp_path / "condition")
     assert command[command.index("--peer-stock-code") + 1] == "003120"
+    assert command[command.index("--news-total-max-results") + 1] == "40"
     assert "--full-context" in command
+
+
+def test_condition_command_can_reuse_collected_domain_snapshot(tmp_path) -> None:
+    args = _args(tmp_path)
+    condition = next(item for item in CONDITIONS if item.name == "primary_only")
+    snapshot_root = tmp_path / "snapshot"
+
+    command = build_condition_command(
+        args=args,
+        condition=condition,
+        condition_root=tmp_path / "condition",
+        execution_id="suite__primary_only__r01",
+        reuse_domain_data_from=snapshot_root,
+    )
+
+    assert command[command.index("--reuse-domain-data-from") + 1] == str(snapshot_root.resolve())
+    assert "--primary-data-only" in command
 
 
 def test_no_competitor_command_does_not_pass_peer_override(tmp_path) -> None:

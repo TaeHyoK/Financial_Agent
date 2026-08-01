@@ -161,6 +161,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--selected-date", required=True, help="YYYYMMDD report date, interpreted before market open.")
     parser.add_argument("--news-window", default="1m", choices=["2w", "1m", "3m"])
     parser.add_argument(
+        "--news-total-max-results",
+        type=_positive_int,
+        default=None,
+        help="Maximum deduplicated News articles per company across the selected window.",
+    )
+    parser.add_argument(
         "--decision-horizon-profile",
         default=DEFAULT_DECISION_HORIZON_PROFILE,
         choices=list(DECISION_HORIZON_PROFILES),
@@ -172,6 +178,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--peer-stock-code", default="", help="Optional six-digit peer override when Naver is unavailable.")
     parser.add_argument("--peer-timeout", type=int, default=20)
     parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
+    parser.add_argument(
+        "--reuse-domain-data-from",
+        type=Path,
+        default=None,
+        metavar="OUTPUT_ROOT",
+        help=(
+            "Reuse DART, market, and News collection/summary artifacts from a completed output root, "
+            "while rerunning downstream domain analysis, Strategy, and Writer."
+        ),
+    )
     parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV_FILE)
     parser.add_argument("--llm-model", default="gpt-5.4-mini")
     parser.add_argument("--llm-timeout", type=int, default=300)
@@ -480,7 +496,10 @@ def run_full_pipeline(args: argparse.Namespace) -> dict[str, Any]:
                 paths.usage_manifest,
                 execution_id=paths.execution_id,
                 pipeline_completed=False,
-                expected_logical_calls_by_role=_expected_calls(ablation),
+                expected_logical_calls_by_role=_expected_calls(
+                    ablation,
+                    reused_domain_snapshot=bool(args.reuse_domain_data_from),
+                ),
             )
             _write_usage_summaries(paths, usage)
             manifest["llm_usage"] = usage
@@ -499,7 +518,10 @@ def run_full_pipeline(args: argparse.Namespace) -> dict[str, Any]:
             paths.usage_manifest,
             execution_id=paths.execution_id,
             pipeline_completed=True,
-            expected_logical_calls_by_role=_expected_calls(ablation),
+            expected_logical_calls_by_role=_expected_calls(
+                ablation,
+                reused_domain_snapshot=bool(args.reuse_domain_data_from),
+            ),
         )
         _write_usage_summaries(paths, usage)
         manifest["validation"] = validation
@@ -513,7 +535,10 @@ def run_full_pipeline(args: argparse.Namespace) -> dict[str, Any]:
             paths.usage_manifest,
             execution_id=paths.execution_id,
             pipeline_completed=False,
-            expected_logical_calls_by_role=_expected_calls(ablation),
+            expected_logical_calls_by_role=_expected_calls(
+                ablation,
+                reused_domain_snapshot=bool(args.reuse_domain_data_from),
+            ),
         )
         _write_usage_summaries(paths, usage)
         manifest["status"] = "failed"
@@ -565,6 +590,17 @@ def build_domain_pipeline_command(
         command.append("--no-sy")
     if ablation.primary_data_only:
         command.append("--primary-data-only")
+    if args.reuse_domain_data_from:
+        command.extend(
+            [
+                "--reuse-domain-data-from",
+                str(Path(args.reuse_domain_data_from).expanduser().resolve()),
+            ]
+        )
+    if args.news_total_max_results is not None:
+        command.extend(
+            ["--news-total-max-results", str(args.news_total_max_results)]
+        )
     if args.no_progress:
         command.append("--no-progress")
     if args.dry_run:
@@ -989,12 +1025,18 @@ def _base_manifest(
             "selected_date_policy": "before_market_open",
             "information_cutoff_date": _previous_calendar_date(selected_date),
             "news_window": args.news_window,
+            "news_total_max_results": args.news_total_max_results,
             "decision_horizon_profile": args.decision_horizon_profile,
             "decision_horizon": resolved_horizon,
             "semantic_attempts": args.semantic_attempts,
             "final_stage_timeout_seconds": args.final_stage_timeout,
             "llm_model": args.llm_model,
             "dry_run": bool(args.dry_run),
+            "reuse_domain_data_from": (
+                str(Path(args.reuse_domain_data_from).expanduser().resolve())
+                if args.reuse_domain_data_from
+                else ""
+            ),
         },
         "ablation": ablation.as_dict(),
         "target": target.as_dict() if target else {},
@@ -1020,8 +1062,10 @@ def _base_manifest(
     }
 
 
-def _expected_calls(ablation: AblationConfig) -> dict[str, int]:
+def _expected_calls(ablation: AblationConfig, *, reused_domain_snapshot: bool = False) -> dict[str, int]:
     domain_calls = 3 if not ablation.use_sy else 6
+    if reused_domain_snapshot:
+        domain_calls -= 1  # News collection summary LLM output is part of the fixed snapshot.
     return {
         "target": domain_calls,
         "peer": domain_calls if ablation.include_competitor else 0,

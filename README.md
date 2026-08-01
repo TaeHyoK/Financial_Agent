@@ -341,6 +341,38 @@ PYTHONPATH=src python -m orchestration.ablation_experiment \
 
 중단된 suite는 같은 인자로 `--resume`을 추가해 이어갈 수 있습니다. 성공한 특정 조건을 다시 실행해야 할 때는 `--condition <name> --resume --force-condition <name>`을 사용하며, 강제 재실행은 별도 attempt 디렉터리와 execution ID를 사용합니다.
 
+뉴스 수집량이 큰 기업의 반복 실험에서는 성공한 Full manifest를 고정 snapshot으로 지정할 수 있습니다. `--reuse-collected-from <full_pipeline_manifest.json>`을 추가하면 `full`, `no_sy`, `primary_only`가 동일한 DART·시장 데이터와 News 수집·요약을 SHA-256과 함께 복사해 사용하고, 이후 News/Financial/YFinance 분석, 조건별 SY, Strategy와 Writer만 새로 실행합니다. `no_competitor`는 해당 반복 Full의 upstream을 그대로 사용합니다. 이 모드에서는 provider 조회와 News collect가 다시 실행되지 않으며 각 run의 `reused_domain_snapshot.json`에 source·destination·hash가 기록됩니다.
+
+```bash
+PYTHONPATH=src python -m orchestration.ablation_experiment \
+  --company-name 삼성전자 \
+  --selected-date 20251031 \
+  --news-window 1m \
+  --peer-stock-code 000660 \
+  --replicates 3 \
+  --condition full \
+  --condition no_sy \
+  --condition no_competitor \
+  --condition primary_only \
+  --suite-id paper_samsung_electronics_20251031_ablation_v1 \
+  --reuse-collected-from <successful-full-pipeline-manifest> \
+  --resume \
+  --no-progress
+```
+
+#### Final report LLM Judge
+
+생성된 Full 보고서와 `no_sy`, `no_competitor`, `primary_only` 보고서는 후보 정체를 숨긴 A/B 및 B/A 순서로 평가할 수 있습니다. Judge는 화면에 표시되는 본문과 표, 후보별 Strategy packet에서 해석을 제거한 `candidate_accessible_evidence`, 그리고 양쪽 근거를 익명으로 합친 candidate-neutral evidence union을 입력받아 6개 축을 한 번에 독립 판정합니다. 사실성·근거 누락은 각 후보가 실제로 접근할 수 있었던 근거만으로 판정하고, union은 두 보고서의 전체 커버리지 비교에만 사용합니다.
+
+```bash
+PYTHONPATH=src python -m orchestration.final_report_evaluation_cli \
+  --suite-root Output_total/experiments/ablations/pilot_skbiopharm_20251031_ablation_v1 \
+  --judge-model gpt-5.4 \
+  --evaluation-id pilot_skbiopharm_judge_v1
+```
+
+호출 전에 입력 추출과 크기만 확인하려면 `--dry-run`을 추가합니다. 여러 기업 suite는 `--suite-root`를 반복해서 지정할 수 있습니다. 결과는 기본적으로 `Output_total/Evaluation/Final_Report_Ablation/<evaluation-id>/`에 저장되며, 전체 및 축별 Win/Loss/Tie, Adjusted Win Rate, 기업 cluster bootstrap 95% CI, 추천 변경률, 반복 안정성과 Judge 토큰 사용량을 포함합니다. 기업 cluster가 2개 미만이면 CI를 임의로 만들지 않고 `insufficient_company_clusters`로 표시합니다.
+
 ### Identity와 명령만 확인
 
 ```bash
@@ -509,7 +541,7 @@ Google News RSS
 | event 의미화 | 사건 상태, 기업 직접성, materiality, 재무 연결 여부와 기사 coverage를 typed metadata로 정규화합니다. |
 | Strategy card | event 요약과 대표 excerpt 최대 2개, 기사·언론사 count를 포함합니다. opaque evidence ID와 전체 기사 목록은 전달하지 않습니다. |
 
-기본 `max_results`는 200입니다. URL 보강은 외부 사이트 응답에 따라 수분 이상 걸릴 수 있습니다. 2025-10-31 1개월 cold regression에서는 target과 peer의 News collect가 각각 약 13분 걸렸고, warm 실행에서는 fingerprint cache로 재사용됐습니다.
+기본 `max_results`는 일자별 200입니다. 전체 기간의 중복 제거 후 기사 수는 `--news-total-max-results`로 별도 제한할 수 있습니다. 예를 들어 1개월 입력을 기업별 총 40건으로 고정하려면 `--news-total-max-results 40`을 사용합니다. 전체 기간 상한은 일자별 Google News 순위를 유지하면서 특정 날짜가 예산을 독점하지 않도록 날짜 bucket을 round-robin으로 선택합니다. URL 보강은 외부 사이트 응답에 따라 수분 이상 걸릴 수 있습니다. 2025-10-31 1개월 cold regression에서는 target과 peer의 News collect가 각각 약 13분 걸렸고, warm 실행에서는 fingerprint cache로 재사용됐습니다.
 
 주요 artifact:
 

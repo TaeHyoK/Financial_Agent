@@ -55,6 +55,7 @@ financial-sy-pipeline = "Agent_Team.Financial_Agent.SY_Agent.run_pipeline:main"
 strategy-agent = "Agent_Team.Strategy_Agent.cli:main"
 financial-report = "orchestration.full_report_pipeline:main"
 financial-report-ablation = "orchestration.ablation_experiment:main"
+financial-report-evaluate = "orchestration.final_report_evaluation_cli:main"
 strategy-bias-evaluation = "Agent_Team.Strategy_Agent.evaluate_recommendation_bias:main"
 
 [tool.pytest.ini_options]
@@ -72,3 +73,6 @@ pythonpath = [
 where = ["src"]
 include = ["Agent_Team*", "shared*", "orchestration*"]
 exclude = ["__pycache__*"]
+
+[tool.setuptools.package-data]
+orchestration = ["prompts/*.md"]

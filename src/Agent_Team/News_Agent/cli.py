@@ -49,6 +49,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Deprecated alias. collection_days = lookback_days + 1",
     )
     parser.add_argument("--max-results", type=int, default=None, help="Max collected news articles per day")
+    parser.add_argument(
+        "--total-max-results",
+        type=int,
+        default=None,
+        help="Max deduplicated news articles across the complete collection window",
+    )
     parser.add_argument("--config", default=None, help="Path to workflow config YAML")
     parser.add_argument("--granularity", choices=["day", "month"], default="month", help="Export period granularity")
     parser.add_argument("--period-count", type=int, default=12, help="Number of periods for LLM summary input")
@@ -233,6 +239,7 @@ def main() -> None:
                         query=args.query,
                         collection_days=collection_days,
                         max_results=args.max_results,
+                        total_max_results=args.total_max_results,
                     )
                 )
                 tqdm.write(f"report_key={artifacts.report_key}")

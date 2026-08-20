@@ -131,15 +131,27 @@ def extract_claims_node(state: SYState) -> SYState:
     claims: list[dict[str, Any]] = []
     main_view = report.get("main_view") or {}
     if main_view.get("direction"):
-        claims.append(_claim("main_direction", "main_view.direction", main_view["direction"], main_view.get("summary", ""), main_view.get("primary_basis", [])))
+        claims.append(_claim("main_direction", "main_view.direction", main_view["direction"]))
     time_view = report.get("time_horizon_view") or {}
     for horizon in ("short_term", "mid_term", "long_term"):
         block = time_view.get(horizon) or {}
         if block.get("stance"):
-            claims.append(_claim(f"{horizon}_stance", f"time_horizon_view.{horizon}", block.get("stance"), block.get("reasoning", ""), block.get("key_features", [])))
+            claims.append(
+                _claim(
+                    f"{horizon}_stance",
+                    f"time_horizon_view.{horizon}",
+                    block.get("stance"),
+                )
+            )
     for section_name, block in (report.get("detailed_analysis") or {}).items():
         if isinstance(block, dict) and block.get("interpretation"):
-            claims.append(_claim(f"detailed_{section_name}", f"detailed_analysis.{section_name}", block.get("interpretation"), block.get("interpretation"), block.get("supporting_features", {})))
+            claims.append(
+                _claim(
+                    f"detailed_{section_name}",
+                    f"detailed_analysis.{section_name}",
+                    block.get("interpretation"),
+                )
+            )
     state["claims"] = claims
     state["evidence_catalog"] = build_evidence_catalog(
         report,
@@ -164,7 +176,7 @@ def extract_claims_node(state: SYState) -> SYState:
     return state
 
 
-def _claim(claim_id: str, section: str, claim: Any, reasoning: Any, related_data: Any) -> dict[str, Any]:
+def _claim(claim_id: str, section: str, claim: Any) -> dict[str, Any]:
     return {
         "claim_id": claim_id,
         "section": section,

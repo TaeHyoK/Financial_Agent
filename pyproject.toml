@@ -57,6 +57,7 @@ financial-report = "orchestration.full_report_pipeline:main"
 financial-report-ablation = "orchestration.ablation_experiment:main"
 financial-report-evaluate = "orchestration.final_report_evaluation_cli:main"
 strategy-bias-evaluation = "Agent_Team.Strategy_Agent.evaluate_recommendation_bias:main"
+single-llm-baseline = "single_llm.cli:main"
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
@@ -71,8 +72,9 @@ pythonpath = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["Agent_Team*", "shared*", "orchestration*"]
+include = ["Agent_Team*", "shared*", "orchestration*", "single_llm*"]
 exclude = ["__pycache__*"]
 
 [tool.setuptools.package-data]
 orchestration = ["prompts/*.md"]
+single_llm = ["prompts/*.md", "configs/*.yaml"]

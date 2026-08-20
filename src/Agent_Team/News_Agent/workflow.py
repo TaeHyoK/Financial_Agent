@@ -51,8 +51,12 @@ class WorkflowArtifacts:
     dart_xml_path: str
     dart_metadata_path: str
     context_db_path: str
+    raw_news_candidates_path: str
     raw_news_path: str
+    article_ranking_path: str
     news_events_path: str
+    all_news_events_path: str
+    event_ranking_path: str
     report_context_path: str
     manifest_path: str
 
@@ -117,8 +121,20 @@ class ProjectLayout:
     def raw_news_path(self, collect_date: date, company_name: str) -> Path:
         return self.data_root / "news" / "raw" / self.request_dirname(company_name, collect_date) / "raw_news.parquet"
 
+    def raw_news_candidates_path(self, collect_date: date, company_name: str) -> Path:
+        return self.data_root / "news" / "raw" / self.request_dirname(company_name, collect_date) / "raw_news_candidates.parquet"
+
+    def article_ranking_path(self, collect_date: date, company_name: str) -> Path:
+        return self.data_root / "news" / "raw" / self.request_dirname(company_name, collect_date) / "article_ranking.parquet"
+
     def news_events_path(self, collect_date: date, company_name: str) -> Path:
         return self.data_root / "news" / "events" / self.request_dirname(company_name, collect_date) / "news_events.parquet"
+
+    def all_news_events_path(self, collect_date: date, company_name: str) -> Path:
+        return self.data_root / "news" / "events" / self.request_dirname(company_name, collect_date) / "news_events_all.parquet"
+
+    def event_ranking_path(self, collect_date: date, company_name: str) -> Path:
+        return self.data_root / "news" / "events" / self.request_dirname(company_name, collect_date) / "event_ranking.parquet"
 
     def report_context_path(self, collect_date: date, company_name: str) -> Path:
         return self.data_root / "reports" / "packs" / self.request_dirname(company_name, collect_date) / "report_context.json"
@@ -280,8 +296,24 @@ class NewsWorkflow:
             dart_xml_path=str(report.xml_path),
             dart_metadata_path=str(report.metadata_path),
             context_db_path=str(context_db_path),
+            raw_news_candidates_path=str(
+                news_result.get("raw_news_candidates_path")
+                or self.layout.raw_news_candidates_path(request.collect_date, request.company_name)
+            ),
             raw_news_path=str(news_result.get("raw_news_path") or self.layout.raw_news_path(request.collect_date, request.company_name)),
+            article_ranking_path=str(
+                news_result.get("article_ranking_path")
+                or self.layout.article_ranking_path(request.collect_date, request.company_name)
+            ),
             news_events_path=str(news_result.get("news_events_path") or self.layout.news_events_path(request.collect_date, request.company_name)),
+            all_news_events_path=str(
+                news_result.get("all_news_events_path")
+                or self.layout.all_news_events_path(request.collect_date, request.company_name)
+            ),
+            event_ranking_path=str(
+                news_result.get("event_ranking_path")
+                or self.layout.event_ranking_path(request.collect_date, request.company_name)
+            ),
             report_context_path=str(report_context_path),
             manifest_path=str(manifest_path),
         )
@@ -298,6 +330,8 @@ class NewsWorkflow:
                     "query": request.query or request.company_name,
                     "collection_days": request.collection_days,
                     "max_results_per_day": request.max_results,
+                    "news_event_top_k": request.total_max_results,
+                    # Deprecated name kept so older experiment readers still load.
                     "total_max_results": request.total_max_results,
                 },
                 "dart_report": {
@@ -310,11 +344,21 @@ class NewsWorkflow:
                     "metadata_path": str(report.metadata_path),
                 },
                 "news_collection": {
+                    "collected_unique_count": news_result.get("collected_unique_count"),
                     "raw_news_count_before_total_cap": news_result.get(
                         "raw_news_count_before_total_cap"
                     ),
-                    "raw_news_count": news_result.get("raw_news_count"),
+                    "selected_source_article_count": news_result.get("raw_news_count"),
+                    "news_event_count_before_top_k": news_result.get(
+                        "news_event_count_before_top_k"
+                    ),
                     "news_event_count": news_result.get("news_event_count"),
+                    "event_top_k": news_result.get("event_top_k"),
+                    "selection_stage": news_result.get("selection_stage"),
+                    "selection_method": news_result.get("selection_method"),
+                    "cross_date_clustering": news_result.get("cross_date_clustering"),
+                    # Deprecated fields kept for backward-compatible manifests.
+                    "raw_news_count": news_result.get("raw_news_count"),
                     "total_max_results": news_result.get("total_max_results"),
                 },
                 "artifacts": asdict(artifacts),

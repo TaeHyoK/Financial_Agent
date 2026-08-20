@@ -19,6 +19,7 @@ from .final_report_evaluation_metrics import AXES, validate_judgment
 
 DEFAULT_JUDGE_MODEL = "gpt-5.4"
 DEFAULT_PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "final_report_pairwise_judge.md"
+EVIDENCE_SCOPES: tuple[str, ...] = ("candidate_specific", "union_blind")
 ERROR_TAGS: tuple[str, ...] = (
     "unsupported_numeric",
     "incorrect_unit_or_period",
@@ -83,6 +84,7 @@ def build_judge_request(
     candidate_b_available_card_keys: list[str] | None = None,
     candidate_a_evidence_bundle: dict[str, Any] | None = None,
     candidate_b_evidence_bundle: dict[str, Any] | None = None,
+    evidence_scope: str = "candidate_specific",
 ) -> dict[str, Any]:
     """Build the exact candidate-blind request sent to the Judge."""
 
@@ -102,26 +104,40 @@ def build_judge_request(
         if candidate_b_available_card_keys is None
         else candidate_b_available_card_keys
     )
-    user_payload = {
-        "evaluation_contract": {
-            "candidate_identity_is_blind": True,
-            "use_only_supplied_evidence": True,
-            "do_not_use_post_cutoff_information": True,
-            "judge_report_length_only_when_it_affects_clarity": True,
-            "required_axes": list(AXES),
-            "candidate_evidence_access": {
-                "A": sorted(set(available_a)),
-                "B": sorted(set(available_b)),
-            },
-        },
+    if evidence_scope not in EVIDENCE_SCOPES:
+        raise ValueError(f"Unsupported evidence scope: {evidence_scope}")
+    evaluation_contract: dict[str, Any] = {
+        "candidate_identity_is_blind": True,
+        "use_only_supplied_evidence": True,
+        "do_not_use_post_cutoff_information": True,
+        "judge_report_length_only_when_it_affects_clarity": True,
+        "required_axes": list(AXES),
+        "evidence_scope": evidence_scope,
+    }
+    user_payload: dict[str, Any] = {
+        "evaluation_contract": evaluation_contract,
         "common_evidence_bundle": evidence_bundle,
-        "candidate_accessible_evidence": {
-            "A": candidate_a_evidence_bundle or {"cards": []},
-            "B": candidate_b_evidence_bundle or {"cards": []},
-        },
         "candidate_A": candidate_a,
         "candidate_B": candidate_b,
     }
+    if evidence_scope == "candidate_specific":
+        evaluation_contract["candidate_evidence_access"] = {
+            "A": sorted(set(available_a)),
+            "B": sorted(set(available_b)),
+        }
+        user_payload["candidate_accessible_evidence"] = {
+            "A": candidate_a_evidence_bundle or {"cards": []},
+            "B": candidate_b_evidence_bundle or {"cards": []},
+        }
+    else:
+        evaluation_contract.update(
+            {
+                "union_bundle_is_fact_check_reference_only": True,
+                "do_not_infer_candidate_access": True,
+                "do_not_penalize_unused_cards": True,
+                "do_not_reward_raw_information_quantity": True,
+            }
+        )
     request_payload: dict[str, Any] = {
         "model": model,
         "messages": [
@@ -209,6 +225,7 @@ def _uses_max_completion_tokens(model: str) -> bool:
 
 __all__ = [
     "DEFAULT_JUDGE_MODEL",
+    "EVIDENCE_SCOPES",
     "ERROR_TAGS",
     "build_judge_request",
     "call_pairwise_judge",

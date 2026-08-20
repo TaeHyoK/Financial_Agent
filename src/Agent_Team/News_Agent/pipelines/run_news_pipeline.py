@@ -1,4 +1,4 @@
-"""Daily news pipeline: collect -> embed -> cluster -> rerank -> outputs."""
+"""News pipeline: collect -> rerank -> same-day cluster -> select -> outputs."""
 
 from __future__ import annotations
 
@@ -92,54 +92,6 @@ def _reindex_records(records: list[RawNewsRecord]) -> list[RawNewsRecord]:
     return reindexed
 
 
-def _cap_records_across_window(
-    records: list[RawNewsRecord],
-    total_max_results: int | None,
-) -> list[RawNewsRecord]:
-    """Apply one deterministic article budget across the complete collection window.
-
-    Daily Google News results arrive in provider-ranked order, with collection days
-    ordered from newest to oldest.  Round-robin selection across date buckets keeps
-    the provider's within-day ranking while preventing one news-heavy day from
-    consuming the entire monthly budget.
-    """
-
-    if total_max_results is None:
-        return list(records)
-    limit = int(total_max_results)
-    if limit <= 0:
-        raise ValueError("total_max_results must be >= 1")
-    if len(records) <= limit:
-        return list(records)
-
-    buckets: dict[str, list[RawNewsRecord]] = {}
-    bucket_order: list[str] = []
-    for record in records:
-        metadata = record.metadata or {}
-        bucket = str(record.article_date or metadata.get("query_day") or "unknown")
-        if bucket not in buckets:
-            buckets[bucket] = []
-            bucket_order.append(bucket)
-        buckets[bucket].append(record)
-
-    selected: list[RawNewsRecord] = []
-    rank = 0
-    while len(selected) < limit:
-        added = False
-        for bucket in bucket_order:
-            bucket_records = buckets[bucket]
-            if rank >= len(bucket_records):
-                continue
-            selected.append(bucket_records[rank])
-            added = True
-            if len(selected) >= limit:
-                break
-        if not added:
-            break
-        rank += 1
-    return selected
-
-
 def _clustering_date_bucket(record: RawNewsRecord, collect_date: date) -> str:
     """Date key used to prevent cross-day clustering leakage."""
     if record.article_date:
@@ -149,6 +101,102 @@ def _clustering_date_bucket(record: RawNewsRecord, collect_date: date) -> str:
     if isinstance(query_day, str) and query_day:
         return query_day
     return collect_date.isoformat()
+
+
+def _event_date_ordinal(value: str | None) -> int:
+    try:
+        return date.fromisoformat(str(value or "")).toordinal()
+    except ValueError:
+        return 0
+
+
+def _rank_events_after_rerank(
+    events: list[NewsEventRecord],
+    top_k: int | None,
+) -> tuple[list[NewsEventRecord], list[NewsEventRecord]]:
+    """Rank same-day events by their representative article reranker score.
+
+    ``rel_rerank`` still contains the raw cross-encoder score when this helper is
+    called.  Dense relevance and recency are deterministic tie breakers only; URL
+    and event id make the final ordering stable across repeated runs.
+    """
+
+    if top_k is not None and int(top_k) <= 0:
+        raise ValueError("event_top_k must be >= 1")
+
+    ranked = sorted(
+        events,
+        key=lambda event: (
+            -float(event.rel_rerank),
+            -float(event.rel_dense),
+            -_event_date_ordinal(event.representative_article_date),
+            str(event.representative_url or ""),
+            str(event.event_id),
+        ),
+    )
+    if top_k is None:
+        return ranked, list(ranked)
+    return ranked, ranked[: int(top_k)]
+
+
+def _cluster_articles_within_day(
+    records: list[RawNewsRecord],
+    embeddings: np.ndarray,
+    *,
+    collect_date: date,
+    time_window_hours: float,
+    min_cluster_size: int,
+    min_samples: int,
+) -> dict[int, list[int]]:
+    """Cluster semantically similar articles without ever crossing a date bucket."""
+
+    timestamps: list[datetime] = []
+    bucket_to_indices: dict[str, list[int]] = {}
+    for idx, record in enumerate(records):
+        if record.article_date:
+            article_dt = datetime.combine(
+                date.fromisoformat(record.article_date),
+                datetime.min.time(),
+                tzinfo=timezone.utc,
+            )
+        else:
+            article_dt = datetime.combine(
+                collect_date,
+                datetime.min.time(),
+                tzinfo=timezone.utc,
+            )
+        timestamps.append(article_dt)
+        bucket = _clustering_date_bucket(record, collect_date)
+        bucket_to_indices.setdefault(bucket, []).append(idx)
+
+    clusters: dict[int, list[int]] = {}
+    cluster_key_to_global_id: dict[tuple[str, int], int] = {}
+    next_cluster_id = 1
+
+    for bucket, bucket_indices in sorted(bucket_to_indices.items()):
+        bucket_embeddings = embeddings[bucket_indices]
+        bucket_timestamps = [timestamps[i] for i in bucket_indices]
+        bucket_result = cluster_embeddings(
+            bucket_embeddings,
+            bucket_timestamps,
+            time_window_hours=time_window_hours,
+            min_cluster_size=min_cluster_size,
+            min_samples=min_samples,
+        )
+        bucket_labels = bucket_result.labels
+        max_label = max(bucket_labels) if bucket_labels else -1
+        for local_idx, label in enumerate(bucket_labels):
+            global_article_idx = bucket_indices[local_idx]
+            local_cluster_id = label if label != -1 else max_label + local_idx + 1
+            cluster_key = (bucket, int(local_cluster_id))
+            global_cluster_id = cluster_key_to_global_id.get(cluster_key)
+            if global_cluster_id is None:
+                global_cluster_id = next_cluster_id
+                cluster_key_to_global_id[cluster_key] = global_cluster_id
+                next_cluster_id += 1
+            clusters.setdefault(global_cluster_id, []).append(global_article_idx)
+
+    return clusters
 
 
 def run_daily_news(
@@ -180,13 +228,19 @@ def run_daily_news(
         raise ValueError("collection_days must be >= 1")
 
     max_results = max_results_override if max_results_override is not None else news_cfg.get("max_results")
-    total_max_results = (
+    # ``total_max_results`` is retained as a compatibility alias for existing
+    # orchestration scripts.  Its corrected meaning is the number of same-day
+    # deduplicated events retained *after* article reranking.
+    configured_event_top_k = news_cfg.get("event_top_k")
+    if configured_event_top_k is None:
+        configured_event_top_k = news_cfg.get("total_max_results")
+    event_top_k = (
         total_max_results_override
         if total_max_results_override is not None
-        else news_cfg.get("total_max_results")
+        else configured_event_top_k
     )
-    if total_max_results is not None and int(total_max_results) <= 0:
-        raise ValueError("total_max_results must be >= 1")
+    if event_top_k is not None and int(event_top_k) <= 0:
+        raise ValueError("event_top_k must be >= 1")
     dedup_on_url = (
         bool(dedup_on_url_override)
         if dedup_on_url_override is not None
@@ -230,10 +284,10 @@ def run_daily_news(
             filtered_records.append(record)
     raw_records = filtered_records
 
-    raw_records = _dedupe_records(raw_records, dedup_on_url=dedup_on_url)
-    raw_news_count_before_total_cap = len(raw_records)
-    raw_records = _cap_records_across_window(raw_records, total_max_results)
-    raw_records = _reindex_records(raw_records)
+    raw_records = _reindex_records(
+        _dedupe_records(raw_records, dedup_on_url=dedup_on_url)
+    )
+    collected_unique_count = len(raw_records)
 
     if raw_records:
         enriched_records: list[RawNewsRecord] = []
@@ -242,10 +296,11 @@ def run_daily_news(
             record_dict["metadata"] = {
                 **(record.metadata or {}),
                 "collection_notes": collection_notes,
-                "collection_total": len(raw_records),
-                "collection_total_before_window_cap": raw_news_count_before_total_cap,
-                "window_total_max_results": (
-                    int(total_max_results) if total_max_results is not None else None
+                "collection_total": collected_unique_count,
+                "collection_unique_total": collected_unique_count,
+                "event_selection_stage": "post_rerank_same_day_cluster",
+                "event_selection_top_k": (
+                    int(event_top_k) if event_top_k is not None else None
                 ),
             }
             enriched_records.append(RawNewsRecord(**record_dict))
@@ -253,21 +308,37 @@ def run_daily_news(
 
     artifact_dir = _artifact_dirname(company_name, collect_date)
     raw_output_dir = data_root / "news" / "raw" / artifact_dir
+    raw_news_candidates_path = raw_output_dir / "raw_news_candidates.parquet"
     raw_news_path = raw_output_dir / "raw_news.parquet"
-    save_parquet([asdict(record) for record in raw_records], raw_news_path)
+    article_ranking_path = raw_output_dir / "article_ranking.parquet"
+    save_parquet([asdict(record) for record in raw_records], raw_news_candidates_path)
 
     if not raw_records:
+        save_parquet([], raw_news_path)
+        save_parquet([], article_ranking_path)
         return {
+            "raw_news_candidates_path": str(raw_news_candidates_path),
             "raw_news_path": str(raw_news_path),
+            "article_ranking_path": str(article_ranking_path),
             "news_events_path": "",
+            "all_news_events_path": "",
+            "event_ranking_path": "",
             "report_context_path": "",
+            "collected_unique_count": 0,
             "raw_news_count": 0,
-            "raw_news_count_before_total_cap": raw_news_count_before_total_cap,
+            "raw_news_count_before_total_cap": 0,
+            "news_event_count_before_top_k": 0,
             "news_event_count": 0,
             "query_used": query,
-            "total_max_results": (
-                int(total_max_results) if total_max_results is not None else None
+            "event_top_k": (
+                int(event_top_k) if event_top_k is not None else None
             ),
+            "total_max_results": (
+                int(event_top_k) if event_top_k is not None else None
+            ),
+            "selection_stage": "post_rerank_same_day_cluster",
+            "selection_method": "top_k_events_by_representative_article_rerank",
+            "cross_date_clustering": False,
         }
 
     model_cfg = config.get("models", {})
@@ -278,52 +349,6 @@ def run_daily_news(
     )
     news_embeddings = embedder.encode([record.doc_text for record in raw_records])
     raw_records_by_id = {record.article_id: record for record in raw_records}
-
-    timestamps = []
-    for record in raw_records:
-        if record.article_date:
-            article_dt = datetime.combine(date.fromisoformat(record.article_date), datetime.min.time(), tzinfo=timezone.utc)
-            timestamps.append(article_dt)
-        else:
-            timestamps.append(datetime.combine(collect_date, datetime.min.time(), tzinfo=timezone.utc))
-
-    clustering_cfg = config.get("clustering", {})
-    time_window_hours = float(clustering_cfg.get("time_window_hours", 48))
-    min_cluster_size = int(clustering_cfg.get("min_cluster_size", 3))
-    min_samples = int(clustering_cfg.get("min_samples", 1))
-
-    # Cluster per date bucket to avoid inflating mention_count across different days.
-    bucket_to_indices: dict[str, list[int]] = {}
-    for idx, record in enumerate(raw_records):
-        bucket = _clustering_date_bucket(record, collect_date)
-        bucket_to_indices.setdefault(bucket, []).append(idx)
-
-    clusters: dict[int, list[int]] = {}
-    cluster_key_to_global_id: dict[tuple[str, int], int] = {}
-    next_cluster_id = 1
-
-    for bucket, bucket_indices in sorted(bucket_to_indices.items()):
-        bucket_embeddings = news_embeddings[bucket_indices]
-        bucket_timestamps = [timestamps[i] for i in bucket_indices]
-        bucket_result = cluster_embeddings(
-            bucket_embeddings,
-            bucket_timestamps,
-            time_window_hours=time_window_hours,
-            min_cluster_size=min_cluster_size,
-            min_samples=min_samples,
-        )
-        bucket_labels = bucket_result.labels
-        max_label = max(bucket_labels) if bucket_labels else -1
-        for local_idx, label in enumerate(bucket_labels):
-            global_article_idx = bucket_indices[local_idx]
-            local_cluster_id = label if label != -1 else max_label + local_idx + 1
-            cluster_key = (bucket, int(local_cluster_id))
-            global_cluster_id = cluster_key_to_global_id.get(cluster_key)
-            if global_cluster_id is None:
-                global_cluster_id = next_cluster_id
-                cluster_key_to_global_id[cluster_key] = global_cluster_id
-                next_cluster_id += 1
-            clusters.setdefault(global_cluster_id, []).append(global_article_idx)
 
     # Use the exact context DB from this run's report_key.
     context_db_path = data_root / "db" / "corporate_context" / company_id / report_key / "corporate_context_db.jsonl"
@@ -418,6 +443,26 @@ def run_daily_news(
             else 0.0
         )
 
+    # Semantic duplicate merging intentionally stays inside an exact publication
+    # date.  Similar coverage on another date may contain a real status update and
+    # must remain a separate event.
+    clustering_cfg = config.get("clustering", {})
+    time_window_hours = float(clustering_cfg.get("time_window_hours", 48))
+    min_cluster_size = int(clustering_cfg.get("min_cluster_size", 3))
+    min_samples = int(clustering_cfg.get("min_samples", 1))
+    clusters = _cluster_articles_within_day(
+        raw_records,
+        news_embeddings,
+        collect_date=collect_date,
+        time_window_hours=time_window_hours,
+        min_cluster_size=min_cluster_size,
+        min_samples=min_samples,
+    )
+    article_event_ids: dict[int, str] = {}
+    for cluster_id, member_indices in clusters.items():
+        for member_index in member_indices:
+            article_event_ids[member_index] = str(cluster_id)
+
     event_records: list[NewsEventRecord] = []
     mention_raw_values: list[float] = []
     impact_raw_values: list[float] = []
@@ -502,6 +547,21 @@ def run_daily_news(
             )
         )
 
+    # Select the event budget only after every candidate article has been
+    # cross-encoder reranked and same-day semantic duplicates have been merged.
+    ranked_raw_events, selected_raw_events = _rank_events_after_rerank(
+        event_records,
+        int(event_top_k) if event_top_k is not None else None,
+    )
+    ranked_event_ids = [event.event_id for event in ranked_raw_events]
+    selected_event_ids = {event.event_id for event in selected_raw_events}
+    event_selection_rank = {
+        event_id: rank for rank, event_id in enumerate(ranked_event_ids, start=1)
+    }
+    event_raw_rerank = {
+        event.event_id: float(event.rel_rerank) for event in event_records
+    }
+
     # Normalize scores before weighted sum.
     normalized_rerank = minmax_normalize([event.rel_rerank for event in event_records])
     normalized_mention = minmax_normalize(mention_raw_values)
@@ -528,10 +588,78 @@ def run_daily_news(
             }
         )
 
-    # Save news events
+    normalized_events_by_id = {event.event_id: event for event in event_records}
+    ranked_all_events = [
+        normalized_events_by_id[event_id]
+        for event_id in ranked_event_ids
+        if event_id in normalized_events_by_id
+    ]
+    selected_events = [
+        event
+        for event in ranked_all_events
+        if event.event_id in selected_event_ids
+    ]
+
+    # Save the full candidate-event audit trail and the selected event set
+    # separately.  Downstream report construction consumes only news_events.parquet.
     events_output_dir = data_root / "news" / "events" / artifact_dir
+    all_news_events_path = events_output_dir / "news_events_all.parquet"
     news_events_path = events_output_dir / "news_events.parquet"
-    save_parquet([asdict(record) for record in event_records], news_events_path)
+    event_ranking_path = events_output_dir / "event_ranking.parquet"
+    save_parquet([asdict(record) for record in ranked_all_events], all_news_events_path)
+    save_parquet([asdict(record) for record in selected_events], news_events_path)
+    save_parquet(
+        [
+            {
+                "event_id": event.event_id,
+                "representative_article_date": event.representative_article_date,
+                "representative_title": event.representative_title,
+                "representative_url": event.representative_url,
+                "member_article_count": len(event.member_article_ids or []),
+                "rel_rerank_raw": event_raw_rerank.get(event.event_id),
+                "rel_rerank_normalized": event.rel_rerank,
+                "rel_dense": event.rel_dense,
+                "final_score": event.final_score,
+                "selection_rank": event_selection_rank.get(event.event_id),
+                "selected": event.event_id in selected_event_ids,
+                "selection_method": "top_k_events_by_representative_article_rerank",
+            }
+            for event in ranked_all_events
+        ],
+        event_ranking_path,
+    )
+
+    selected_article_ids = {
+        article_id
+        for event in selected_events
+        for article_id in (event.member_article_ids or [])
+    }
+    selected_raw_records = [
+        record for record in raw_records if record.article_id in selected_article_ids
+    ]
+    save_parquet([asdict(record) for record in selected_raw_records], raw_news_path)
+    save_parquet(
+        [
+            {
+                "article_id": record.article_id,
+                "article_date": record.article_date,
+                "source": record.source,
+                "title": record.title,
+                "url": record.url,
+                "rel_dense": float(article_scores[idx]["rel_dense"]),
+                "rel_rerank_raw": float(article_scores[idx]["rel_rerank_raw"]),
+                "impact_raw": float(article_scores[idx]["impact_raw"]),
+                "section_raw": float(article_scores[idx]["section_raw"]),
+                "same_day_event_id": article_event_ids.get(idx),
+                "event_selection_rank": event_selection_rank.get(
+                    article_event_ids.get(idx, "")
+                ),
+                "selected": record.article_id in selected_article_ids,
+            }
+            for idx, record in enumerate(raw_records)
+        ],
+        article_ranking_path,
+    )
 
     # Build report pack
     chunks_by_section: dict[str, list[dict]] = {}
@@ -544,7 +672,7 @@ def run_daily_news(
             }
         )
 
-    top_events = sorted(event_records, key=lambda e: e.final_score, reverse=True)
+    top_events = sorted(selected_events, key=lambda e: e.final_score, reverse=True)
     news_events_topk: list[dict] = []
     for event in top_events:
         evidence = []
@@ -609,6 +737,17 @@ def run_daily_news(
             "report_date": context_records[0].get("report_date") if context_records else "",
             "chunks_by_section": chunks_by_section,
         },
+        "news_selection": {
+            "candidate_article_count": collected_unique_count,
+            "same_day_event_count_before_top_k": len(ranked_all_events),
+            "selected_event_count": len(selected_events),
+            "selected_source_article_count": len(selected_raw_records),
+            "stage": "post_rerank_same_day_cluster",
+            "unit": "event",
+            "metric": "representative_article_rel_rerank_raw",
+            "top_k": int(event_top_k) if event_top_k is not None else None,
+            "cross_date_clustering": False,
+        },
         "news_events_topk": news_events_topk,
     }
 
@@ -616,14 +755,25 @@ def run_daily_news(
     report_context_path = report_dir / "report_context.json"
     save_json(report_pack, report_context_path)
     return {
+        "raw_news_candidates_path": str(raw_news_candidates_path),
         "raw_news_path": str(raw_news_path),
+        "article_ranking_path": str(article_ranking_path),
         "news_events_path": str(news_events_path),
+        "all_news_events_path": str(all_news_events_path),
+        "event_ranking_path": str(event_ranking_path),
         "report_context_path": str(report_context_path),
-        "raw_news_count": len(raw_records),
-        "raw_news_count_before_total_cap": raw_news_count_before_total_cap,
-        "news_event_count": len(event_records),
+        "collected_unique_count": collected_unique_count,
+        "raw_news_count": len(selected_raw_records),
+        # Deprecated compatibility field.  No pre-rerank cap is applied now.
+        "raw_news_count_before_total_cap": collected_unique_count,
+        "news_event_count_before_top_k": len(ranked_all_events),
+        "news_event_count": len(selected_events),
         "query_used": query,
+        "event_top_k": int(event_top_k) if event_top_k is not None else None,
         "total_max_results": (
-            int(total_max_results) if total_max_results is not None else None
+            int(event_top_k) if event_top_k is not None else None
         ),
+        "selection_stage": "post_rerank_same_day_cluster",
+        "selection_method": "top_k_events_by_representative_article_rerank",
+        "cross_date_clustering": False,
     }

@@ -341,12 +341,14 @@ class AgentTeamOrchestrator:
             command.append("--split-by-period")
         if self.args.primary_data_only:
             command.append("--primary-data-only")
+        if self.args.news_query:
+            command.extend(["--query", self.args.news_query])
         command.extend(["--collection-days", str(news_collection_days)])
         if self.args.news_max_results is not None:
             command.extend(["--max-results", str(self.args.news_max_results)])
         if self.args.news_total_max_results is not None:
             command.extend(
-                ["--total-max-results", str(self.args.news_total_max_results)]
+                ["--event-top-k", str(self.args.news_total_max_results)]
             )
         command.extend(["--llm-model", self.args.news_llm_model or self.common_llm_model()])
         command.extend(["--analysis-model", self.args.news_analysis_model or self.common_llm_model()])
@@ -902,13 +904,26 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fx-ticker", default=DEFAULT_FX_TICKER)
     parser.add_argument("--market-window-days", type=int, default=None)
     parser.add_argument("--news-config", default=str(DEFAULT_NEWS_CONFIG_PATH), type=Path)
+    parser.add_argument(
+        "--news-query",
+        default="",
+        help=(
+            "Optional target-specific Google News query override. The full-report "
+            "orchestrator only forwards this to the target company, never its peer."
+        ),
+    )
     parser.add_argument("--news-collection-days", type=int, default=None)
     parser.add_argument("--news-max-results", type=int, default=None)
     parser.add_argument(
+        "--news-event-top-k",
         "--news-total-max-results",
+        dest="news_total_max_results",
         type=int,
         default=None,
-        help="Maximum deduplicated News articles across the full collection window.",
+        help=(
+            "Maximum same-day-deduplicated News events retained after article "
+            "reranking. --news-total-max-results is a compatibility alias."
+        ),
     )
     parser.add_argument("--news-min-mention-count", type=int, default=1)
     parser.add_argument("--news-granularity", default=DEFAULT_NEWS_GRANULARITY, choices=["day", "month"])

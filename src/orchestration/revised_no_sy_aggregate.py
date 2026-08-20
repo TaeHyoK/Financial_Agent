@@ -34,7 +34,7 @@ AXIS_LABELS = {
 }
 
 
-COMPANIES = (
+LEGACY_V1_COMPANIES = (
     (
         "SK바이오팜",
         "paper_skbiopharm_20251031_revised_nosy_ablation_v1",
@@ -67,18 +67,64 @@ COMPANIES = (
     ),
 )
 
+V3_COWAY_V4_COMPANIES = (
+    (
+        "SK바이오팜",
+        "paper_skbiopharm_20251031_revised_nosy_ablation_v3",
+        "paper_skbiopharm_20251031_revised_nosy_judge_v3",
+    ),
+    (
+        "아모레퍼시픽",
+        "paper_amorepacific_20251031_revised_nosy_ablation_v3",
+        "paper_amorepacific_20251031_revised_nosy_judge_v3",
+    ),
+    (
+        "코웨이",
+        "paper_coway_20251031_revised_nosy_ablation_v4_revenuefix",
+        "paper_coway_20251031_revised_nosy_judge_v4_revenuefix",
+    ),
+    (
+        "현대모비스",
+        "paper_hyundai_mobis_20251031_revised_nosy_ablation_v3",
+        "paper_hyundai_mobis_20251031_revised_nosy_judge_v3",
+    ),
+    (
+        "BGF리테일",
+        "paper_bgf_retail_20251031_revised_nosy_ablation_v3",
+        "paper_bgf_retail_20251031_revised_nosy_judge_v3",
+    ),
+    (
+        "S-OIL",
+        "paper_s_oil_20251031_revised_nosy_ablation_v3",
+        "paper_s_oil_20251031_revised_nosy_judge_v3",
+    ),
+)
+
+COMPANY_PRESETS = {
+    "legacy_v1": LEGACY_V1_COMPANIES,
+    "v3_coway_v4": V3_COWAY_V4_COMPANIES,
+}
+
+DEFAULT_OUTPUT_DIRS = {
+    "legacy_v1": "paper_six_company_revised_nosy_aggregate_v1",
+    "v3_coway_v4": "paper_six_company_revised_nosy_aggregate_v3_coway_v4",
+}
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, default=PROJECT_ROOT)
     parser.add_argument(
+        "--preset",
+        choices=tuple(COMPANY_PRESETS),
+        default="legacy_v1",
+        help="Source-suite preset. v3_coway_v4 replaces only Coway v3 with the revenue-label-fixed v4 run.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
-        default=PROJECT_ROOT
-        / "Output_total"
-        / "Evaluation"
-        / "Final_Report_Ablation"
-        / "paper_six_company_revised_nosy_aggregate_v1",
+        default=None,
+        help="Output directory. Defaults to a preset-specific directory under Final_Report_Ablation.",
     )
     parser.add_argument("--bootstrap-samples", type=int, default=BOOTSTRAP_SAMPLES)
     parser.add_argument("--seed", type=int, default=BOOTSTRAP_SEED)
@@ -87,8 +133,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 def build_aggregate(args: argparse.Namespace) -> dict[str, Any]:
     project_root = args.project_root.expanduser().resolve()
-    output_dir = args.output_dir.expanduser().resolve()
+    output_dir = (
+        args.output_dir.expanduser().resolve()
+        if args.output_dir is not None
+        else project_root
+        / "Output_total"
+        / "Evaluation"
+        / "Final_Report_Ablation"
+        / DEFAULT_OUTPUT_DIRS[args.preset]
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
+    companies = COMPANY_PRESETS[args.preset]
     suite_base = project_root / "Output_total" / "experiments" / "ablations"
     evaluation_base = project_root / "Output_total" / "Evaluation" / "Final_Report_Ablation"
     pair_results: list[dict[str, Any]] = []
@@ -98,7 +153,7 @@ def build_aggregate(args: argparse.Namespace) -> dict[str, Any]:
     generation_usage = _zero_usage()
     judge_usage = _zero_usage()
 
-    for company, suite_id, evaluation_id in COMPANIES:
+    for company, suite_id, evaluation_id in companies:
         suite_summary_path = suite_base / suite_id / "ablation_summary.json"
         evaluation_summary_path = evaluation_base / evaluation_id / "evaluation_summary.json"
         evaluation_manifest_path = evaluation_base / evaluation_id / "experiment_manifest.json"
@@ -167,24 +222,34 @@ def build_aggregate(args: argparse.Namespace) -> dict[str, Any]:
                 }
             )
 
-    if len(pair_results) != 36:
-        raise ValueError(f"Expected 36 successful pairs, got {len(pair_results)}")
-    if len(recommendation_records) != 54:
-        raise ValueError(f"Expected 54 recommendation records, got {len(recommendation_records)}")
+    expected_pairs = len(companies) * len(ABLATIONS) * 3
+    expected_recommendations = len(companies) * len(CONDITIONS) * 3
+    if len(pair_results) != expected_pairs:
+        raise ValueError(f"Expected {expected_pairs} successful pairs, got {len(pair_results)}")
+    if len(recommendation_records) != expected_recommendations:
+        raise ValueError(
+            f"Expected {expected_recommendations} recommendation records, got {len(recommendation_records)}"
+        )
     aggregation = aggregate_pair_results(
         pair_results,
         bootstrap_samples=args.bootstrap_samples,
         seed=args.seed,
     )
     overall_rows = _overall_rows(aggregation)
+    company_overall_rows = _company_overall_rows(company_results, overall_rows)
     axis_rows = _axis_rows(aggregation, pair_results)
     recommendation_rows = _recommendation_rows(recommendation_records)
     result = {
-        "schema_version": "revised_nosy_six_company_aggregate_v1",
+        "schema_version": (
+            "revised_nosy_six_company_aggregate_v1"
+            if args.preset == "legacy_v1"
+            else "revised_nosy_six_company_aggregate_v3_coway_v4"
+        ),
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "offline_only": True,
         "design": {
-            "company_count": len(COMPANIES),
+            "source_preset": args.preset,
+            "company_count": len(companies),
             "conditions": list(CONDITIONS),
             "replicates": 3,
             "report_count": len(recommendation_records),
@@ -199,6 +264,7 @@ def build_aggregate(args: argparse.Namespace) -> dict[str, Any]:
         },
         "aggregation": aggregation,
         "overall_table": overall_rows,
+        "company_overall_table": company_overall_rows,
         "axis_table": axis_rows,
         "recommendation_table": recommendation_rows,
         "usage": {"generation": generation_usage, "judge": judge_usage},
@@ -217,6 +283,8 @@ def build_aggregate(args: argparse.Namespace) -> dict[str, Any]:
                 "aggregate_manifest.json",
                 "table_2_adjusted_win_rate.csv",
                 "table_2_adjusted_win_rate.md",
+                "table_2b_company_adjusted_win_rate.csv",
+                "table_2b_company_adjusted_win_rate.md",
                 "table_3_recommendation_stability.csv",
                 "table_3_recommendation_stability.md",
                 "table_4_llm_judge_axes.csv",
@@ -224,7 +292,13 @@ def build_aggregate(args: argparse.Namespace) -> dict[str, Any]:
             ],
         },
     )
-    _write_outputs(output_dir, overall_rows, recommendation_rows, axis_rows)
+    _write_outputs(
+        output_dir,
+        overall_rows,
+        company_overall_rows,
+        recommendation_rows,
+        axis_rows,
+    )
     return result
 
 
@@ -263,6 +337,53 @@ def _overall_rows(aggregation: dict[str, Any]) -> list[dict[str, Any]]:
                 "ci_95_low": overall["ci_95"][0],
                 "ci_95_high": overall["ci_95"][1],
                 "mean_order_consistency": data["mean_order_consistency"],
+            }
+        )
+    return rows
+
+
+def _company_overall_rows(
+    company_results: list[dict[str, Any]],
+    aggregate_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows = []
+    for company_result in company_results:
+        company = company_result["company"]
+        aggregation = company_result["aggregation"]
+        for condition in ABLATIONS:
+            data = aggregation["by_condition"][condition]
+            overall = data["overall"]
+            rows.append(
+                {
+                    "company": company,
+                    "condition_id": condition,
+                    "condition": LABELS[condition],
+                    "report_pairs": data["valid_pairs"],
+                    "full_win": overall["full_win"],
+                    "tie": overall["tie"],
+                    "ablation_win": overall["ablation_win"],
+                    "adjusted_win_rate_for_full": overall["adjusted_win_rate_for_full"],
+                    "ci_95_low": None,
+                    "ci_95_high": None,
+                    "mean_order_consistency": data["mean_order_consistency"],
+                    "source_evaluation_id": company_result["evaluation_id"],
+                }
+            )
+    for aggregate in aggregate_rows:
+        rows.append(
+            {
+                "company": "전체(6개 기업)",
+                "condition_id": aggregate["condition_id"],
+                "condition": aggregate["condition"],
+                "report_pairs": aggregate["report_pairs"],
+                "full_win": aggregate["full_win"],
+                "tie": aggregate["tie"],
+                "ablation_win": aggregate["ablation_win"],
+                "adjusted_win_rate_for_full": aggregate["adjusted_win_rate_for_full"],
+                "ci_95_low": aggregate["ci_95_low"],
+                "ci_95_high": aggregate["ci_95_high"],
+                "mean_order_consistency": aggregate["mean_order_consistency"],
+                "source_evaluation_id": "mixed:v3_coway_v4",
             }
         )
     return rows
@@ -345,10 +466,12 @@ def _recommendation_rows(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _write_outputs(
     output_dir: Path,
     overall: list[dict[str, Any]],
+    company_overall: list[dict[str, Any]],
     recommendations: list[dict[str, Any]],
     axes: list[dict[str, Any]],
 ) -> None:
     _write_csv(output_dir / "table_2_adjusted_win_rate.csv", overall)
+    _write_csv(output_dir / "table_2b_company_adjusted_win_rate.csv", company_overall)
     _write_csv(output_dir / "table_3_recommendation_stability.csv", recommendations)
     _write_csv(output_dir / "table_4_llm_judge_axes.csv", axes)
     _write_text(
@@ -370,9 +493,37 @@ def _write_outputs(
         + "\n주: 6개 기업을 동일 가중한 기업-clustered bootstrap 95% CI(10,000회)이다.\n",
     )
     _write_text(
+        output_dir / "table_2b_company_adjusted_win_rate.md",
+        _markdown(
+            ["기업", "비교", "보고서 쌍", "Full 승/무/패", "조정 승률", "95% CI", "순서 일치율"],
+            [
+                [
+                    row["company"],
+                    row["condition"],
+                    row["report_pairs"],
+                    f"{row['full_win']}/{row['tie']}/{row['ablation_win']}",
+                    _pct(row["adjusted_win_rate_for_full"]),
+                    _ci([row["ci_95_low"], row["ci_95_high"]]),
+                    _pct(row["mean_order_consistency"]),
+                ]
+                for row in company_overall
+            ],
+        )
+        + "\n주: 개별 기업은 독립 기업 군집이 하나이므로 95% CI를 산출하지 않았다. 전체 행에만 기업-clustered bootstrap 95% CI를 제시한다.\n",
+    )
+    _write_text(
         output_dir / "table_3_recommendation_stability.md",
         _markdown(
-            ["조건", "보고서 n", "추천(B/H/S)", "변경 수", "변경률", "3회 완전일치 기업", "반복 안정성"],
+            [
+                "조건",
+                "보고서 n",
+                "추천(B/H/S)",
+                "변경 수",
+                "변경률",
+                "3회 완전일치 기업",
+                "완전 일치율",
+                "평균 다수 일치율",
+            ],
             [
                 [
                     row["condition"],
@@ -382,6 +533,7 @@ def _write_outputs(
                     _pct(row["flip_rate_vs_full"]),
                     f"{row['unanimous_case_count']}/{row['repeat_case_count']}",
                     _pct(row["unanimous_repeat_rate"]),
+                    _pct(row["mean_majority_agreement"]),
                 ]
                 for row in recommendations
             ],

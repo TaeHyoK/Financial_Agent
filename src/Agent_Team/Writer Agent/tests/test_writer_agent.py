@@ -524,7 +524,7 @@ def _strategy_input_bundle() -> dict:
                 {"company_name": "일성아이에스", "valuation_metrics": {"trailing_pe": 13.51}},
             ],
             "comparison_limits": ["단일 비교 기업"],
-            "source_path": "/home/agent2/private/peer.json",
+            "source_path": "/private/peer.json",
         },
     }
 
@@ -551,7 +551,7 @@ def _decision_basis() -> dict:
                         "claim_id": f"C{index:03d}",
                         "source_section": "target_reports.financial",
                         "evidence_ids": [f"E{index:03d}"],
-                        "source_path": "/home/agent2/private/source.json",
+                        "source_path": "/private/source.json",
                     }
                 ],
             }

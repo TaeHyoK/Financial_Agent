@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from orchestration.end_to_end_loop import (
+    AgentTeamOrchestrator,
     REUSED_DOMAIN_SNAPSHOT_STEPS,
     build_parser,
     file_sha256,
@@ -27,6 +28,7 @@ def test_orchestration_parser_keeps_single_company_defaults() -> None:
     assert args.force_step == []
     assert args.news_split_by_period is False
     assert args.news_total_max_results is None
+    assert args.news_query == ""
     assert args.llm_usage_manifest is None
     assert args.llm_run_role == "target"
     assert args.llm_execution_id == ""
@@ -38,12 +40,44 @@ def test_news_period_split_is_explicit_opt_in() -> None:
     assert args.news_split_by_period is True
 
 
-def test_news_total_window_cap_is_explicit() -> None:
+def test_news_event_top_k_accepts_legacy_alias() -> None:
     args = build_parser().parse_args(
         ["--dry-run", "--news-total-max-results", "40"]
     )
 
     assert args.news_total_max_results == 40
+
+
+def test_news_query_is_forwarded_to_news_cli(tmp_path) -> None:
+    config_path = tmp_path / "company.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "company_code": "00123456",
+                "corp_code": "00123456",
+                "company_name": "S-OIL",
+                "ticker": "010950.KS",
+                "date_range": "20251001-20251030",
+                "selected_date": "20251031",
+            }
+        ),
+        encoding="utf-8",
+    )
+    args = build_parser().parse_args(
+        [
+            "--config",
+            str(config_path),
+            "--output-root",
+            str(tmp_path / "output"),
+            "--news-query",
+            '("S-OIL" OR "에쓰오일" OR "에스오일")',
+            "--dry-run",
+        ]
+    )
+
+    command = AgentTeamOrchestrator(args).command_for_step("news_collect")
+
+    assert command[command.index("--query") + 1] == '("S-OIL" OR "에쓰오일" OR "에스오일")'
 
 
 def test_force_step_can_be_repeated() -> None:

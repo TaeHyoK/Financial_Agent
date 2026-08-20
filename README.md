@@ -24,11 +24,10 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
 
-`configs/.env`에 API key를 설정합니다.
+예시 파일을 복사한 뒤 `configs/.env`에 API key를 설정합니다.
 
-```dotenv
-OPENAI_API_KEY=your_openai_api_key
-DART_API_KEY=your_opendart_api_key
+```bash
+cp configs/.env.example configs/.env
 ```
 
 ```bash
@@ -249,11 +248,10 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
 
-`configs/.env`를 생성합니다.
+예시 파일을 복사해 `configs/.env`를 생성합니다.
 
-```dotenv
-OPENAI_API_KEY=your_openai_api_key
-DART_API_KEY=your_opendart_api_key
+```bash
+cp configs/.env.example configs/.env
 ```
 
 API key 파일은 Git에 올리지 마십시오.
@@ -523,9 +521,10 @@ dart_lightweight.json
 Google News RSS
   -> 날짜·URL·제목·snippet 정규화
   -> 기사 URL과 snippet 보강
-  -> 중복 제거
-  -> BGE embedding과 HDBSCAN event clustering
-  -> DART 사업 문맥 reranking
+  -> URL 중복 제거
+  -> BGE embedding과 DART 사업 문맥 reranking
+  -> 당일 기사만 HDBSCAN event clustering
+  -> reranker 기준 event top-k 선택
   -> 기간 요약과 News claim 검증
 ```
 
@@ -541,13 +540,17 @@ Google News RSS
 | event 의미화 | 사건 상태, 기업 직접성, materiality, 재무 연결 여부와 기사 coverage를 typed metadata로 정규화합니다. |
 | Strategy card | event 요약과 대표 excerpt 최대 2개, 기사·언론사 count를 포함합니다. opaque evidence ID와 전체 기사 목록은 전달하지 않습니다. |
 
-기본 `max_results`는 일자별 200입니다. 전체 기간의 중복 제거 후 기사 수는 `--news-total-max-results`로 별도 제한할 수 있습니다. 예를 들어 1개월 입력을 기업별 총 40건으로 고정하려면 `--news-total-max-results 40`을 사용합니다. 전체 기간 상한은 일자별 Google News 순위를 유지하면서 특정 날짜가 예산을 독점하지 않도록 날짜 bucket을 round-robin으로 선택합니다. URL 보강은 외부 사이트 응답에 따라 수분 이상 걸릴 수 있습니다. 2025-10-31 1개월 cold regression에서는 target과 peer의 News collect가 각각 약 13분 걸렸고, warm 실행에서는 fingerprint cache로 재사용됐습니다.
+기본 `max_results`는 일자별 200입니다. 전체 기간의 모든 URL 중복 제거 기사에 대해 대상기업 DART 문맥 기반 embedding 및 cross-encoder reranking을 먼저 수행합니다. 이후 발행일이 같은 기사끼리만 HDBSCAN으로 유사 보도를 병합하고, 군집 대표 기사의 reranker 점수 기준 상위 사건을 `--news-event-top-k`로 제한합니다. 예를 들어 1개월 입력을 기업별 최대 40개 사건으로 고정하려면 `--news-event-top-k 40`을 사용합니다. 다른 날짜의 유사 기사는 상태 변화가 반영된 별도 사건일 수 있으므로 서로 병합하지 않습니다. 기존 `--news-total-max-results`는 같은 post-rerank event top-k를 의미하는 호환 alias입니다. URL 보강은 외부 사이트 응답에 따라 수분 이상 걸릴 수 있습니다. 2025-10-31 1개월 cold regression에서는 target과 peer의 News collect가 각각 약 13분 걸렸고, warm 실행에서는 fingerprint cache로 재사용됐습니다.
 
 주요 artifact:
 
 ```text
+raw_news_candidates.parquet
 raw_news.parquet
+article_ranking.parquet
+news_events_all.parquet
 news_events.parquet
+event_ranking.parquet
 report_context.json
 news_agent_evidence_map.json
 ```
@@ -672,6 +675,8 @@ FG000 응답의 `MKT_VAL`이 비어 있으면 해당 FG000 종목들의 Naver it
 - Writer 검증 실패 결과는 성공 execution cache로 인정하지 않으며 추가 repair 호출 없이 실행을 실패시킵니다. fingerprint가 같은 raw 응답은 재검증용으로만 재사용할 수 있습니다.
 
 ## 실험 설계와 token 집계
+
+논문의 6개 기업 구성요소 제외 실험과 단일 언어 모델 비교 실행 순서는 [`docs/PAPER_REPRODUCIBILITY.md`](docs/PAPER_REPRODUCIBILITY.md)에 정리되어 있습니다.
 
 ### 평가 프로토콜
 
@@ -872,13 +877,17 @@ pytest -q src/orchestration/tests src/shared/tests
 
 테스트는 point-in-time cutoff, adjusted/raw close 분리, identity alias, Naver peer parser fixture, evidence contract, Strategy source refs, Writer grounding, retry/token 집계, full pipeline command와 cache를 포함합니다.
 
-2026-07-28 기준 전체 회귀 suite의 기준은 `279 passed`입니다.
+2026-08-20 기준 전체 회귀 suite는 `331 passed, 7 subtests passed`입니다.
 
 ## 저장소 구조
 
 ```text
 .
 ├── configs/
+│   └── .env.example
+├── docs/
+│   └── PAPER_REPRODUCIBILITY.md
+├── scripts/
 ├── src/
 │   ├── Agent_Team/
 │   │   ├── Financial_Agent/
@@ -892,8 +901,8 @@ pytest -q src/orchestration/tests src/shared/tests
 │   │   ├── end_to_end_loop.py
 │   │   ├── full_report_pipeline.py
 │   │   └── usage_summary.py
-│   └── shared/
-├── FINRPT_ADAPTED_FINAL_REPORT_EVALUATION_PLAN.md
+│   ├── shared/
+│   └── single_llm/
 ├── README.md
 └── pyproject.toml
 ```

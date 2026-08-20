@@ -56,6 +56,7 @@ _SAFE_ALIAS_KEYS = {
     "기초현금및현금성자산": "beginning_cash_and_cash_equivalents",
     "기말현금및현금성자산": "ending_cash_and_cash_equivalents",
     "매출액": "revenue",
+    "매출": "revenue",
     "수익매출액": "revenue",
     "영업수익": "revenue",
     "제품매출": "product_revenue",

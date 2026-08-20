@@ -50,10 +50,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--max-results", type=int, default=None, help="Max collected news articles per day")
     parser.add_argument(
+        "--event-top-k",
         "--total-max-results",
+        dest="total_max_results",
         type=int,
         default=None,
-        help="Max deduplicated news articles across the complete collection window",
+        help=(
+            "Max same-day-deduplicated news events retained after article reranking. "
+            "--total-max-results is a deprecated compatibility alias."
+        ),
     )
     parser.add_argument("--config", default=None, help="Path to workflow config YAML")
     parser.add_argument("--granularity", choices=["day", "month"], default="month", help="Export period granularity")
@@ -245,8 +250,12 @@ def main() -> None:
                 tqdm.write(f"report_key={artifacts.report_key}")
                 tqdm.write(f"dart_xml={artifacts.dart_xml_path}")
                 tqdm.write(f"context_db={artifacts.context_db_path}")
+                tqdm.write(f"raw_news_candidates={artifacts.raw_news_candidates_path}")
                 tqdm.write(f"raw_news={artifacts.raw_news_path}")
+                tqdm.write(f"article_ranking={artifacts.article_ranking_path}")
                 tqdm.write(f"news_events={artifacts.news_events_path}")
+                tqdm.write(f"all_news_events={artifacts.all_news_events_path}")
+                tqdm.write(f"event_ranking={artifacts.event_ranking_path}")
                 tqdm.write(f"report_context={artifacts.report_context_path}")
                 tqdm.write(f"manifest={artifacts.manifest_path}")
             elif phase == "export":

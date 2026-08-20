@@ -9,6 +9,7 @@ from orchestration.company_resolver import CompanyResolutionError
 from orchestration.full_report_pipeline import (
     FullPipelinePaths,
     _execute_stage,
+    _load_peer_resolution_snapshot,
     build_domain_pipeline_command,
     build_parser,
     run_full_pipeline,
@@ -41,6 +42,8 @@ def test_full_pipeline_resolves_configs_and_builds_all_stages(tmp_path, monkeypa
             "1m",
             "--news-total-max-results",
             "40",
+            "--target-news-query",
+            '("SK바이오팜" OR "세노바메이트")',
             "--decision-horizon-profile",
             "short_term",
             "--semantic-attempts",
@@ -133,7 +136,10 @@ def test_full_pipeline_resolves_configs_and_builds_all_stages(tmp_path, monkeypa
     target_command = executed[0][1]
     assert target_command[target_command.index("--llm-run-role") + 1] == "target"
     assert target_command[target_command.index("--llm-execution-id") + 1] == "exec-test"
-    assert target_command[target_command.index("--news-total-max-results") + 1] == "40"
+    assert target_command[target_command.index("--news-event-top-k") + 1] == "40"
+    assert target_command[target_command.index("--news-query") + 1] == '("SK바이오팜" OR "세노바메이트")'
+    peer_command = executed[1][1]
+    assert "--news-query" not in peer_command
     strategy_command = executed[3][1]
     writer_command = executed[4][1]
     assert strategy_command[strategy_command.index("--packet-version") + 1] == "v2"
@@ -154,6 +160,8 @@ def test_full_pipeline_resolves_configs_and_builds_all_stages(tmp_path, monkeypa
     assert all(env["LLM_TIMEOUT_SECONDS"] == "300" for env in stage_envs.values())
     assert all(env["LLM_TRANSPORT_RETRIES"] == "1" for env in stage_envs.values())
     assert manifest["request"]["news_window"] == "1m"
+    assert manifest["request"]["target_news_query"] == '("SK바이오팜" OR "세노바메이트")'
+    assert manifest["request"]["news_event_top_k"] == 40
     assert manifest["request"]["news_total_max_results"] == 40
     assert manifest["request"]["decision_horizon_profile"] == "short_term"
     assert manifest["request"]["decision_horizon"] == "1개월"
@@ -176,6 +184,34 @@ def test_news_window_does_not_select_strategy_horizon() -> None:
 
     assert args.news_window == "3m"
     assert args.decision_horizon_profile == "default"
+
+
+def test_automatic_peer_resolution_snapshot_is_frozen_with_provenance(tmp_path) -> None:
+    target = _identity("S-OIL", "00123456", "010950", "KOSPI")
+    path = tmp_path / "peer_resolution.json"
+    path.write_text(
+        json.dumps(
+            {
+                "status": "selected",
+                "target": {"stock_code": "010950", "company_name": "S-OIL"},
+                "selected_peer": {"stock_code": "096770", "company_name": "SK이노베이션"},
+                "selection_basis": {
+                    "method": "minimum_absolute_market_cap_distance_within_fg000_candidates"
+                },
+                "source": {"provider": "Naver Finance / WiseReport"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    frozen = _load_peer_resolution_snapshot(path, target=target)
+
+    assert frozen["selected_peer"]["stock_code"] == "096770"
+    assert frozen["selection_basis"]["method"] == (
+        "minimum_absolute_market_cap_distance_within_fg000_candidates"
+    )
+    assert frozen["paired_experiment_freeze"]["status"] == "reused"
+    assert frozen["paired_experiment_freeze"]["source_artifact"] == str(path.resolve())
 
 
 def test_domain_pipeline_command_propagates_reused_snapshot(tmp_path) -> None:

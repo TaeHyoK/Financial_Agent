@@ -4,6 +4,7 @@ import json
 
 from orchestration.ablation_experiment import (
     CONDITIONS,
+    _interrupted_run_context,
     build_condition_command,
     build_parser,
     build_summary,
@@ -23,6 +24,8 @@ def _args(tmp_path):
             "003120",
             "--news-total-max-results",
             "40",
+            "--target-news-query",
+            '("S-OIL" OR "에쓰오일")',
             "--output-root",
             str(tmp_path),
             "--no-progress",
@@ -41,6 +44,7 @@ def test_default_matrix_contains_full_and_all_single_ablations() -> None:
         "no_news",
         "no_yfinance",
         "primary_only",
+        "no_sy_primary_only",
         "no_competitor",
         "only_financial",
         "only_news",
@@ -64,12 +68,14 @@ def test_condition_command_isolates_output_and_propagates_flags(tmp_path) -> Non
     assert command[1:3] == ["-m", "orchestration.full_report_pipeline"]
     assert command[command.index("--output-root") + 1] == str(tmp_path / "condition")
     assert command[command.index("--peer-stock-code") + 1] == "003120"
-    assert command[command.index("--news-total-max-results") + 1] == "40"
+    assert command[command.index("--news-event-top-k") + 1] == "40"
+    assert command[command.index("--target-news-query") + 1] == '("S-OIL" OR "에쓰오일")'
     assert "--full-context" in command
 
 
 def test_condition_command_can_reuse_collected_domain_snapshot(tmp_path) -> None:
     args = _args(tmp_path)
+    args.peer_stock_code = ""
     condition = next(item for item in CONDITIONS if item.name == "primary_only")
     snapshot_root = tmp_path / "snapshot"
 
@@ -79,10 +85,31 @@ def test_condition_command_can_reuse_collected_domain_snapshot(tmp_path) -> None
         condition_root=tmp_path / "condition",
         execution_id="suite__primary_only__r01",
         reuse_domain_data_from=snapshot_root,
+        peer_resolution_from=tmp_path / "peer_resolution.json",
     )
 
     assert command[command.index("--reuse-domain-data-from") + 1] == str(snapshot_root.resolve())
+    assert command[command.index("--peer-resolution-from") + 1] == str(
+        (tmp_path / "peer_resolution.json").resolve()
+    )
     assert "--primary-data-only" in command
+
+
+def test_combined_no_sy_primary_only_condition_has_both_flags(tmp_path) -> None:
+    args = _args(tmp_path)
+    condition = next(item for item in CONDITIONS if item.name == "no_sy_primary_only")
+
+    command = build_condition_command(
+        args=args,
+        condition=condition,
+        condition_root=tmp_path / "condition",
+        execution_id="suite__no_sy_primary_only__r01",
+        reuse_domain_data_from=tmp_path / "snapshot",
+    )
+
+    assert "--no-sy" in command
+    assert "--primary-data-only" in command
+    assert "--reuse-domain-data-from" in command
 
 
 def test_no_competitor_command_does_not_pass_peer_override(tmp_path) -> None:
@@ -117,6 +144,43 @@ def test_force_condition_is_repeatable(tmp_path) -> None:
     )
 
     assert args.force_condition == ["free_form_writer", "full_context"]
+
+
+def test_resume_running_record_reuses_attempt_root_and_execution_id(tmp_path) -> None:
+    condition_root = tmp_path / "conditions" / "no_sy" / "replicate_01" / "attempt_03"
+    existing = {
+        "status": "running",
+        "attempt": 3,
+        "condition_root": str(condition_root),
+        "execution_id": "suite__no_sy__r01__attempt03",
+    }
+
+    context = _interrupted_run_context(
+        existing,
+        resume=True,
+        force_condition=False,
+    )
+
+    assert context == (
+        3,
+        condition_root.resolve(),
+        "suite__no_sy__r01__attempt03",
+    )
+
+
+def test_resume_failed_record_starts_a_new_attempt_instead(tmp_path) -> None:
+    context = _interrupted_run_context(
+        {
+            "status": "failed",
+            "attempt": 3,
+            "condition_root": str(tmp_path / "attempt_03"),
+            "execution_id": "suite__no_sy__r01__attempt03",
+        },
+        resume=True,
+        force_condition=False,
+    )
+
+    assert context is None
 
 
 def test_free_form_writer_reuses_full_strategy_and_runs_writer_only(

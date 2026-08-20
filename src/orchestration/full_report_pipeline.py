@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -161,10 +162,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--selected-date", required=True, help="YYYYMMDD report date, interpreted before market open.")
     parser.add_argument("--news-window", default="1m", choices=["2w", "1m", "3m"])
     parser.add_argument(
+        "--target-news-query",
+        default="",
+        help=(
+            "Optional Google News query override for the target company only. "
+            "Peer collection continues to use the resolved peer company name."
+        ),
+    )
+    parser.add_argument(
+        "--news-event-top-k",
         "--news-total-max-results",
+        dest="news_total_max_results",
         type=_positive_int,
         default=None,
-        help="Maximum deduplicated News articles per company across the selected window.",
+        help=(
+            "Maximum same-day-deduplicated News events retained after article "
+            "reranking. --news-total-max-results is a compatibility alias."
+        ),
     )
     parser.add_argument(
         "--decision-horizon-profile",
@@ -176,6 +190,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--peer-stock-code", default="", help="Optional six-digit peer override when Naver is unavailable.")
+    parser.add_argument(
+        "--peer-resolution-from",
+        type=Path,
+        default=None,
+        help=(
+            "Reuse a prior automatic peer_resolution.json for paired replicates. "
+            "The original FG000 selection method and provenance are preserved."
+        ),
+    )
     parser.add_argument("--peer-timeout", type=int, default=20)
     parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
     parser.add_argument(
@@ -304,11 +327,17 @@ def run_full_pipeline(args: argparse.Namespace) -> dict[str, Any]:
             paths.ensure_directories()
         peer: CompanyIdentity | None = None
         if ablation.include_competitor:
-            peer_resolution = _resolve_peer_selection(
-                target,
-                peer_stock_code=args.peer_stock_code,
-                timeout=args.peer_timeout,
-            )
+            if args.peer_resolution_from is not None:
+                peer_resolution = _load_peer_resolution_snapshot(
+                    args.peer_resolution_from,
+                    target=target,
+                )
+            else:
+                peer_resolution = _resolve_peer_selection(
+                    target,
+                    peer_stock_code=args.peer_stock_code,
+                    timeout=args.peer_timeout,
+                )
             peer_stock_code = str((peer_resolution.get("selected_peer") or {}).get("stock_code") or "")
             if not peer_stock_code:
                 _write_json(paths.peer_resolution, peer_resolution)
@@ -599,8 +628,10 @@ def build_domain_pipeline_command(
         )
     if args.news_total_max_results is not None:
         command.extend(
-            ["--news-total-max-results", str(args.news_total_max_results)]
+            ["--news-event-top-k", str(args.news_total_max_results)]
         )
+    if run_role == "target" and args.target_news_query:
+        command.extend(["--news-query", args.target_news_query])
     if args.no_progress:
         command.append("--no-progress")
     if args.dry_run:
@@ -782,6 +813,36 @@ def _resolve_peer_selection(
     return resolve_naver_peer(target.stock_code, timeout=max(1, int(timeout)))
 
 
+def _load_peer_resolution_snapshot(
+    path: Path,
+    *,
+    target: CompanyIdentity,
+) -> dict[str, Any]:
+    snapshot_path = Path(path).expanduser().resolve()
+    payload = _load_json(snapshot_path)
+    if payload.get("status") != "selected":
+        raise CompanyResolutionError(
+            f"Frozen peer resolution is not successful: {snapshot_path}"
+        )
+    target_code = str((payload.get("target") or {}).get("stock_code") or "")
+    selected_code = str((payload.get("selected_peer") or {}).get("stock_code") or "")
+    if target_code != target.stock_code:
+        raise CompanyResolutionError(
+            "Frozen peer resolution target does not match the requested company."
+        )
+    if not selected_code or selected_code == target.stock_code:
+        raise CompanyResolutionError("Frozen peer resolution has no valid distinct peer.")
+
+    frozen = json.loads(json.dumps(payload, ensure_ascii=False))
+    frozen["paired_experiment_freeze"] = {
+        "status": "reused",
+        "source_artifact": str(snapshot_path),
+        "source_sha256": hashlib.sha256(snapshot_path.read_bytes()).hexdigest(),
+        "policy": "automatic FG000 selection executed once, then frozen across paired replicates",
+    }
+    return frozen
+
+
 def _write_resolved_inputs(
     *,
     args: argparse.Namespace,
@@ -812,9 +873,9 @@ def _write_resolved_inputs(
             "company_name": peer.company_name,
             "stock_code": peer.stock_code,
             "ticker": peer.ticker,
-            "provider": "Naver Finance / WiseReport FG000"
-            if not args.peer_stock_code
-            else "command_line_override",
+            "provider": (peer_resolution.get("source") or {}).get("provider"),
+            "selection_method": (peer_resolution.get("selection_basis") or {}).get("method"),
+            "paired_experiment_frozen": bool(peer_resolution.get("paired_experiment_freeze")),
             "usage": "identity_only",
         }
         peer_config["comparison_target"] = {
@@ -1025,6 +1086,9 @@ def _base_manifest(
             "selected_date_policy": "before_market_open",
             "information_cutoff_date": _previous_calendar_date(selected_date),
             "news_window": args.news_window,
+            "target_news_query": args.target_news_query,
+            "news_event_top_k": args.news_total_max_results,
+            # Deprecated alias retained for older experiment readers.
             "news_total_max_results": args.news_total_max_results,
             "decision_horizon_profile": args.decision_horizon_profile,
             "decision_horizon": resolved_horizon,
@@ -1035,6 +1099,11 @@ def _base_manifest(
             "reuse_domain_data_from": (
                 str(Path(args.reuse_domain_data_from).expanduser().resolve())
                 if args.reuse_domain_data_from
+                else ""
+            ),
+            "peer_resolution_from": (
+                str(Path(args.peer_resolution_from).expanduser().resolve())
+                if args.peer_resolution_from
                 else ""
             ),
         },

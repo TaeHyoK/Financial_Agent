@@ -15,10 +15,6 @@ from reporting import (
 )
 
 DEFAULT_ENV_PATH = PROJECT_ROOT / "configs" / ".env"
-if not DEFAULT_ENV_PATH.exists():
-    DEFAULT_ENV_PATH = PROJECT_ROOT / ".env"
-if not DEFAULT_ENV_PATH.exists():
-    DEFAULT_ENV_PATH = Path("/home/agent2/SY/.env")
 
 
 def main() -> None:

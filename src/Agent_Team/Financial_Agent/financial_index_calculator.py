@@ -77,7 +77,7 @@ class MetricDefinition:
 REVENUE_SPEC = ItemLookupSpec(
     statement_key="4-2",
     item_keys=("revenue",),
-    labels=("매출액", "영업수익"),
+    labels=("매출액", "매출", "영업수익"),
 )
 COST_OF_OPERATIONS_SPEC = ItemLookupSpec(
     statement_key="4-2",
@@ -141,7 +141,7 @@ METRIC_DEFINITIONS_BY_DISPLAY_NAME = {
     "Revenue": MetricDefinition(
         metric_key="revenue",
         display_name="Revenue",
-        source_items=("매출액", "영업수익"),
+        source_items=("매출액", "매출", "영업수익"),
     ),
     "Revenue Growth": MetricDefinition(
         metric_key="revenue_growth",

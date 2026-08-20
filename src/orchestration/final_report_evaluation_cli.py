@@ -29,6 +29,7 @@ from orchestration.final_report_evaluation_metrics import (
 from orchestration.final_report_pairwise_judge import (
     DEFAULT_JUDGE_MODEL,
     DEFAULT_PROMPT_PATH,
+    EVIDENCE_SCOPES,
     build_judge_request,
     call_pairwise_judge,
     request_fingerprint,
@@ -85,9 +86,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL)
     parser.add_argument("--prompt-path", type=Path, default=DEFAULT_PROMPT_PATH)
+    parser.add_argument(
+        "--evidence-mode",
+        choices=EVIDENCE_SCOPES,
+        default="candidate_specific",
+        help=(
+            "candidate_specific preserves the coverage-aware main evaluation; "
+            "union_blind uses the union only for fact checking and hides candidate access."
+        ),
+    )
     parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV_FILE)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--evaluation-id", default="")
+    parser.add_argument(
+        "--candidate-snapshot-root",
+        action="append",
+        default=[],
+        type=Path,
+        help=(
+            "Prior evaluation root containing comparisons/<pair_id>/candidate_*_visible.json; "
+            "repeatable. When supplied, every pair must resolve to exactly one snapshot."
+        ),
+    )
     parser.add_argument("--timeout-seconds", type=_positive_float, default=300.0)
     parser.add_argument("--transport-retries", type=_non_negative_int, default=1)
     parser.add_argument("--bootstrap-samples", type=_positive_int, default=10_000)
@@ -104,6 +124,13 @@ def run_evaluation(
     judge_call: Callable[..., dict[str, Any]] = call_pairwise_judge,
 ) -> dict[str, Any]:
     ablations = tuple(dict.fromkeys(args.ablation or DEFAULT_ABLATIONS))
+    if args.evidence_mode == "union_blind" and (
+        Path(args.prompt_path).expanduser().resolve() == DEFAULT_PROMPT_PATH.resolve()
+    ):
+        raise ValueError(
+            "union_blind requires an explicit neutral --prompt-path; the default prompt "
+            "permits rewarding wider candidate-specific evidence coverage."
+        )
     evaluation_id = safe_label(args.evaluation_id or _new_evaluation_id(), "evaluation")
     output_dir = Path(args.output_root).expanduser().resolve() / evaluation_id
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -138,6 +165,11 @@ def run_evaluation(
             "judge_model": args.judge_model,
             "prompt_path": str(Path(args.prompt_path).expanduser().resolve()),
             "prompt_sha256": file_sha256(args.prompt_path),
+            "evidence_mode": args.evidence_mode,
+            "candidate_snapshot_roots": [
+                str(Path(path).expanduser().resolve())
+                for path in args.candidate_snapshot_root
+            ],
             "dry_run": bool(args.dry_run),
             "cross_order": True,
             "bootstrap_samples": args.bootstrap_samples,
@@ -163,6 +195,7 @@ def run_evaluation(
     pair_results: list[dict[str, Any]] = []
     for spec in pair_specs:
         print(f"[judge] START {spec.pair_id}", flush=True)
+        snapshot = _load_candidate_snapshot(spec.pair_id, args.candidate_snapshot_root)
         result = evaluate_pair(
             spec,
             output_dir=output_dir,
@@ -173,6 +206,10 @@ def run_evaluation(
             dry_run=args.dry_run,
             force=args.force,
             judge_call=judge_call,
+            evidence_mode=args.evidence_mode,
+            baseline_visible_override=(snapshot or {}).get("full"),
+            ablation_visible_override=(snapshot or {}).get("ablation"),
+            candidate_snapshot_provenance=(snapshot or {}).get("provenance"),
         )
         pair_results.append(result)
         manifest["pairs"] = pair_results
@@ -347,6 +384,10 @@ def evaluate_pair(
     dry_run: bool,
     force: bool,
     judge_call: Callable[..., dict[str, Any]],
+    evidence_mode: str = "candidate_specific",
+    baseline_visible_override: dict[str, Any] | None = None,
+    ablation_visible_override: dict[str, Any] | None = None,
+    candidate_snapshot_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Evaluate one Full/ablation report pair in both presentation orders."""
 
@@ -354,8 +395,20 @@ def evaluate_pair(
     judgments_dir = pair_dir / "judgments"
     pair_dir.mkdir(parents=True, exist_ok=True)
     judgments_dir.mkdir(parents=True, exist_ok=True)
-    baseline_visible = extract_visible_report(spec.baseline_report)
-    ablation_visible = extract_visible_report(spec.ablation_report)
+    baseline_visible = (
+        baseline_visible_override
+        if baseline_visible_override is not None
+        else extract_visible_report(spec.baseline_report)
+    )
+    ablation_visible = (
+        ablation_visible_override
+        if ablation_visible_override is not None
+        else extract_visible_report(spec.ablation_report)
+    )
+    if (baseline_visible_override is None) != (ablation_visible_override is None):
+        raise ValueError("Full and ablation candidate snapshots must be supplied together.")
+    if evidence_mode not in EVIDENCE_SCOPES:
+        raise ValueError(f"Unsupported evidence mode: {evidence_mode}")
     full_evidence = build_common_evidence_bundle(spec.common_packet)
     ablation_evidence = build_common_evidence_bundle(spec.ablation_packet)
     evidence = build_union_evidence_bundle([spec.common_packet, spec.ablation_packet])
@@ -368,6 +421,7 @@ def evaluate_pair(
         pair_dir / "identity_map.json",
         {
             "candidate_identity_hidden_from_judge": True,
+            "evidence_mode": evidence_mode,
             "baseline_condition": "full",
             "ablation_condition": spec.ablation_condition,
             "source_reports": {
@@ -385,9 +439,23 @@ def evaluate_pair(
         "ablation_condition": spec.ablation_condition,
         "baseline_recommendation": spec.baseline_recommendation,
         "ablation_recommendation": spec.ablation_recommendation,
+        "evidence_mode": evidence_mode,
+        "evidence_scope": {
+            "full_card_count": len(full_card_keys),
+            "ablation_card_count": len(ablation_card_keys),
+            "judge_union_card_count": len(_bundle_card_keys(evidence)),
+            "candidate_access_metadata_sent": evidence_mode == "candidate_specific",
+        },
+        "candidate_input": (
+            candidate_snapshot_provenance
+            if candidate_snapshot_provenance is not None
+            else {"mode": "live_report_extraction"}
+        ),
         "source_hashes": {
             "full_report": file_sha256(spec.baseline_report),
             "ablation_report": file_sha256(spec.ablation_report),
+            "full_candidate_visible": _json_payload_sha256(baseline_visible),
+            "ablation_candidate_visible": _json_payload_sha256(ablation_visible),
             "full_strategy_packet": file_sha256(spec.common_packet),
             "ablation_strategy_packet": file_sha256(spec.ablation_packet),
             "evidence_bundle": evidence["bundle_sha256"],
@@ -395,28 +463,42 @@ def evaluate_pair(
         "output_dir": str(pair_dir),
     }
     try:
-        request_ab = build_judge_request(
-            candidate_a=baseline_visible,
-            candidate_b=ablation_visible,
-            evidence_bundle=evidence,
-            model=model,
-            prompt_path=prompt_path,
-            candidate_a_available_card_keys=full_card_keys,
-            candidate_b_available_card_keys=ablation_card_keys,
-            candidate_a_evidence_bundle=full_evidence,
-            candidate_b_evidence_bundle=ablation_evidence,
-        )
-        request_ba = build_judge_request(
-            candidate_a=ablation_visible,
-            candidate_b=baseline_visible,
-            evidence_bundle=evidence,
-            model=model,
-            prompt_path=prompt_path,
-            candidate_a_available_card_keys=ablation_card_keys,
-            candidate_b_available_card_keys=full_card_keys,
-            candidate_a_evidence_bundle=ablation_evidence,
-            candidate_b_evidence_bundle=full_evidence,
-        )
+        common_request_args = {
+            "evidence_bundle": evidence,
+            "model": model,
+            "prompt_path": prompt_path,
+            "evidence_scope": evidence_mode,
+        }
+        if evidence_mode == "candidate_specific":
+            request_ab = build_judge_request(
+                candidate_a=baseline_visible,
+                candidate_b=ablation_visible,
+                candidate_a_available_card_keys=full_card_keys,
+                candidate_b_available_card_keys=ablation_card_keys,
+                candidate_a_evidence_bundle=full_evidence,
+                candidate_b_evidence_bundle=ablation_evidence,
+                **common_request_args,
+            )
+            request_ba = build_judge_request(
+                candidate_a=ablation_visible,
+                candidate_b=baseline_visible,
+                candidate_a_available_card_keys=ablation_card_keys,
+                candidate_b_available_card_keys=full_card_keys,
+                candidate_a_evidence_bundle=ablation_evidence,
+                candidate_b_evidence_bundle=full_evidence,
+                **common_request_args,
+            )
+        else:
+            request_ab = build_judge_request(
+                candidate_a=baseline_visible,
+                candidate_b=ablation_visible,
+                **common_request_args,
+            )
+            request_ba = build_judge_request(
+                candidate_a=ablation_visible,
+                candidate_b=baseline_visible,
+                **common_request_args,
+            )
         _write_request_preview(judgments_dir / "order_ab_request.json", request_ab)
         _write_request_preview(judgments_dir / "order_ba_request.json", request_ba)
         if dry_run:
@@ -652,6 +734,55 @@ def _bundle_card_keys(bundle: dict[str, Any]) -> list[str]:
             if isinstance(card, dict) and card.get("card_key")
         }
     )
+
+
+def _load_candidate_snapshot(
+    pair_id: str,
+    roots: list[Path],
+) -> dict[str, Any] | None:
+    """Load the exact Judge-visible reports archived by a prior evaluation."""
+
+    if not roots:
+        return None
+    matches: list[tuple[Path, Path, Path]] = []
+    for root_value in roots:
+        root = Path(root_value).expanduser().resolve()
+        pair_dir = root / "comparisons" / pair_id
+        full_path = pair_dir / "candidate_full_visible.json"
+        ablation_path = pair_dir / "candidate_ablation_visible.json"
+        if full_path.exists() or ablation_path.exists():
+            if not full_path.is_file() or not ablation_path.is_file():
+                raise ValueError(f"Incomplete candidate snapshot for {pair_id}: {pair_dir}")
+            matches.append((root, full_path, ablation_path))
+    if len(matches) != 1:
+        raise ValueError(
+            f"Expected exactly one candidate snapshot for {pair_id}, found {len(matches)}"
+        )
+    root, full_path, ablation_path = matches[0]
+    full = _load_json(full_path)
+    ablation = _load_json(ablation_path)
+    return {
+        "full": full,
+        "ablation": ablation,
+        "provenance": {
+            "mode": "frozen_judge_visible_snapshot",
+            "snapshot_root": str(root),
+            "full_path": str(full_path),
+            "ablation_path": str(ablation_path),
+            "full_sha256": _json_payload_sha256(full),
+            "ablation_sha256": _json_payload_sha256(ablation),
+        },
+    }
+
+
+def _json_payload_sha256(payload: Any) -> str:
+    serialized = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 def _load_json(path: str | Path) -> dict[str, Any]:

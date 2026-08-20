@@ -67,7 +67,7 @@ class FinancialIndexCalculatorTests(unittest.TestCase):
 
         revenue_metric = result["metrics_by_key"]["revenue"]
         self.assertEqual(revenue_metric["display_name"], "Revenue")
-        self.assertEqual(revenue_metric["source_items"], ["매출액", "영업수익"])
+        self.assertEqual(revenue_metric["source_items"], ["매출액", "매출", "영업수익"])
         self.assertEqual(revenue_metric["source_labels_observed"], ["매출액 (주18)"])
         revenue = revenue_metric["values_by_period"]
         self.assertEqual(revenue["current_fiscal_year"]["value"], 1000)
@@ -98,6 +98,29 @@ class FinancialIndexCalculatorTests(unittest.TestCase):
         self.assertNotIn("ebitda", metrics)
         self.assertNotIn("ebitda_margin", metrics)
         self.assertNotIn("pe_ratio", metrics)
+
+    def test_revenue_label_without_amount_suffix_is_recognized(self) -> None:
+        payload = _canonical_payload(period_count=2)
+        income_table = payload["4-2"]["tables"][0]
+        revenue = income_table["items_by_key"].pop("revenue")
+        revenue["display_name"] = "매출"
+        revenue["aliases"] = ["매출"]
+        income_table["items_by_key"]["item_revenue_plain"] = revenue
+        income_table["item_order"] = [
+            "item_revenue_plain" if key == "revenue" else key
+            for key in income_table["item_order"]
+        ]
+
+        result = calculate_financial_index(payload, ["Revenue", "Revenue Growth"])
+
+        revenue_metric = result["metrics_by_key"]["revenue"]
+        self.assertEqual(
+            revenue_metric["values_by_period"]["current_fiscal_year"]["value"],
+            1000,
+        )
+        self.assertEqual(revenue_metric["source_labels_observed"], ["매출"])
+        growth = result["metrics_by_key"]["revenue_growth"]["comparisons"]
+        self.assertEqual(growth, {})
 
     def test_handoff_without_same_period_does_not_create_invalid_pair(self) -> None:
         result = calculate_financial_index(_canonical_payload(period_count=2), METRIC_ORDER, source_file="handoff")

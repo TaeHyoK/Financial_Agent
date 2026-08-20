@@ -59,6 +59,11 @@ CONDITIONS: tuple[AblationCondition, ...] = (
         "Contribution of cross-domain secondary context.",
     ),
     AblationCondition(
+        "no_sy_primary_only",
+        ("--no-sy", "--primary-data-only"),
+        "Contribution of secondary context when SY is excluded.",
+    ),
+    AblationCondition(
         "no_competitor",
         ("--no-competitor",),
         "Contribution of the selected-peer path.",
@@ -90,7 +95,7 @@ CONDITIONS: tuple[AblationCondition, ...] = (
     ),
 )
 CONDITION_BY_NAME = {condition.name: condition for condition in CONDITIONS}
-FULL_PIPELINE_CONDITIONS = {"full", "no_sy", "primary_only"}
+FULL_PIPELINE_CONDITIONS = {"full", "no_sy", "primary_only", "no_sy_primary_only"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -101,10 +106,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--selected-date", required=True, help="YYYYMMDD, before market open.")
     parser.add_argument("--news-window", default="1m", choices=["2w", "1m", "3m"])
     parser.add_argument(
+        "--target-news-query",
+        default="",
+        help=(
+            "Optional Google News query override for the target only; useful for "
+            "listed companies with multiple common spellings."
+        ),
+    )
+    parser.add_argument(
+        "--news-event-top-k",
         "--news-total-max-results",
+        dest="news_total_max_results",
         type=_positive_int,
         default=None,
-        help="Maximum deduplicated News articles per company across the selected window.",
+        help=(
+            "Maximum same-day-deduplicated News events retained after article "
+            "reranking. --news-total-max-results is a compatibility alias."
+        ),
     )
     parser.add_argument(
         "--decision-horizon-profile",
@@ -122,7 +140,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="FULL_PIPELINE_MANIFEST",
         help=(
             "Reuse the successful Full run's fixed DART, market, and News collection/summary snapshot "
-            "for full, no_sy, and primary_only instead of collecting providers again."
+            "for full-pipeline conditions instead of collecting providers again."
         ),
     )
     parser.add_argument(
@@ -191,6 +209,8 @@ def run_ablation_suite(args: argparse.Namespace) -> dict[str, Any]:
             else ""
         )
         request["replicates"] = args.replicates
+        request["target_news_query"] = args.target_news_query
+        request["news_event_top_k"] = args.news_total_max_results
         request["news_total_max_results"] = args.news_total_max_results
         for old_record in manifest.get("runs") or []:
             if not isinstance(old_record, dict) or old_record.get("execution_mode"):
@@ -211,6 +231,8 @@ def run_ablation_suite(args: argparse.Namespace) -> dict[str, Any]:
                 "company_name": args.company_name,
                 "selected_date": args.selected_date,
                 "news_window": args.news_window,
+                "target_news_query": args.target_news_query,
+                "news_event_top_k": args.news_total_max_results,
                 "news_total_max_results": args.news_total_max_results,
                 "decision_horizon_profile": args.decision_horizon_profile,
                 "llm_model": args.llm_model,
@@ -242,6 +264,14 @@ def run_ablation_suite(args: argparse.Namespace) -> dict[str, Any]:
             company_name=args.company_name,
             selected_date=args.selected_date,
             news_window=args.news_window,
+            target_news_query=args.target_news_query,
+        )
+        if args.reuse_collected_from
+        else None
+    )
+    reuse_peer_resolution = (
+        _peer_resolution_path_from_manifest(
+            Path(args.reuse_collected_from).expanduser().resolve()
         )
         if args.reuse_collected_from
         else None
@@ -270,27 +300,47 @@ def run_ablation_suite(args: argparse.Namespace) -> dict[str, Any]:
                 print(f"[ablation] SKIP {run_name} status={existing['status']}", flush=True)
                 continue
             previous_attempt = int(existing.get("attempt", 1)) if existing else 0
-            rerun_incomplete = bool(
-                args.resume
-                and existing
-                and existing.get("status") not in {"success", "dry_run"}
+            interrupted_context = _interrupted_run_context(
+                existing,
+                resume=bool(args.resume),
+                force_condition=force_condition,
             )
-            attempt = (
-                previous_attempt + 1
-                if existing and (force_condition or rerun_incomplete)
-                else max(previous_attempt, 1)
-            )
-            condition_root = (
-                replicate_root if attempt == 1 else replicate_root / f"attempt_{attempt:02d}"
-            )
-            execution_id = f"{suite_id}__{run_name}"
-            if attempt > 1:
-                execution_id += f"__attempt{attempt:02d}"
+            if interrupted_context is not None:
+                attempt, condition_root, execution_id = interrupted_context
+            else:
+                rerun_incomplete = bool(
+                    args.resume
+                    and existing
+                    and existing.get("status") not in {"success", "dry_run"}
+                )
+                attempt = (
+                    previous_attempt + 1
+                    if existing and (force_condition or rerun_incomplete)
+                    else max(previous_attempt, 1)
+                )
+                condition_root = (
+                    replicate_root
+                    if attempt == 1
+                    else replicate_root / f"attempt_{attempt:02d}"
+                )
+                execution_id = f"{suite_id}__{run_name}"
+                if attempt > 1:
+                    execution_id += f"__attempt{attempt:02d}"
             log_dir = suite_root / "logs"
             log_dir.mkdir(parents=True, exist_ok=True)
             log_stem = run_name if attempt == 1 else f"{run_name}__attempt{attempt:02d}"
             stdout_path = log_dir / f"{log_stem}.stdout.log"
             stderr_path = log_dir / f"{log_stem}.stderr.log"
+            interrupted_peer_resolution: Path | None = None
+            if interrupted_context is not None:
+                interrupted_manifest = locate_pipeline_manifest(condition_root, execution_id)
+                if interrupted_manifest is not None:
+                    try:
+                        interrupted_peer_resolution = _peer_resolution_path_from_manifest(
+                            interrupted_manifest
+                        )
+                    except (OSError, ValueError):
+                        interrupted_peer_resolution = None
             use_frozen_upstream = bool(
                 args.freeze_upstream
                 and not args.dry_run
@@ -317,6 +367,7 @@ def run_ablation_suite(args: argparse.Namespace) -> dict[str, Any]:
                 "condition_root": str(condition_root),
                 "stdout_log": str(stdout_path),
                 "stderr_log": str(stderr_path),
+                "resumed_in_place": interrupted_context is not None,
             })
             if existing is None:
                 manifest["runs"].append(record)
@@ -353,6 +404,11 @@ def run_ablation_suite(args: argparse.Namespace) -> dict[str, Any]:
                     execution_id=execution_id,
                     reuse_domain_data_from=(
                         reuse_snapshot_root
+                        if condition.name in FULL_PIPELINE_CONDITIONS
+                        else None
+                    ),
+                    peer_resolution_from=(
+                        (reuse_peer_resolution or interrupted_peer_resolution)
                         if condition.name in FULL_PIPELINE_CONDITIONS
                         else None
                     ),
@@ -431,6 +487,7 @@ def build_condition_command(
     condition_root: Path,
     execution_id: str,
     reuse_domain_data_from: Path | None = None,
+    peer_resolution_from: Path | None = None,
 ) -> list[str]:
     command = [
         sys.executable,
@@ -465,10 +522,19 @@ def build_condition_command(
     ]
     if args.peer_stock_code and condition.name != "no_competitor":
         command.extend(["--peer-stock-code", args.peer_stock_code])
+    elif peer_resolution_from is not None and condition.name != "no_competitor":
+        command.extend(
+            [
+                "--peer-resolution-from",
+                str(Path(peer_resolution_from).expanduser().resolve()),
+            ]
+        )
     if args.news_total_max_results is not None:
         command.extend(
-            ["--news-total-max-results", str(args.news_total_max_results)]
+            ["--news-event-top-k", str(args.news_total_max_results)]
         )
+    if args.target_news_query:
+        command.extend(["--target-news-query", args.target_news_query])
     if reuse_domain_data_from is not None:
         command.extend(
             [
@@ -490,6 +556,7 @@ def _snapshot_root_from_full_manifest(
     company_name: str,
     selected_date: str,
     news_window: str,
+    target_news_query: str = "",
 ) -> Path:
     source = _load_json(manifest_path)
     if source.get("status") != "success":
@@ -502,6 +569,8 @@ def _snapshot_root_from_full_manifest(
         raise ValueError("Collected snapshot selected date does not match the requested date.")
     if str(request.get("news_window") or "") != news_window:
         raise ValueError("Collected snapshot news window does not match the requested window.")
+    if str(request.get("target_news_query") or "") != str(target_news_query or ""):
+        raise ValueError("Collected snapshot target News query does not match the requested query.")
     outputs = source.get("outputs") if isinstance(source.get("outputs"), dict) else {}
     strategy_report = Path(str(outputs.get("strategy_report") or "")).expanduser()
     if not strategy_report.is_file():
@@ -510,6 +579,18 @@ def _snapshot_root_from_full_manifest(
     if not root.is_dir():
         raise ValueError(f"Collected snapshot output root does not exist: {root}")
     return root
+
+
+def _peer_resolution_path_from_manifest(manifest_path: Path) -> Path:
+    source = _load_json(Path(manifest_path).expanduser().resolve())
+    outputs = source.get("outputs") if isinstance(source.get("outputs"), dict) else {}
+    path = Path(str(outputs.get("peer_resolution") or "")).expanduser().resolve()
+    if not path.is_file():
+        raise ValueError(f"Collected snapshot has no peer resolution artifact: {path}")
+    payload = _load_json(path)
+    if payload.get("status") != "selected":
+        raise ValueError(f"Collected snapshot peer resolution did not succeed: {path}")
+    return path
 
 
 def run_frozen_final_stage(
@@ -859,6 +940,38 @@ def _find_run_record(
         ):
             return item
     return None
+
+
+def _interrupted_run_context(
+    existing: dict[str, Any] | None,
+    *,
+    resume: bool,
+    force_condition: bool,
+) -> tuple[int, Path, str] | None:
+    """Return the original run identity when resuming an interrupted process.
+
+    Reusing both the condition root and execution ID lets the underlying pipeline
+    reuse completed, fingerprint-matched stages instead of creating a new attempt
+    and recollecting data.
+    """
+    if (
+        not resume
+        or force_condition
+        or not existing
+        or existing.get("status") != "running"
+    ):
+        return None
+    condition_root = str(existing.get("condition_root") or "").strip()
+    execution_id = str(existing.get("execution_id") or "").strip()
+    if not condition_root or not execution_id:
+        return None
+    try:
+        attempt = int(existing.get("attempt", 1))
+    except (TypeError, ValueError):
+        return None
+    if attempt < 1:
+        return None
+    return attempt, Path(condition_root).expanduser().resolve(), execution_id
 
 
 def locate_pipeline_manifest(condition_root: Path, execution_id: str) -> Path | None:

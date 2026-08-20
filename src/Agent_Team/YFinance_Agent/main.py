@@ -19,10 +19,6 @@ from reporting import (
 YFINANCE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = YFINANCE_DIR.parents[2]
 DEFAULT_INPUT_PATH = PROJECT_ROOT / "configs" / "company_input.json"
-if not DEFAULT_INPUT_PATH.exists():
-    DEFAULT_INPUT_PATH = PROJECT_ROOT / "test_input.json"
-if not DEFAULT_INPUT_PATH.exists():
-    DEFAULT_INPUT_PATH = Path("/home/agent2/SY/test_input.json")
 
 
 def main() -> None:

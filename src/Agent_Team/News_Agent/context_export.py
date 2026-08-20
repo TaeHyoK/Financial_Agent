@@ -387,8 +387,8 @@ def _load_env_file(path: Path) -> None:
 def _load_llm_environment(api_key_env: str, env_path: str | Path | None) -> str:
     if env_path:
         _load_env_file(Path(env_path))
-    project_root = Path(__file__).resolve().parents[2]
-    _load_env_file(project_root.parent / ".env")
+    project_root = Path(__file__).resolve().parents[3]
+    _load_env_file(project_root / "configs" / ".env")
     _load_env_file(project_root / ".env")
 
     api_key = os.getenv(api_key_env, "").strip()
@@ -741,7 +741,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Call LLM once per period and merge results into one llm_period_summaries.json",
     )
     parser.add_argument("--api-key-env", default="OPENAI_API_KEY", help="Environment variable containing OpenAI API key")
-    parser.add_argument("--env-path", default=None, help="Optional .env path. Defaults also check /home/agent2/SY/.env and News/.env")
+    parser.add_argument(
+        "--env-path",
+        default=None,
+        help="Optional .env path. Defaults to configs/.env, then the repository-root .env.",
+    )
     return parser
 
 

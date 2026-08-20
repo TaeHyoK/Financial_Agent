@@ -22,6 +22,7 @@ pymupdf>=1.27.1
 altair>=6.0.0
 vega-datasets>=0.9.0
 openai>=1.0
+tiktoken>=0.7
 tqdm>=4.66
 langgraph>=0.2
 pykrx>=1.0.48

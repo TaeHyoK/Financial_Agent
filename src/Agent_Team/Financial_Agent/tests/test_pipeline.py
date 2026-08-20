@@ -694,6 +694,28 @@ class HandoffBuilderTests(unittest.TestCase):
         self.assertEqual(table["items_by_key"]["revenue"]["previous_numeric"], 400)
         self.assertEqual(table["item_order"], ["revenue"])
 
+    def test_plain_revenue_label_uses_canonical_revenue_key(self) -> None:
+        current = _empty_section_map()
+        secondary = _empty_section_map()
+        current["4-2"] = {
+            "section_title": "포괄손익계산서",
+            "tables": [{"table_title": "포괄손익계산서", "matrix": [["과목", "제 15 기 반기"], ["매출", "300"]]}],
+        }
+        secondary["4-2"] = {
+            "section_title": "포괄손익계산서",
+            "tables": [{"table_title": "포괄손익계산서", "matrix": [["과목", "제 14 기"], ["매출", "240"]]}],
+        }
+
+        handoff = build_2y_handoff(
+            {"primary": current, "secondary": secondary},
+            _secondary_annual_target(),
+        )
+
+        revenue = handoff["4-2"]["tables"][0]["items_by_key"]["revenue"]
+        self.assertEqual(revenue["display_name"], "매출")
+        self.assertEqual(revenue["current_numeric"], 300)
+        self.assertEqual(revenue["previous_numeric"], 240)
+
     def test_financial_statement_numeric_values_are_normalized_to_krw(self) -> None:
         current = _empty_section_map()
         secondary = _empty_section_map()

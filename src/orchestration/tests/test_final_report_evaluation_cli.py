@@ -4,6 +4,7 @@ import json
 
 from orchestration.final_report_evaluation_cli import (
     PairSpec,
+    _load_candidate_snapshot,
     build_parser,
     evaluate_pair,
     run_evaluation,
@@ -14,6 +15,22 @@ from orchestration.final_report_evaluation_metrics import AXES
 def _write_json(path, payload) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+
+def test_load_candidate_snapshot_returns_exact_archived_pair(tmp_path) -> None:
+    pair_id = "suite__case__no_peer__r01"
+    pair_dir = tmp_path / "prior" / "comparisons" / pair_id
+    full = {"title": "Full", "sections": [{"text": "원본 스냅샷"}]}
+    ablation = {"title": "Ablation", "sections": [{"text": "비교 스냅샷"}]}
+    _write_json(pair_dir / "candidate_full_visible.json", full)
+    _write_json(pair_dir / "candidate_ablation_visible.json", ablation)
+
+    snapshot = _load_candidate_snapshot(pair_id, [tmp_path / "prior"])
+
+    assert snapshot is not None
+    assert snapshot["full"] == full
+    assert snapshot["ablation"] == ablation
+    assert snapshot["provenance"]["mode"] == "frozen_judge_visible_snapshot"
 
 
 def test_dry_run_discovers_three_default_ablation_pairs(tmp_path, monkeypatch) -> None:
@@ -140,6 +157,8 @@ def test_pair_evaluation_crosses_order_and_reconciles_full_win(tmp_path) -> None
 
     def fake_judge(request_payload, **_kwargs):
         user_payload = json.loads(request_payload["messages"][1]["content"])
+        assert "candidate_accessible_evidence" not in user_payload
+        assert "candidate_evidence_access" not in user_payload["evaluation_contract"]
         candidate_a = json.dumps(user_payload["candidate_A"], ensure_ascii=False)
         winner = "A" if "정확한 공통 근거" in candidate_a else "B"
         return {
@@ -177,8 +196,11 @@ def test_pair_evaluation_crosses_order_and_reconciles_full_win(tmp_path) -> None
         dry_run=False,
         force=False,
         judge_call=fake_judge,
+        evidence_mode="union_blind",
     )
 
     assert result["status"] == "success"
+    assert result["evidence_mode"] == "union_blind"
+    assert result["evidence_scope"]["candidate_access_metadata_sent"] is False
     assert result["order_consistency_rate"] == 1.0
     assert all(item["outcome"] == "full_win" for item in result["axes"].values())

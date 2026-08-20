@@ -27,9 +27,9 @@ Deterministic chart generator for Writer Agent report assembly.
 Preferred run-key mode:
 
 ```bash
-python "/home/agent2/Financial_Agent_Final/src/Agent_Team/Visualization Agent/run_visualization_agent.py" \
+python "src/Agent_Team/Visualization Agent/run_visualization_agent.py" \
   --run-key "{run_key}" \
-  --output-root "/home/agent2/Financial_Agent_Final/Output_total"
+  --output-root "Output_total"
 ```
 
 If `--run-key` is omitted, the agent discovers the newest Strategy run under `Output_total/Strategy`.
@@ -47,15 +47,15 @@ Output_total/Visualization/{run_key}/
 Use explicit paths only when overriding the standard run-key layout:
 
 ```bash
-python "/home/agent2/Financial_Agent_Final/src/Agent_Team/Visualization Agent/run_visualization_agent.py" \
-  --market-csv "/home/agent2/Financial_Agent_Final/Output_total/Y_Finance/market_full_dataset.csv" \
-  --dart-main "/home/agent2/Financial_Agent_Final/Output_total/Financial/{run_key}/dart_main.json" \
-  --dart-lightweight "/home/agent2/Financial_Agent_Final/Output_total/Financial/{run_key}/dart_lightweight.json" \
-  --strategy-json "/home/agent2/Financial_Agent_Final/Output_total/Strategy/{run_key}/strategy_report.json" \
-  --strategy-md "/home/agent2/Financial_Agent_Final/Output_total/Strategy/{run_key}/strategy_report.md" \
-  --decision-basis-card "/home/agent2/Financial_Agent_Final/Output_total/Strategy/{run_key}/decision_basis_card.json" \
-  --output-dir "/home/agent2/Financial_Agent_Final/Output_total/Visualization/{run_key}" \
-  --output-root "/home/agent2/Financial_Agent_Final/Output_total" \
+python "src/Agent_Team/Visualization Agent/run_visualization_agent.py" \
+  --market-csv "Output_total/Y_Finance/market_full_dataset.csv" \
+  --dart-main "Output_total/Financial/{run_key}/dart_main.json" \
+  --dart-lightweight "Output_total/Financial/{run_key}/dart_lightweight.json" \
+  --strategy-json "Output_total/Strategy/{run_key}/strategy_report.json" \
+  --strategy-md "Output_total/Strategy/{run_key}/strategy_report.md" \
+  --decision-basis-card "Output_total/Strategy/{run_key}/decision_basis_card.json" \
+  --output-dir "Output_total/Visualization/{run_key}" \
+  --output-root "Output_total" \
   --company-name "{company_name}" \
   --run-key "{run_key}"
 ```

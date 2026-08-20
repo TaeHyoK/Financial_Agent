@@ -7,14 +7,14 @@
 ## Setup
 
 ```bash
-cd /home/agent2/Financial_Agent_Final/src/Agent_Team/YFinance_Agent
+cd /path/to/Financial_Agent
 python -m pip install -r requirements.txt
 ```
 
 ## Run All
 
 ```bash
-cd /home/agent2/Financial_Agent_Final
+cd /path/to/Financial_Agent
 python src/Agent_Team/YFinance_Agent/run_pipeline.py
 ```
 
@@ -24,7 +24,7 @@ python src/Agent_Team/YFinance_Agent/run_pipeline.py
 - `report.py`: YFinance 시장 데이터를 기준으로 News/DART를 보조 반영한 LLM 보고서 생성
 - `SY_Agent/sy_agent.py`: YFinance 보고서 주장 검증
 
-기본 env 파일은 `/home/agent2/Financial_Agent_Final/configs/.env`입니다. 기본 산출물 위치는 기업별 폴더인 `/home/agent2/Financial_Agent_Final/Output_total/Y_Finance/SK바이오팜_20251031`입니다.
+기본 env 파일은 `configs/.env`입니다. 기본 산출물 위치는 기업별 폴더인 `Output_total/Y_Finance/SK바이오팜_20251031`입니다.
 
 설치된 패키지 엔트리포인트를 사용할 수 있는 환경이면 같은 실행을 아래처럼 호출할 수 있습니다.
 
@@ -36,11 +36,11 @@ yfinance-pipeline
 
 ```bash
 python src/Agent_Team/YFinance_Agent/run_pipeline.py \
-  --input /home/agent2/Financial_Agent_Final/configs/company_input.json \
-  --output-dir /home/agent2/Financial_Agent_Final/Output_total/Y_Finance/SK바이오팜_20251031 \
-  --env-file /home/agent2/Financial_Agent_Final/configs/.env \
-  --dart-json /home/agent2/Financial_Agent_Final/Output_total/Financial/SK바이오팜_20251031/dart_lightweight.json \
-  --news-json /home/agent2/Financial_Agent_Final_hyo/Output_total/News/SK바이오팜_20251031/output/sy_agent/news_agent_verified_handoff.json
+  --input configs/company_input.json \
+  --output-dir Output_total/Y_Finance/SK바이오팜_20251031 \
+  --env-file configs/.env \
+  --dart-json Output_total/Financial/SK바이오팜_20251031/dart_lightweight.json \
+  --news-json Output_total/News/SK바이오팜_20251031/output/sy_agent/news_agent_verified_handoff.json
 ```
 
 이미 시장 데이터가 있으면 `--skip-collect`, 이미 보고서가 있으면 `--skip-report`, SY 검증을 생략하려면 `--skip-sy`를 사용할 수 있습니다.
@@ -52,16 +52,16 @@ SY 검증은 날짜·수치·source path를 코드로 검사한 뒤 정성 claim
 필요할 때만 개별 단계를 직접 호출할 수 있습니다.
 
 ```bash
-cd /home/agent2/Financial_Agent_Final/src/Agent_Team/YFinance_Agent
-python main.py --input /home/agent2/Financial_Agent_Final/configs/company_input.json
+cd /path/to/Financial_Agent
+python src/Agent_Team/YFinance_Agent/main.py --input configs/company_input.json
 ```
 
 옵션으로 기간과 티커를 덮어쓸 수 있습니다.
 
 ```bash
-python main.py \
-  --input /home/agent2/Financial_Agent_Final/configs/company_input.json \
-  --output-dir /home/agent2/Financial_Agent_Final/Output_total/Y_Finance \
+python src/Agent_Team/YFinance_Agent/main.py \
+  --input configs/company_input.json \
+  --output-dir Output_total/Y_Finance \
   --start-date 20241101 \
   --end-date 20251031 \
   --selected-date 20251031 \
@@ -72,25 +72,25 @@ python main.py \
 이미 생성된 YFinance, News, DART JSON만 사용해서 LLM 기반 애널리스트 보고서를 만듭니다. 이 명령은 yfinance에서 시장 데이터를 새로 다운로드하지 않습니다.
 
 ```bash
-cd /home/agent2/Financial_Agent_Final/src/Agent_Team/YFinance_Agent
-python report.py
+cd /path/to/Financial_Agent
+python src/Agent_Team/YFinance_Agent/report.py
 ```
 
-기본적으로 `/home/agent2/Financial_Agent_Final/configs/.env`를 읽어 `OPENAI_API_KEY`를 사용합니다. 다른 env 파일을 쓰려면 `--env-file`로 지정합니다.
+기본적으로 `configs/.env`를 읽어 `OPENAI_API_KEY`를 사용합니다. 다른 env 파일을 쓰려면 `--env-file`로 지정합니다.
 
 모델은 `--model` 또는 `OPENAI_MODEL`로 지정할 수 있으며, 기본값은 `gpt-5.4-mini`입니다.
 
 ```bash
-python report.py --model gpt-5.4-mini
+python src/Agent_Team/YFinance_Agent/report.py --model gpt-5.4-mini
 ```
 
 보고서는 YFinance `market_full_dataset.json`을 primary evidence로 사용하고, 검증된 News claim/원 이벤트와 DART lightweight 지표는 secondary context로 사용합니다.
-`/home/agent2/Financial_Agent_Final/Output_total/Y_Finance/yfinance_analyst_report.json`은 `Y-Finance Agent` 스키마로 생성되며, `score` 필드는 포함하지 않습니다.
+`Output_total/Y_Finance/yfinance_analyst_report.json`은 `Y-Finance Agent` 스키마로 생성되며, `score` 필드는 포함하지 않습니다.
 `secondary_context_assessment`는 `corroborates`, `contradicts`, `neutral`, `insufficient`만 허용하며 primary 시장 claim의 근거 상태를 변경하지 않습니다.
 
 ## Outputs
 
-`run_pipeline.py` 기준 기본 산출물은 모두 `/home/agent2/Financial_Agent_Final/Output_total/Y_Finance/<company>_<YYYYMMDD>` 아래에 저장합니다.
+`run_pipeline.py` 기준 기본 산출물은 모두 `Output_total/Y_Finance/<company>_<YYYYMMDD>` 아래에 저장합니다.
 
 - `market_full_dataset.csv`
 - `market_full_dataset.json`

@@ -5,7 +5,7 @@
 ## 위치
 
 ```text
-/home/agent2/Financial_Agent_Final/src/Agent_Team/News_Agent
+src/Agent_Team/News_Agent
 ```
 
 ## 전체 실행
@@ -17,7 +17,7 @@ collect -> export -> llm -> analysis -> sy
 ```
 
 ```bash
-cd /home/agent2/Financial_Agent_Final
+cd /path/to/Financial_Agent
 
 PYTHONPATH=src python -m Agent_Team.News_Agent.cli \
   --collect-date 2025-10-31 \
@@ -54,13 +54,13 @@ PYTHONPATH=src python -m Agent_Team.News_Agent.cli --phase sy ...
 통합 후 새 output은 반드시 아래에 생성합니다.
 
 ```text
-/home/agent2/Financial_Agent_Final/Output_total/News/{run_key}/output
+Output_total/News/{run_key}/output
 ```
 
 예시:
 
 ```text
-/home/agent2/Financial_Agent_Final/Output_total/News/SK바이오팜_20251031/output
+Output_total/News/SK바이오팜_20251031/output
 ```
 
 News Agent output:
@@ -101,10 +101,10 @@ PYTHONPATH=src python -m Agent_Team.News_Agent.cli \
   --company-name SK바이오팜 \
   --ticker 326030.KS \
   --corp-code 00878696 \
-  --context-export-dir /home/agent2/Financial_Agent_Final/Output_total/News/SK바이오팜_20251031/context_exports \
-  --dart-lightweight /home/agent2/Financial_Agent_Final/Output_total/Financial/SK바이오팜_20251031/dart_lightweight.json \
-  --market-summary /home/agent2/Financial_Agent_Final/Output_total/Y_Finance/SK바이오팜_20251031/market_summary.json \
-  --analysis-output-dir /home/agent2/Financial_Agent_Final/Output_total/News/SK바이오팜_20251031/output
+  --context-export-dir Output_total/News/SK바이오팜_20251031/context_exports \
+  --dart-lightweight Output_total/Financial/SK바이오팜_20251031/dart_lightweight.json \
+  --market-summary Output_total/Y_Finance/SK바이오팜_20251031/market_summary.json \
+  --analysis-output-dir Output_total/News/SK바이오팜_20251031/output
 ```
 
 ## 최종 산출물 계약

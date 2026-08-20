@@ -14,15 +14,21 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
-from matplotlib.ticker import FuncFormatter
-import numpy as np
+from matplotlib.patches import FancyBboxPatch
 import pandas as pd
 
 
 CURRENT_COLOR = "#2563EB"
-PREVIOUS_COLOR = "#D1D5DB"
-TEXT_COLOR = "#111827"
-GRID_COLOR = "#E5E7EB"
+PREVIOUS_COLOR = "#CBD5E1"
+TEXT_COLOR = "#0F172A"
+MUTED_TEXT_COLOR = "#64748B"
+BACKGROUND_COLOR = "#F5F7FB"
+CARD_BORDER_COLOR = "#E2E8F0"
+TRACK_COLOR = "#EEF2F7"
+POSITIVE_COLOR = "#0F766E"
+POSITIVE_BACKGROUND = "#CCFBF1"
+NEGATIVE_COLOR = "#B42318"
+NEGATIVE_BACKGROUND = "#FEE4E2"
 DEFAULT_OUTPUT_NAME = "same_period_financial_performance.png"
 METRICS = (
     ("revenue", "매출"),
@@ -177,145 +183,245 @@ def render_same_period_chart(
     company_name: str,
     output_path: Path,
 ) -> None:
-    """Render revenue separately from profit/cash flow so scale remains readable."""
+    """Render a compact editorial dashboard with one independent card per metric."""
 
     _configure_korean_font()
     data = comparison["data"].set_index("metric")
     current_label = comparison["current_label"]
     previous_label = comparison["previous_label"]
 
-    fig, axes = plt.subplots(
-        nrows=2,
-        ncols=1,
-        figsize=(13, 8.4),
-        gridspec_kw={"height_ratios": [1.0, 1.45]},
-    )
-    fig.patch.set_facecolor("white")
-    fig.suptitle(
+    fig = plt.figure(figsize=(13, 7.4), facecolor=BACKGROUND_COLOR)
+    fig.text(
+        0.055,
+        0.925,
         f"{company_name} 동일기간 재무성과 비교",
-        x=0.075,
-        y=0.98,
         ha="left",
-        fontsize=17,
+        va="center",
+        fontsize=21,
         fontweight="bold",
         color=TEXT_COLOR,
     )
-
-    _draw_grouped_bars(
-        axes[0],
-        data.loc[["revenue"]],
-        current_label=current_label,
-        previous_label=previous_label,
-    )
-    axes[0].set_title("매출", loc="left", fontsize=12, fontweight="bold", color=TEXT_COLOR)
-    axes[0].set_xticklabels([""])
-
-    _draw_grouped_bars(
-        axes[1],
-        data.loc[["operating_profit", "net_income", "operating_cash_flow"]],
-        current_label=current_label,
-        previous_label=previous_label,
-    )
-    axes[1].set_title("이익 및 현금흐름", loc="left", fontsize=12, fontweight="bold", color=TEXT_COLOR)
-    axes[1].legend(
-        loc="upper left",
-        bbox_to_anchor=(0.0, -0.14),
-        ncol=2,
-        frameon=False,
+    fig.text(
+        0.055,
+        0.875,
+        f"{previous_label} 대비 {current_label}  ·  단위: 억원",
+        ha="left",
+        va="center",
         fontsize=10.5,
+        color=MUTED_TEXT_COLOR,
     )
+    fig.text(0.745, 0.875, "●", color=PREVIOUS_COLOR, fontsize=10.5, va="center")
+    fig.text(0.762, 0.875, previous_label, color=MUTED_TEXT_COLOR, fontsize=9.5, va="center")
+    fig.text(0.865, 0.875, "●", color=CURRENT_COLOR, fontsize=10.5, va="center")
+    fig.text(0.882, 0.875, current_label, color=MUTED_TEXT_COLOR, fontsize=9.5, va="center")
 
-    fig.tight_layout(rect=(0.04, 0.035, 1, 0.95), h_pad=2.5)
+    grid = fig.add_gridspec(
+        nrows=2,
+        ncols=2,
+        left=0.055,
+        right=0.965,
+        bottom=0.09,
+        top=0.81,
+        wspace=0.13,
+        hspace=0.18,
+    )
+    for index, (metric, _label) in enumerate(METRICS):
+        axis = fig.add_subplot(grid[index // 2, index % 2])
+        _draw_metric_card(
+            axis,
+            data.loc[metric],
+            current_label=current_label,
+            previous_label=previous_label,
+        )
+
+    scope_label = {
+        "separate": "별도재무제표",
+        "consolidated": "연결재무제표",
+    }.get(str(comparison.get("statement_scope") or "").lower(), "재무제표")
+    selected_date = str(comparison.get("selected_date") or "").strip()
+    footer = f"기준일 {selected_date}  ·  {scope_label}  ·  각 지표는 독립 척도로 표시"
+    fig.text(0.055, 0.035, footer, ha="left", va="center", fontsize=8.5, color="#94A3B8")
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=220, bbox_inches="tight", facecolor="white")
+    fig.savefig(output_path, dpi=220, facecolor=BACKGROUND_COLOR)
     plt.close(fig)
 
 
-def _draw_grouped_bars(
+def _draw_metric_card(
     ax: plt.Axes,
-    rows: pd.DataFrame,
+    row: pd.Series,
     *,
     current_label: str,
     previous_label: str,
 ) -> None:
-    x = np.arange(len(rows), dtype=float)
-    width = 0.30
-    previous = rows["previous_value_100m_krw"].astype(float).to_numpy()
-    current = rows["current_value_100m_krw"].astype(float).to_numpy()
-    previous_bars = ax.bar(
-        x - width / 2,
-        previous,
-        width,
-        color=PREVIOUS_COLOR,
-        label=previous_label,
-        zorder=2,
-    )
-    current_bars = ax.bar(
-        x + width / 2,
-        current,
-        width,
-        color=CURRENT_COLOR,
-        label=current_label,
-        zorder=3,
-    )
+    """Draw one rounded metric card using an independent comparison scale."""
 
-    values = np.concatenate([previous, current])
-    min_value = min(0.0, float(np.nanmin(values)))
-    max_value = max(0.0, float(np.nanmax(values)))
-    span = max(max_value - min_value, 1.0)
-    ax.set_ylim(min_value - span * 0.08, max_value + span * 0.24)
-    ax.axhline(0.0, color="#9CA3AF", linewidth=0.8)
-    ax.set_xticks(x)
-    ax.set_xticklabels(rows["label"].tolist(), fontsize=11)
-    ax.set_ylabel("억원", fontsize=10.5)
-    ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _position: f"{value:,.0f}"))
-    ax.grid(axis="y", color=GRID_COLOR, linewidth=0.8, zorder=0)
-    ax.grid(axis="x", visible=False)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_color("#D1D5DB")
-    ax.spines["bottom"].set_color("#D1D5DB")
-    ax.tick_params(colors="#4B5563")
-
-    label_offset = span * 0.022
-    _label_values(ax, previous_bars, previous, label_offset=label_offset, color="#4B5563")
-    _label_values(ax, current_bars, current, label_offset=label_offset, color=CURRENT_COLOR)
-    for bar, growth in zip(current_bars, rows["yoy_change_pct"].tolist()):
-        if growth is None or pd.isna(growth):
-            continue
-        value = float(bar.get_height())
-        offset = span * 0.09 if value >= 0 else -span * 0.09
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            value + offset,
-            f"YoY {float(growth):+.1f}%",
-            ha="center",
-            va="bottom" if value >= 0 else "top",
-            fontsize=9.2,
-            fontweight="bold",
-            color=CURRENT_COLOR,
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    ax.axis("off")
+    ax.add_patch(
+        FancyBboxPatch(
+            (0.0, 0.0),
+            1.0,
+            1.0,
+            transform=ax.transAxes,
+            boxstyle="round,pad=0.012,rounding_size=0.035",
+            facecolor="white",
+            edgecolor=CARD_BORDER_COLOR,
+            linewidth=1.0,
+            clip_on=False,
+            zorder=-10,
         )
+    )
+
+    label = str(row["label"])
+    previous = float(row["previous_value_100m_krw"])
+    current = float(row["current_value_100m_krw"])
+    growth_value = row["yoy_change_pct"]
+    growth = None if growth_value is None or pd.isna(growth_value) else float(growth_value)
+
+    if growth is None:
+        badge_text = "YoY N/A"
+        badge_color = MUTED_TEXT_COLOR
+        badge_background = TRACK_COLOR
+    elif growth >= 0:
+        badge_text = f"YoY  +{growth:.1f}%"
+        badge_color = POSITIVE_COLOR
+        badge_background = POSITIVE_BACKGROUND
+    else:
+        badge_text = f"YoY  {growth:.1f}%"
+        badge_color = NEGATIVE_COLOR
+        badge_background = NEGATIVE_BACKGROUND
+
+    ax.text(
+        0.06,
+        0.84,
+        label,
+        transform=ax.transAxes,
+        ha="left",
+        va="center",
+        fontsize=13,
+        fontweight="bold",
+        color=TEXT_COLOR,
+    )
+    ax.text(
+        0.94,
+        0.84,
+        badge_text,
+        transform=ax.transAxes,
+        ha="right",
+        va="center",
+        fontsize=9.2,
+        fontweight="bold",
+        color=badge_color,
+        bbox={
+            "boxstyle": "round,pad=0.42,rounding_size=1.0",
+            "facecolor": badge_background,
+            "edgecolor": "none",
+        },
+    )
+
+    ax.text(0.06, 0.65, current_label, transform=ax.transAxes, fontsize=8.8, color=MUTED_TEXT_COLOR)
+    ax.text(
+        0.06,
+        0.50,
+        f"{current:,.0f}",
+        transform=ax.transAxes,
+        fontsize=23,
+        fontweight="bold",
+        color=TEXT_COLOR,
+    )
+    ax.text(0.06, 0.415, "억원", transform=ax.transAxes, fontsize=8.5, color=MUTED_TEXT_COLOR)
+
+    ax.text(
+        0.94,
+        0.65,
+        previous_label,
+        transform=ax.transAxes,
+        ha="right",
+        fontsize=8.8,
+        color=MUTED_TEXT_COLOR,
+    )
+    ax.text(
+        0.94,
+        0.51,
+        f"{previous:,.0f}",
+        transform=ax.transAxes,
+        ha="right",
+        fontsize=13,
+        fontweight="bold",
+        color="#475569",
+    )
+
+    ax.plot([0.06, 0.94], [0.35, 0.35], transform=ax.transAxes, color=TRACK_COLOR, linewidth=1.0)
+    scale = max(abs(previous), abs(current), 1.0)
+    _draw_comparison_track(
+        ax,
+        y=0.225,
+        label="전년",
+        value=previous,
+        scale=scale,
+        color=PREVIOUS_COLOR,
+    )
+    _draw_comparison_track(
+        ax,
+        y=0.105,
+        label="당기",
+        value=current,
+        scale=scale,
+        color=CURRENT_COLOR,
+    )
 
 
-def _label_values(
+def _draw_comparison_track(
     ax: plt.Axes,
-    bars: Any,
-    values: np.ndarray,
     *,
-    label_offset: float,
+    y: float,
+    label: str,
+    value: float,
+    scale: float,
     color: str,
 ) -> None:
-    for bar, value in zip(bars, values):
-        offset = label_offset if value >= 0 else -label_offset
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            value + offset,
-            f"{value:,.0f}",
-            ha="center",
-            va="bottom" if value >= 0 else "top",
-            fontsize=9.5,
-            color=color,
+    """Draw one normalized rounded comparison track inside a metric card."""
+
+    x_start = 0.18
+    track_width = 0.76
+    height = 0.055
+    ax.text(
+        0.06,
+        y + height / 2,
+        label,
+        transform=ax.transAxes,
+        ha="left",
+        va="center",
+        fontsize=8.5,
+        fontweight="bold" if label == "당기" else "normal",
+        color=TEXT_COLOR if label == "당기" else MUTED_TEXT_COLOR,
+    )
+    ax.add_patch(
+        FancyBboxPatch(
+            (x_start, y),
+            track_width,
+            height,
+            transform=ax.transAxes,
+            boxstyle="round,pad=0,rounding_size=0.026",
+            facecolor=TRACK_COLOR,
+            edgecolor="none",
         )
+    )
+    fill_width = max(track_width * min(abs(value) / scale, 1.0), 0.012)
+    fill_color = color if value >= 0 else NEGATIVE_COLOR
+    ax.add_patch(
+        FancyBboxPatch(
+            (x_start, y),
+            fill_width,
+            height,
+            transform=ax.transAxes,
+            boxstyle="round,pad=0,rounding_size=0.026",
+            facecolor=fill_color,
+            edgecolor="none",
+        )
+    )
 
 
 def _period_label(fiscal_year: int, period_type: str, basis: str) -> str:

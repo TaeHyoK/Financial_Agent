@@ -8,9 +8,9 @@
     "as_of_date": "2025-10-31"
   },
   "input_paths": {
-    "dart_main": "/home/agent2/Financial_Agent_Final/Output_total/Financial/<company>_20251031/dart_main.json",
-    "yfinance_market_summary": "/home/agent2/Financial_Agent_Final/Output_total/Y_Finance/market_summary_20251031.json",
-    "news_llm_period_summaries": "/home/agent2/Financial_Agent_Final/Output_total/News/<company>_20251031/context_exports/day/llm_period_summaries.json"
+    "dart_main": "Output_total/Financial/<company>_20251031/dart_main.json",
+    "yfinance_market_summary": "Output_total/Y_Finance/<company>_20251031/market_summary.json",
+    "news_llm_period_summaries": "Output_total/News/<company>_20251031/context_exports/day/llm_period_summaries.json"
   },
   "input_roles": {
     "dart_main": "primary_financial_anchor",
@@ -20,7 +20,7 @@
   "output_contract": {
     "format": "json",
     "mode": "financial_report_with_sy_handoff",
-    "schema_path": "/home/agent2/Financial_Agent_Final/src/Agent_Team/Financial_Agent/output_schema.json",
+    "schema_path": "src/Agent_Team/Financial_Agent/output_schema.json",
     "language": "ko",
     "investment_decision_allowed": false
   }

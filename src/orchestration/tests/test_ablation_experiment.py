@@ -195,21 +195,18 @@ def test_free_form_writer_reuses_full_strategy_and_runs_writer_only(
         "strategy_report.json": {},
         "strategy_compact_packet_v2.json": {"cards": {}},
         "strategy_packet_provenance_v2.json": {},
-        "strategy_decision_output_v2.json": {
-            "decision": {
-                "opinion": "Hold",
+        "strategy_context_package_v4.json": {},
+        "strategy_generation_context_v4.json": {},
+        "strategy_context_telemetry_v4.json": {},
+        "strategy_decision_output_v4.json": {
+            "strategy_brief": {
+                "thesis": "실적 개선과 가격 부담을 함께 고려한다.",
                 "horizon": "6-12m",
                 "evidence_sufficiency": "high",
             }
         },
-        "strategy_semantic_validation_v2.json": {
-            "status": "pass",
-            "gate_a": {"status": "pass"},
-            "gate_b": {"status": "pass"},
-        },
         "strategy_packet_telemetry_v2.json": {"strategy_context_mode": "compact_cards"},
-        "strategy_decision_profile_v2.json": {},
-        "strategy_generation_context_v2.json": {},
+        "strategy_decision_profile_v4.json": {},
     }
     for filename, payload in strategy_payloads.items():
         (strategy_dir / filename).write_text(json.dumps(payload), encoding="utf-8")
@@ -228,8 +225,8 @@ def test_free_form_writer_reuses_full_strategy_and_runs_writer_only(
                 "target": {"company_name": "SK바이오팜"},
                 "outputs": {
                     "strategy_report": str(strategy_dir / "strategy_report.json"),
-                    "strategy_decision_output_v2": str(
-                        strategy_dir / "strategy_decision_output_v2.json"
+                    "strategy_decision_output_v4": str(
+                        strategy_dir / "strategy_decision_output_v4.json"
                     ),
                     "peer_comparison": str(peer_path),
                 },
@@ -246,8 +243,8 @@ def test_free_form_writer_reuses_full_strategy_and_runs_writer_only(
 
         writer_dir = Path(output_dir)
         writer_dir.mkdir(parents=True, exist_ok=True)
-        (writer_dir / "writer_validation_report.json").write_text(
-            json.dumps({"status": "pass"}), encoding="utf-8"
+        (writer_dir / "writer_run_status.json").write_text(
+            json.dumps({"status": "success"}), encoding="utf-8"
         )
         (writer_dir / "report.html").write_text("<html></html>", encoding="utf-8")
         return 0
@@ -271,10 +268,10 @@ def test_free_form_writer_reuses_full_strategy_and_runs_writer_only(
         / "condition"
         / "Strategy"
         / run_key
-        / "strategy_decision_output_v2.json"
+        / "strategy_decision_output_v4.json"
     )
     assert copied_decision.read_bytes() == (
-        strategy_dir / "strategy_decision_output_v2.json"
+        strategy_dir / "strategy_decision_output_v4.json"
     ).read_bytes()
     final_manifest = json.loads(open(result["manifest_path"], encoding="utf-8").read())
     assert final_manifest["commands"]["strategy"] == []

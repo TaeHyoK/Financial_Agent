@@ -8,7 +8,7 @@ import os
 import re
 import shutil
 import time
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -19,6 +19,7 @@ from .io.storage import save_json
 
 
 Granularity = Literal["day", "month"]
+NEWS_AGENT_TOP_K = 10
 
 
 DESCRIPTION = {
@@ -70,11 +71,11 @@ def _compact_event(event: dict[str, Any]) -> dict[str, Any] | None:
         return None
     return {
         "event_id": str(event_id),
+        "relevance_rank": int(event.get("relevance_rank") or 0),
         "mention_count": int(event.get("mention_count") or 0),
         "title": str(representative.get("title") or ""),
         "snippet": str(representative.get("snippet") or ""),
         "source": str(representative.get("source") or ""),
-        "url": str(representative.get("url") or ""),
         "time": str(time),
         "final_score": float(scores.get("final_score") or 0.0),
         "coverage": _event_coverage(event),
@@ -168,6 +169,27 @@ def _select_periods(grouped: dict[str, list[dict[str, Any]]], period_count: int)
     if period_count > 0:
         periods = periods[:period_count]
     return periods
+
+
+def _select_summary_periods(
+    *,
+    grouped: dict[str, list[dict[str, Any]]],
+    collect_date: str,
+    granularity: Granularity,
+    period_count: int,
+) -> list[str]:
+    """Return the requested calendar-day window, including no-news dates."""
+
+    if granularity != "day" or period_count <= 0:
+        return _select_periods(grouped, period_count)
+    try:
+        end_date = date.fromisoformat(collect_date[:10])
+    except ValueError:
+        return _select_periods(grouped, period_count)
+    return [
+        (end_date - timedelta(days=offset)).isoformat()
+        for offset in range(period_count)
+    ]
 
 
 def _period_payload(period: str, events: list[dict[str, Any]]) -> dict[str, Any]:
@@ -271,6 +293,7 @@ def _build_llm_summary_request(summary_prompt_input: dict[str, Any], llm_model: 
                     {
                         "instructions": [
                             "period별로 2~4문장의 period_summary를 작성합니다.",
+                            "events가 비어 있는 period도 생략하지 말고 period_summary에 수집된 뉴스가 없다고 기록하며 issues는 빈 배열로 둡니다.",
                             "제목과 snippet이 같은 사건을 다루면 하나의 issue로 병합합니다.",
                             "issue별 mention_count는 병합된 원본 이벤트들의 mention_count 합계로 계산합니다.",
                             "각 period의 issues는 최대 5개만 남깁니다.",
@@ -428,6 +451,7 @@ def _call_llm_summary(client: Any, request_payload: dict[str, Any]) -> dict[str,
         parsed_output = json.loads(content)
     except json.JSONDecodeError:
         parsed_output = {"raw_content": content, "parse_error": "json_decode_error"}
+    _attach_source_event_ids(parsed_output, request_payload)
 
     usage = None
     if getattr(response, "usage", None) is not None:
@@ -438,6 +462,37 @@ def _call_llm_summary(client: Any, request_payload: dict[str, Any]) -> dict[str,
         "usage": usage,
         "output": parsed_output,
     }
+
+
+def _attach_source_event_ids(
+    parsed_output: Any,
+    request_payload: dict[str, Any],
+) -> None:
+    """Attach deterministic source links without asking the summary model to copy IDs."""
+
+    if not isinstance(parsed_output, dict):
+        return
+    try:
+        input_payload = _load_llm_user_payload(request_payload)
+    except ValueError:
+        return
+    source_ids_by_period = {
+        str(period.get("period") or ""): [
+            f"NEWS_RAW_{period.get('period')}_{event.get('event_id')}"
+            for event in period.get("events") or []
+            if isinstance(event, dict) and event.get("event_id")
+        ]
+        for period in input_payload.get("periods") or []
+        if isinstance(period, dict) and period.get("period")
+    }
+    output_periods = parsed_output.get("periods")
+    if not isinstance(output_periods, list):
+        output_periods = [parsed_output] if parsed_output.get("period") else []
+    for period in output_periods:
+        if not isinstance(period, dict):
+            continue
+        period_key = str(period.get("period") or "")
+        period["source_event_ids"] = source_ids_by_period.get(period_key, [])
 
 
 def _run_llm_summary(
@@ -604,14 +659,47 @@ def build_context_exports(
     collect_date = str(report.get("collect_date") or "unknown")
     company_profile = _load_company_profile(report, report_path)
 
+    all_event_rows = list(
+        report.get("news_events_all") or report.get("news_events_topk") or []
+    )
+    selected_event_rows = list(report.get("news_events_topk") or [])[
+        :NEWS_AGENT_TOP_K
+    ]
     grouped = _group_events(
-        list(report.get("news_events_topk") or []),
+        all_event_rows,
         granularity=granularity,
         min_mention_count=min_mention_count,
     )
-    selected_periods = _select_periods(grouped, period_count)
-    raw_periods = selected_periods[: max(raw_period_count, 0)]
-    summary_periods_for_news_agent = selected_periods[max(raw_period_count, 0) :]
+    selected_periods = _select_summary_periods(
+        grouped=grouped,
+        collect_date=collect_date,
+        granularity=granularity,
+        period_count=period_count,
+    )
+    summary_periods_for_news_agent = list(selected_periods)
+    top_news_events = [
+        compact
+        for compact in (_compact_event(event) for event in selected_event_rows)
+        if compact is not None
+    ]
+    if top_news_events and all(
+        int(event.get("relevance_rank") or 0) > 0 for event in top_news_events
+    ):
+        top_news_events.sort(key=lambda event: int(event["relevance_rank"]))
+    top_news_periods = list(
+        dict.fromkeys(
+            period
+            for event in top_news_events
+            if (period := _period_key(str(event.get("time") or ""), granularity))
+        )
+    )
+    top_news_grouped: dict[str, list[dict[str, Any]]] = {
+        period: [] for period in top_news_periods
+    }
+    for event in top_news_events:
+        period = _period_key(str(event.get("time") or ""), granularity)
+        if period in top_news_grouped:
+            top_news_grouped[period].append(event)
 
     if output_dir is None:
         output_dir = (
@@ -629,6 +717,7 @@ def build_context_exports(
         "granularity": granularity,
         "period_count": period_count,
         "raw_period_count": raw_period_count,
+        "company_news_top_k": NEWS_AGENT_TOP_K,
         "min_mention_count": min_mention_count,
         "filter_rule": f"mention_count >= {min_mention_count}",
     }
@@ -638,7 +727,10 @@ def build_context_exports(
         "company_profile": company_profile,
         "metadata": base_metadata,
         "task": "각 period의 events를 바탕으로 해당 기간의 핵심 뉴스 흐름을 요약합니다.",
-        "periods": [_period_payload(period, grouped[period]) for period in selected_periods],
+        "periods": [
+            _period_payload(period, grouped.get(period, []))
+            for period in selected_periods
+        ],
     }
 
     recent_raw_input = {
@@ -646,9 +738,15 @@ def build_context_exports(
         "company_profile": company_profile,
         "metadata": {
             **base_metadata,
-            "usage": "뉴스 에이전트에 제공할 최신 원문 이벤트 입력입니다.",
+            "usage": "뉴스 에이전트에 제공할 기업 관련 뉴스 top-10 입력입니다.",
         },
-        "periods": [_period_payload(period, grouped[period]) for period in raw_periods],
+        "selection": "기업 관련 뉴스 top-10",
+        "top_k": NEWS_AGENT_TOP_K,
+        "events": top_news_events,
+        "periods": [
+            _period_payload(period, top_news_grouped[period])
+            for period in top_news_periods
+        ],
     }
 
     summary_path = output_path / "summary_prompt_input.json"
@@ -662,19 +760,23 @@ def build_context_exports(
 
     manifest = {
         "description": {
-            "summary_prompt_input_path": "12개월 운영 또는 12일 테스트에서 LLM 기간별 요약을 만들기 위한 입력 파일입니다.",
+            "summary_prompt_input_path": "요청한 기간의 LLM 날짜별 또는 월별 요약을 만들기 위한 입력 파일입니다.",
             "llm_summary_request_path": "summary_prompt_input.json을 기반으로 만든 LLM 호출 직전 messages payload입니다.",
             "llm_period_summaries_path": "LLM 실행 결과입니다. --run-llm을 지정한 경우에만 생성됩니다.",
             "period_requests_dir": "--split-by-period 지정 시 period별 LLM request 파일이 저장되는 디렉터리입니다.",
-            "recent_raw_input_path": "뉴스 에이전트에 원문으로 제공할 최신 기간 입력 파일입니다.",
-            "summary_periods_for_news_agent": "뉴스 에이전트에 요약본으로 제공할 과거 기간입니다.",
-            "raw_periods_for_news_agent": "뉴스 에이전트에 원문 이벤트로 제공할 최신 기간입니다.",
+            "recent_raw_input_path": "뉴스 에이전트에 제공할 기업 관련 뉴스 top-10 입력 파일입니다.",
+            "summary_periods_for_news_agent": "뉴스 에이전트에 제공할 전체 날짜별 요약 기간입니다.",
+            "raw_periods_for_news_agent": "기업 관련 뉴스 top-10이 포함된 기간입니다.",
         },
         "metadata": base_metadata,
         "selected_periods": selected_periods,
         "summary_periods_for_news_agent": summary_periods_for_news_agent,
-        "raw_periods_for_news_agent": raw_periods,
-        "total_events_after_filter": sum(len(grouped[period]) for period in selected_periods),
+        "raw_periods_for_news_agent": top_news_periods,
+        "company_related_news_top_k": NEWS_AGENT_TOP_K,
+        "company_related_news_count": len(top_news_events),
+        "total_events_after_filter": sum(
+            len(grouped.get(period, [])) for period in selected_periods
+        ),
         "llm": {
             "model": llm_model,
             "run_llm": run_llm,

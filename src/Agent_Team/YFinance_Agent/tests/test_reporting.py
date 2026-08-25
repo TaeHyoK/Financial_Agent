@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from reporting import (
+    build_daily_market_evidence_catalog,
     build_dart_secondary_context,
     build_llm_evidence_packet,
     build_market_primary_evidence_catalog,
@@ -47,6 +48,10 @@ class ReportingTests(unittest.TestCase):
         self.assertEqual(
             context["properties"]["financial"]["properties"]["secondary_evidence_ids"]["items"]["enum"],
             ["DART_REVENUE"],
+        )
+        self.assertEqual(
+            context["properties"]["financial"]["properties"]["context_id"]["enum"],
+            ["financial_context"],
         )
 
     def test_llm_packet_separates_primary_and_secondary_context(self) -> None:
@@ -84,57 +89,57 @@ class ReportingTests(unittest.TestCase):
         )
         self.assertNotIn("display_value", context["evidence_catalog"]["DART_REVENUE"])
 
-    def test_news_secondary_context_uses_verified_claim_and_raw_event(self) -> None:
+    def test_news_secondary_context_uses_daily_summaries_without_agent_claims(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            sy_dir = root / "sy_agent"
-            sy_dir.mkdir()
-            source_path = sy_dir / "news_agent_verified_handoff.json"
-            validation_path = sy_dir / "sy_claim_validations.json"
-            evidence_path = root / "news_agent_evidence_map.json"
-            _write_json(
-                validation_path,
-                {
-                    "claim_validations": [
+            source_path = root / "llm_period_summaries.json"
+            summaries = {
+                "output": {
+                    "periods": [
                         {
-                            "claim_id": "NCLAIM_001",
-                            "claim": "정부 과제 수행기관으로 선정됐다.",
-                            "evidence_use": "strong",
-                            "evidence_ids": ["NEWS_RAW_2025-10-31_1"],
-                            "limitations": [],
+                            "period": "2025-10-30",
+                            "period_summary": "정부 과제 수행기관 선정 소식이 확인됐다.",
+                            "issues": [
+                                {
+                                    "issue": "정부 과제 수행기관 선정",
+                                    "mention_count": 2,
+                                    "importance": "high",
+                                }
+                            ],
+                            "source_event_ids": ["NEWS_RAW_2025-10-30_1"],
                         }
                     ]
-                },
-            )
-            _write_json(
-                evidence_path,
-                {
-                    "NEWS_RAW_2025-10-31_1": {
-                        "source_domain": "news",
-                        "source_type": "recent_raw_event",
-                        "period": "2025-10-31",
-                        "time": "2025-10-31",
-                        "title": "정부 과제 수행기관 선정",
-                        "relation_type": "direct_company",
-                    }
-                },
-            )
-            verified = {
-                "output": {
-                    "sy_validation": {"validation_report_path": str(validation_path)},
-                    "evidence_map_path": str(evidence_path),
                 }
             }
-            _write_json(source_path, verified)
+            _write_json(source_path, summaries)
 
-            context = build_news_secondary_context(verified, source_path=source_path)
+            context = build_news_secondary_context(summaries, source_path=source_path)
 
         self.assertEqual(context["status"], "available")
-        self.assertEqual(context["claims"][0]["claim_id"], "NCLAIM_001")
+        self.assertNotIn("claims", context)
+        self.assertEqual(context["input_type"], "daily_news_summaries")
         self.assertEqual(
-            context["evidence_catalog"]["NEWS_RAW_2025-10-31_1"]["origin_type"],
-            "raw_source",
+            context["evidence_catalog"]["NEWS_DAILY_2025_10_30"]["origin_type"],
+            "model_summarized",
         )
+        self.assertEqual(
+            context["evidence_catalog"]["NEWS_DAILY_2025_10_30"]["source_event_ids"],
+            ["NEWS_RAW_2025-10-30_1"],
+        )
+        self.assertNotIn("url", json.dumps(context))
+
+    def test_daily_market_catalog_exposes_trading_day_returns(self) -> None:
+        with TemporaryDirectory() as tmp:
+            market_path = Path(tmp) / "market.json"
+            _write_json(market_path, _market_rows())
+            frame = load_market_dataset(market_path)
+
+        catalog = build_daily_market_evidence_catalog(frame)
+
+        self.assertGreaterEqual(len(catalog), 2)
+        latest = catalog[sorted(catalog)[-1]]
+        self.assertEqual(latest["metric"], "daily_market_snapshot")
+        self.assertIn("stock_daily_return", latest["value"])
 
     def test_market_catalog_ids_match_yfinance_sy_catalog(self) -> None:
         with TemporaryDirectory() as tmp:

@@ -40,7 +40,7 @@ python src/Agent_Team/YFinance_Agent/run_pipeline.py \
   --output-dir Output_total/Y_Finance/SK바이오팜_20251031 \
   --env-file configs/.env \
   --dart-json Output_total/Financial/SK바이오팜_20251031/dart_lightweight.json \
-  --news-json Output_total/News/SK바이오팜_20251031/output/sy_agent/news_agent_verified_handoff.json
+  --news-json Output_total/News/SK바이오팜_20251031/context_exports/day/llm_period_summaries.json
 ```
 
 이미 시장 데이터가 있으면 `--skip-collect`, 이미 보고서가 있으면 `--skip-report`, SY 검증을 생략하려면 `--skip-sy`를 사용할 수 있습니다.
@@ -84,7 +84,7 @@ python src/Agent_Team/YFinance_Agent/report.py
 python src/Agent_Team/YFinance_Agent/report.py --model gpt-5.4-mini
 ```
 
-보고서는 YFinance `market_full_dataset.json`을 primary evidence로 사용하고, 검증된 News claim/원 이벤트와 DART lightweight 지표는 secondary context로 사용합니다.
+보고서는 YFinance `market_full_dataset.json`을 주 분석자료로 사용합니다. 뉴스 에이전트의 주장을 전달받지 않고 30개 날짜별 뉴스 요약을 보조자료로 직접 읽으며, 같은 날짜 또는 다음 거래일의 일간 수익률·시장 대비 수익률·거래량 변화와 함께 분석합니다. DART lightweight 지표도 보조자료로 사용합니다. 뉴스와 가격의 시간적 대응은 살펴보되 인과관계로 단정하지 않습니다.
 `Output_total/Y_Finance/yfinance_analyst_report.json`은 `Y-Finance Agent` 스키마로 생성되며, `score` 필드는 포함하지 않습니다.
 `secondary_context_assessment`는 `corroborates`, `contradicts`, `neutral`, `insufficient`만 허용하며 primary 시장 claim의 근거 상태를 변경하지 않습니다.
 

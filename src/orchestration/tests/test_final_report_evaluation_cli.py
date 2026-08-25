@@ -79,9 +79,7 @@ def test_dry_run_discovers_three_default_ablation_pairs(tmp_path, monkeypatch) -
                 "replicate": 1,
                 "status": "success",
                 "recommendation": "Hold",
-                "gate_a": "pass",
-                "gate_b": "pass",
-                "writer_gate": "pass",
+                "writer_status": "success",
                 "report_html": str(report),
                 "pipeline_manifest": str(manifest),
             }

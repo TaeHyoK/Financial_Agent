@@ -317,82 +317,47 @@ def liquidity_stance(position: Dict[str, Any]) -> str:
 
 
 def build_financial_secondary_context(inputs: Dict[str, Any]) -> Dict[str, Any]:
-    """Build verified News and raw market context without cross-domain prose."""
+    """Build raw News and market context without upstream agent claims."""
 
     return {
-        "news": _verified_news_context(
-            inputs.get("news_validation") or {},
-            inputs.get("news_evidence_map") or {},
-        ),
+        "news": _company_news_top10_context(inputs.get("news_company_top10") or {}),
         "market": _market_secondary_context(inputs.get("yfinance_market_summary")),
     }
 
 
-def _verified_news_context(
-    validation: Dict[str, Any],
-    evidence_map: Dict[str, Any],
-) -> Dict[str, Any]:
-    validations = validation.get("claim_validations") or []
-    candidates = sorted(
-        (
-            item
-            for item in validations
-            if isinstance(item, dict)
-            and item.get("evidence_use") in {"strong", "context_only"}
-            and str(item.get("claim") or "").strip()
-        ),
-        key=lambda item: (0 if item.get("evidence_use") == "strong" else 1, str(item.get("claim_id") or "")),
-    )
-    claims: List[Dict[str, Any]] = []
-    selected_ids: set[str] = set()
-    seen_evidence_sets: set[tuple[str, ...]] = set()
-    for item in candidates:
-        ids = tuple(
-            dict.fromkeys(
-                str(value)
-                for value in item.get("evidence_ids", [])
-                if _raw_news_item(evidence_map.get(str(value)))
-            )
-        )
-        if not ids or ids in seen_evidence_sets:
-            continue
-        seen_evidence_sets.add(ids)
-        selected_ids.update(ids)
-        claims.append(
-            {
-                "claim_id": str(item.get("claim_id") or ""),
-                "statement": str(item.get("claim") or "").strip(),
-                "evidence_use": item.get("evidence_use"),
-                "evidence_ids": list(ids),
-                "limitations": [
-                    str(value)
-                    for value in item.get("limitations", [])
-                    if str(value).strip()
-                ],
-            }
-        )
-        if len(claims) >= 6:
-            break
-
+def _company_news_top10_context(payload: Dict[str, Any]) -> Dict[str, Any]:
+    events = [
+        event
+        for event in payload.get("events") or []
+        if isinstance(event, dict)
+    ][:10]
     catalog: Dict[str, Dict[str, Any]] = {}
-    for evidence_id in sorted(selected_ids):
-        raw = evidence_map.get(evidence_id) or {}
+    for event in events:
+        event_id = str(event.get("event_id") or "").strip()
+        source_date = str(event.get("time") or "")[:10]
+        if not event_id or not source_date:
+            continue
+        evidence_id = f"NEWS_RAW_{source_date}_{event_id}"
         catalog[evidence_id] = {
             "evidence_id": evidence_id,
             "domain": "news",
             "origin_type": "raw_source",
-            "source_ref": str(raw.get("source_ref") or f"news_evidence_map.{evidence_id}"),
-            "source_date": str(raw.get("source_date") or raw.get("time") or raw.get("period") or "")[:10],
-            "period": str(raw.get("period") or ""),
+            "source_ref": f"news_top10.events.{event_id}",
+            "source_date": source_date,
+            "period": source_date,
             "metric": "news_event",
-            "text": str(raw.get("title") or ""),
-            "relation_type": raw.get("relation_type"),
+            "title": str(event.get("title") or ""),
+            "snippet": str(event.get("snippet") or ""),
+            "source": str(event.get("source") or ""),
+            "mention_count": int(event.get("mention_count") or 0),
+            "relevance_rank": int(event.get("relevance_rank") or 0),
         }
     validate_evidence_catalog(catalog, allowed_domains={"news"})
-    status = "available" if claims and catalog else "unavailable"
+    status = "available" if catalog else "unavailable"
     return {
         "status": status,
-        "claims": claims if status == "available" else [],
+        "input_type": "company_related_news_top_10",
+        "event_count": len(catalog),
         "evidence_catalog": catalog,
     }
 
@@ -421,13 +386,6 @@ def _market_secondary_context(payload: Any) -> Dict[str, Any]:
         }
     validate_evidence_catalog(catalog, allowed_domains={"market"})
     return {"status": "available" if catalog else "unavailable", "evidence_catalog": catalog}
-
-
-def _raw_news_item(value: Any) -> bool:
-    if not isinstance(value, dict):
-        return False
-    domain = value.get("domain") or value.get("source_domain")
-    return domain == "news" and value.get("source_type") == "recent_raw_event"
 
 
 def _finite_number(value: Any) -> bool:
@@ -894,14 +852,8 @@ def input_state_node(state: FinancialAnalystGraphState) -> FinancialAnalystGraph
         "yfinance_market_summary": load_input_file(paths["yfinance_market_summary"])
         if paths.get("yfinance_market_summary") and Path(paths["yfinance_market_summary"]).exists()
         else {},
-        "news_verified_report": load_input_file(paths["news_verified_report"])
-        if paths.get("news_verified_report") and Path(paths["news_verified_report"]).exists()
-        else {},
-        "news_validation": load_input_file(paths["news_validation"])
-        if paths.get("news_validation") and Path(paths["news_validation"]).exists()
-        else {},
-        "news_evidence_map": load_input_file(paths["news_evidence_map"])
-        if paths.get("news_evidence_map") and Path(paths["news_evidence_map"]).exists()
+        "news_company_top10": load_input_file(paths["news_company_top10"])
+        if paths.get("news_company_top10") and Path(paths["news_company_top10"]).exists()
         else {},
     }
     state["manifest"] = manifest

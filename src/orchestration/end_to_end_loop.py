@@ -195,7 +195,8 @@ class AgentTeamOrchestrator:
             return {
                 "llm_summary_request": str(
                     self.paths.news_context_export_dir / self.args.news_granularity / "llm_summary_request.json"
-                )
+                ),
+                "company_related_news_top10": str(self.paths.news_company_top10),
             }
         if step_name == "news_llm":
             return {"llm_period_summaries": str(self.paths.news_llm_period_summaries)}
@@ -435,7 +436,7 @@ class AgentTeamOrchestrator:
             "--dart-json",
             str(self.paths.dart_lightweight),
             "--news-json",
-            str(self.paths.news_verified_report),
+            str(self.paths.news_llm_period_summaries),
             "--valuation-json",
             str(self.paths.valuation_snapshot),
             "--report-md",

@@ -12,6 +12,7 @@ from orchestration.end_to_end_loop import (
     materialize_reused_domain_snapshot,
 )
 from orchestration.config import RunConfig
+from orchestration.dependency_graph import dependency_names
 from orchestration.manifest import infer_overall_status, is_pipeline_completed, write_run_files
 from orchestration.paths import RunPaths
 from orchestration.run_state import FAILED, RUNNING, SUCCESS, StepRecord
@@ -38,6 +39,19 @@ def test_news_period_split_is_explicit_opt_in() -> None:
     args = build_parser().parse_args(["--dry-run", "--news-split-by-period"])
 
     assert args.news_split_by_period is True
+
+
+def test_domain_agents_depend_on_preprocessed_news_data_not_news_claims() -> None:
+    assert dependency_names("financial_analyst") == (
+        "financial_layer_1",
+        "yfinance_layer_1",
+        "news_export",
+    )
+    assert dependency_names("yfinance_report") == (
+        "financial_layer_1",
+        "yfinance_layer_1",
+        "news_llm",
+    )
 
 
 def test_news_event_top_k_accepts_legacy_alias() -> None:

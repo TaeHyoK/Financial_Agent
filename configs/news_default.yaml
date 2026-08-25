@@ -7,8 +7,9 @@ news:
   query_language: "ko"
   max_results: 200
   # Select at most this many same-day-deduplicated events after every candidate
-  # article has been embedded and cross-encoder reranked. null keeps all events.
-  event_top_k: null
+  # article has been embedded and cross-encoder reranked. Daily summaries still
+  # use the full event set before this selection.
+  event_top_k: 10
   # Deprecated compatibility key; event_top_k takes precedence.
   total_max_results: null
   dedup_on_url: true

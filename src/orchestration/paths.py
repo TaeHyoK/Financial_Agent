@@ -138,6 +138,10 @@ class RunPaths:
         return self.news_context_export_day_dir / "llm_period_summaries.json"
 
     @property
+    def news_company_top10(self) -> Path:
+        return self.news_context_export_day_dir / "recent_raw_input.json"
+
+    @property
     def news_handoff(self) -> Path:
         return self.news_analysis_output_dir / "news_agent_handoff.json"
 

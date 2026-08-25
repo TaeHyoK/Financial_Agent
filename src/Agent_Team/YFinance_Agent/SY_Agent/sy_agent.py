@@ -265,6 +265,35 @@ def build_evidence_catalog(
             origin_type="deterministic_derived",
             period=f"{first_date.isoformat()}..{latest_date.isoformat()}",
         )
+    for index, (row_date, row) in enumerate(dated[-30:]):
+        absolute_index = len(dated) - min(len(dated), 30) + index
+        previous = dated[absolute_index - 1][1] if absolute_index > 0 else {}
+        stock_return = safe_return(previous.get(stock_price_column), row.get(stock_price_column))
+        kospi_return = safe_return(previous.get("kospi_close"), row.get("kospi_close"))
+        daily_value = {
+            "stock_close": row.get("stock_close"),
+            "stock_daily_return": stock_return,
+            "kospi_daily_return": kospi_return,
+            "stock_excess_daily_return": (
+                stock_return - kospi_return
+                if stock_return is not None and kospi_return is not None
+                else None
+            ),
+            "stock_volume_ratio_20": row.get("stock_volume_ratio_20"),
+            "fx_daily_return": safe_return(previous.get("fx_close"), row.get("fx_close")),
+        }
+        metric = f"daily_{row_date.isoformat()}"
+        evidence_id = canonical_evidence_id("market", metric)
+        catalog[evidence_id] = {
+            "evidence_id": evidence_id,
+            "domain": "market",
+            "origin_type": "deterministic_derived",
+            "source_ref": f"market_full_dataset.daily.{row_date.isoformat().replace('-', '_')}",
+            "source_date": row_date.isoformat(),
+            "period": row_date.isoformat(),
+            "metric": "daily_market_snapshot",
+            "value": daily_value,
+        }
     validate_evidence_catalog(catalog)
     return catalog
 

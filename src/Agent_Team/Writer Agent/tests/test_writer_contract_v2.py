@@ -20,10 +20,135 @@ from html_report_writer import (
     writer_report_response_format,
 )
 from writer_handoff import (
+    _reader_observation,
     build_writer_editorial_packet,
     reformat_financial_reader_observations,
     validate_writer_editorial_packet,
 )
+
+
+def test_news_reader_observation_excludes_article_excerpt_and_internal_statuses() -> None:
+    excerpt = "기사 원문이 최종 표에 그대로 노출되면 안 된다."
+    observation = _reader_observation(
+        {
+            "card_key": "news.2025_10_21.event",
+            "domain": "news",
+            "label": "주요 사건",
+            "primary_observation": {
+                "event_date": "2025-10-21",
+                "event_summary": "기업이 신규 서비스를 공개했다고 보도됐다.",
+                "representative_excerpts": [excerpt],
+                "event_status": "occurred",
+                "company_specificity": "direct",
+                "materiality_status": "observed",
+                "financial_link_status": "not_observed",
+                "coverage": {
+                    "article_count": 3,
+                    "deduplicated_article_count": 2,
+                    "unique_publisher_count": 2,
+                },
+            },
+        }
+    )
+
+    serialized = json.dumps(observation, ensure_ascii=False)
+    assert observation == {
+        "발생일": "2025-10-21",
+        "사건 요약": "기업이 신규 서비스를 공개했다고 보도됐다.",
+        "보도 범위": "중복 제거 후 2건 · 2개 매체",
+        "재무적 영향": "기사에서 재무적 영향의 규모와 시점이 확인되지 않음",
+    }
+    assert excerpt not in serialized
+    assert "event_status" not in serialized
+    assert "financial_link_status" not in serialized
+
+
+def test_market_reader_observations_use_korean_labels_and_display_units() -> None:
+    trend = _reader_observation(
+        {
+            "card_key": "market.absolute_trend",
+            "domain": "market",
+            "primary_observation": {
+                "as_of_date": "2025-10-30",
+                "metrics": {
+                    "stock_close": 307000,
+                    "stock_return_5d": 0.0032679,
+                    "stock_return_20d": 0.0199334,
+                    "stock_return_60d": 0.0372066,
+                    "stock_close_to_ma20": 0.0138705,
+                    "stock_close_to_ma60": 0.009224,
+                },
+            },
+        }
+    )
+    momentum = _reader_observation(
+        {
+            "card_key": "market.momentum_volume",
+            "domain": "market",
+            "primary_observation": {
+                "as_of_date": "2025-10-30",
+                "metrics": {
+                    "stock_rsi_14": 51.8137,
+                    "stock_macd_hist": 382.6005,
+                    "stock_macd_hist_change_1d": -21.0563,
+                    "stock_volatility_20": 0.0158613,
+                    "stock_volume_ratio_20": 1.6372,
+                },
+            },
+        }
+    )
+
+    assert trend == {
+        "기준일": "2025-10-30",
+        "종가": "307,000원",
+        "5거래일 수익률": "0.33%",
+        "20거래일 수익률": "1.99%",
+        "60거래일 수익률": "3.72%",
+        "20일 이동평균 대비": "1.39%",
+        "60일 이동평균 대비": "0.92%",
+    }
+    assert momentum == {
+        "기준일": "2025-10-30",
+        "14일 RSI": "51.81",
+        "MACD 히스토그램": "382.60",
+        "MACD 히스토그램 전일 대비 변화": "-21.06",
+        "20일 변동성": "1.59%",
+        "20일 평균 대비 거래량": "1.64배",
+    }
+    serialized = json.dumps({"trend": trend, "momentum": momentum}, ensure_ascii=False)
+    assert "stock_" not in serialized
+    assert "metrics" not in serialized
+
+
+def test_annual_financial_reader_observation_uses_yearly_korean_rows() -> None:
+    observation = _reader_observation(
+        {
+            "card_key": "financial.annual_trend",
+            "domain": "financial",
+            "primary_observation": {
+                "annual_history": [
+                    {
+                        "period": {"fiscal_year": 2024, "period_type": "ANNUAL"},
+                        "values": {
+                            "revenue": 36_604_026_000_000,
+                            "operating_profit": 1_802_853_000_000,
+                            "net_income": 2_594_221_000_000,
+                            "operating_cash_flow": 2_831_367_000_000,
+                        },
+                    }
+                ]
+            },
+        }
+    )
+
+    assert observation == {
+        "2024년 연간": {
+            "매출": "366,040.3억원",
+            "영업이익": "18,028.5억원",
+            "순이익": "25,942.2억원",
+            "영업현금흐름": "28,313.7억원",
+        }
+    }
 
 
 def test_reformats_million_krw_financial_observations_without_touching_eps() -> None:
@@ -93,6 +218,76 @@ def test_writer_editorial_packet_keeps_strategy_meaning_and_external_provenance(
     ]
     assert "E001" not in json.dumps(packet, ensure_ascii=False)
     assert writer_provenance["cards"]["financial.same_period_trend"]["source_evidence_ids"] == ["E001"]
+
+
+def test_writer_editorial_packet_accepts_label_free_strategy_v4() -> None:
+    strategy_packet, _legacy_decision, provenance = _strategy_artifacts()
+    decision = {
+        "decision_version": "strategy_decision_output_v4",
+        "strategy_brief": {
+            "horizon": "1개월",
+            "thesis": "실적 개선은 유효하지만 현재 가격 부담을 함께 고려해야 한다.",
+            "existing_position_response": "실적 흐름을 확인하며 비중 확대는 자제한다.",
+            "new_entry_response": "가격 부담이 완화될 때까지 진입 시점을 나누어 본다.",
+            "price_context": "선택일 계산 배수는 비교기업보다 높다.",
+            "counterview": "현금흐름 개선은 가격 부담을 일부 상쇄한다.",
+            "limitation_summary": "공개 자료만으로 단기 변동의 원인을 확정하기 어렵다.",
+            "evidence_sufficiency": "medium",
+            "decision_confidence": "medium",
+        },
+        "rationale": [
+            {
+                "point": "재무 개선과 가격 부담을 함께 본다.",
+                "basis_card_keys": [
+                    "financial.same_period_trend",
+                    "valuation.selected_date",
+                ],
+            }
+        ],
+        "basis_cards": [
+            {
+                "card_key": "financial.same_period_trend",
+                "role": "primary",
+                "usage_reason": "동일기간 실적 개선을 판단의 중심 근거로 사용한다.",
+            },
+            {
+                "card_key": "valuation.selected_date",
+                "role": "counter",
+                "usage_reason": "현재 가격 부담을 반대 근거로 사용한다.",
+            },
+            {
+                "card_key": "peer.valuation",
+                "role": "context",
+                "usage_reason": "비교기업 대비 가격 수준을 보완한다.",
+            },
+        ],
+        "key_risks": [
+            {
+                "risk": "높은 계산 배수가 단기 수익률을 제약할 수 있다.",
+                "current_implication": "후속 가격 흐름과 실적 공시를 함께 확인한다.",
+                "basis_card_keys": ["valuation.selected_date", "peer.valuation"],
+            }
+        ],
+    }
+
+    packet, writer_provenance = build_writer_editorial_packet(
+        strategy_packet=strategy_packet,
+        strategy_decision=decision,
+        strategy_provenance=provenance,
+    )
+
+    validate_writer_editorial_packet(
+        packet,
+        provenance=writer_provenance,
+        strategy_packet=strategy_packet,
+    )
+    assert packet["strategy_contract_version"] == "strategy_decision_output_v4"
+    assert packet["decision"]["judgment"] == decision["strategy_brief"]["thesis"]
+    assert "opinion" not in packet["decision"]
+    assert packet["decision"]["existing_position_response"]
+    assert packet["decision"]["new_entry_response"]
+    normalized = normalize_report_payload(_writer_payload(packet), writer_handoff=packet)
+    assert normalized["metadata"]["recommendation"] == decision["strategy_brief"]["thesis"]
 
 
 def test_writer_v2_uses_strict_dynamic_json_schema() -> None:
@@ -793,17 +988,33 @@ def _writer_payload(packet: dict) -> dict:
     evidence_rows = []
     for card_key in required["key_evidence_table"]:
         card = cards[card_key]
-        evidence_rows.append(
-            {
+        row = {
                 "핵심 근거": card["label"],
                 "확인된 수치·사실": observation_text[card_key],
                 "투자 해석": card["strategy_interpretation"],
-                "영향": effect_labels[card["investment_effect"]],
                 "_card_key": card_key,
                 "_strategy_interpretation": card["strategy_interpretation"],
-                "_investment_effect": card["investment_effect"],
-            }
-        )
+        }
+        if card.get("strategy_role"):
+            row.update(
+                {
+                    "판단상 역할": {
+                        "primary": "핵심 근거",
+                        "counter": "반대 근거",
+                        "monitoring": "위험 신호",
+                        "context": "판단 문맥",
+                    }[card["strategy_role"]],
+                    "_strategy_role": card["strategy_role"],
+                }
+            )
+        else:
+            row.update(
+                {
+                    "영향": effect_labels[card["investment_effect"]],
+                    "_investment_effect": card["investment_effect"],
+                }
+            )
+        evidence_rows.append(row)
     risk_rows = [
         {
             "리스크 요인": "밸류에이션 부담",
@@ -841,7 +1052,11 @@ def _writer_payload(packet: dict) -> dict:
             },
             "key_evidence_table": {
                 "evidence_table": {
-                    "columns": ["핵심 근거", "확인된 수치·사실", "투자 해석", "영향"],
+                    "columns": (
+                        ["핵심 근거", "확인된 수치·사실", "투자 해석", "판단상 역할"]
+                        if packet.get("strategy_contract_version") == "strategy_decision_output_v4"
+                        else ["핵심 근거", "확인된 수치·사실", "투자 해석", "영향"]
+                    ),
                     "rows": evidence_rows,
                     "card_keys": required["key_evidence_table"],
                 }

@@ -1,6 +1,6 @@
 # Strategy Agent
 
-Strategy Agent는 대상 기업의 검증된 Financial, News, YFinance 보고서와 구조화된 selected-peer dataset으로 6~12개월 Buy/Hold/Sell 판단을 생성한다. 정상 v2 경로는 Content Planner 없이 LLM을 한 번만 호출한다.
+Strategy Agent는 대상 기업의 검증된 Financial, News, YFinance 보고서와 구조화된 비교기업 자료를 바탕으로 기준일 시점의 판단과 투자자 대응을 생성한다. 기본 v4 경로는 LLM이 사용할 근거를 직접 선택하고 보고서를 작성하며, 한 번 호출한다.
 
 ## 입력
 
@@ -8,12 +8,13 @@ Strategy Agent는 대상 기업의 검증된 Financial, News, YFinance 보고서
 - `News/{target_run_key}/final_report.json`
 - `Y_Finance/{target_run_key}/final_report.json`
 - `Competitor/{target_run_key}/peer_comparison_dataset.json`
+- `Competitor/{target_run_key}/peer_comparison_report.json`
 
-독립적인 경쟁사 서술 보고서는 받지 않는다. peer dataset은 동일 metric, 단위, 날짜와 기간 기준이 확인된 pair를 제공하며 기업명과 비교기업 수를 동적으로 처리한다.
+비교 데이터셋은 동일 지표·단위·날짜·기간 기준이 확인된 값을 제공하고, 비교 분석 보고서는 대상기업과 비교기업에 동일 절차를 적용한 하위 에이전트 결과를 종합해 두 기업의 상대적 위치를 설명한다.
 
-## v2 추론 계약
+## v4 추론 계약
 
-결정론적 packet builder가 upstream 전체 보고서를 다음 범위의 self-contained card로 압축한다.
+입력 구성기는 하위 에이전트의 주요 분석, 교차 자료 판단과 사실 기반 근거 카드를 하나의 `strategy_context_package_v4`로 전달한다. 날짜·기간·단위·비교 대상·자료의 적용 범위는 유지하지만, 카드의 투자 방향, 중요도와 보고서 배치는 미리 결정하지 않는다.
 
 - Financial: 일반 기업 4~6개, 다사업 예외 최대 7개
 - News: 기본 6개, 일반 최대 8개, 중요 반대 사건 overflow 최대 10개
@@ -22,44 +23,23 @@ Strategy Agent는 대상 기업의 검증된 Financial, News, YFinance 보고서
 - Peer: 최대 6개
 - reader limitation: 최대 8개. machine blocker는 별도 보존
 
-각 card에는 semantic `card_key`, `evidence_family`, `observation_basis`, `comparison_scope`, primary observation, 날짜·기간·단위, evidence 역할, eligibility, 허용 section과 limitation이 포함된다. 시장지수는 `market_benchmark`, 비교기업은 `selected_peer`로 구분한다. `secondary_context`는 `usage=framing_only`이며 독립 근거나 data coverage 충족 항목으로 사용할 수 없다.
+기존 card builder의 크기 제한은 입력량 관리를 위해 유지한다. v4 문맥 패키지는 여기서 `allowed_sections`, `decision_use`, `eligibility`, 뉴스의 파생 event materiality 같은 판단 정책 필드를 제거한다. 하위 에이전트의 `main_view`와 기간별 분석은 별도 handoff로 함께 제공한다.
 
 Strategy LLM은 한 호출에서 다음을 반환한다.
 
-- 모든 card에 대한 `evidence_assessments`
-- Buy/Hold/Sell, 투자기간과 data coverage
-- 현재 가격, forward support, valuation counterweight와 불확실성을 카드에 연결한 `recommendation_bridge`
-- comparable metric만 사용하는 `peer_findings`
-- valuation, market, financial, news를 포괄하는 `decision_risk_factors`
-- financial link가 없는 News를 decision factor에서 분리한 event materiality
+- 독자가 그대로 읽을 수 있는 `strategy_brief`
+- 기존 편입자와 신규 접근자를 구분한 현재 대응
+- 결론에 필요한 논점만 선택한 `rationale`
+- 실제 사용한 근거와 선택 이유를 기록한 `basis_cards`
+- 현재 입력에서 확인되는 주요 위험과 결론을 제약하는 실질적인 판단 한계
 
-중복 필드인 assessment direction, positive/negative factor와 section routing은 typed assessment에서 결정론적으로 도출한다. 같은 `evidence_family`는 독립 factor로 중복 집계하지 않는다. 별도의 중복 자유문장 보고서는 LLM이 생성하지 않으며, `strategy_report.json`과 Markdown은 typed 결과를 구조적으로 투영한다. raw evidence ID와 원천 파일 경로는 LLM packet에 넣지 않고 외부 provenance map에 보존한다.
+모든 카드를 평가하거나 Financial, News, Market과 비교기업 근거를 의무적으로 하나씩 선택하지 않는다. Strategy LLM이 결론에 필요한 근거만 `primary`, `counter`, `monitoring`, `context` 역할로 선택한다. 원자료 ID와 파일 경로는 LLM 문맥에서 제외하고 외부 provenance map에 보존한다.
 
-## 검증
+## 실행 계약
 
-Gate A는 다음을 검사한다.
+운영 경로에는 별도의 입력·판단 게이트를 두지 않는다. 기준일, 재무기간, 단위와 비교 기준은 문맥 패키지를 만드는 과정에서 확정하고, 사용할 수 있는 근거 카드는 구조화 출력 선택지로 제공한다. 언어모형 응답은 지정된 JSON 형식으로 해석할 수 없을 때만 실행 오류로 처리한다. 판단 방향, 근거의 중요도와 문체는 Strategy Agent가 결정한다.
 
-- card schema와 budget
-- selected-date cutoff
-- 재무 기간·scope와 제품 매출 reconciliation
-- peer metric 단위·기간·날짜 comparability
-- semantic card와 provenance content hash의 완전한 연결
-
-Gate B는 다음을 검사한다.
-
-- 모든 card가 정확히 한 번 평가됐는지 여부
-- card의 `allowed_sections`, evidence role과 eligibility 준수
-- factor와 assessment investment effect 일치
-- peer finding의 metric, 비교 basis와 수치상 우열 방향
-- context-only News와 비교 불가능한 card의 의사결정 근거 사용 차단
-- point-in-time, period comparison과 event materiality의 의사결정 사용 범위
-- risk basis card와 reader summary의 의미 일치
-- opaque raw ID 누출 여부
-- 독자용 문장에 JSON field명이나 semantic card key가 노출되는지 여부
-
-Gate B의 hard fail은 출처·card reference·비교 가능성·typed field 내부 일관성 같은 무결성 위반에만 적용한다. 사용 가능한 가격/valuation/forward card를 반드시 채택해야 한다는 규칙, Buy/Sell의 독립 evidence family 2개 규칙, evidence sufficiency 권고와 파생 family 목록 차이는 `advisories`에 기록하되 분석 실행을 중단하지 않는다.
-
-Gate B는 card key, comparison scope, peer company, 관측 기준처럼 구조화된 필드로 검증한다. 독자용 문장의 내부 JSON field명과 semantic card key 노출은 무결성 위반으로 차단하지만, `동종`, `업종`, 특정 회사명 같은 일반 업무 문구 자체는 실패 조건으로 사용하지 않는다. 무결성 검증 실패 시에는 해당 산출물을 성공 cache로 인정하지 않으며 상위 실행기가 설정한 semantic attempt 범위에서 새 응답을 생성할 수 있다.
+`validate_compact_strategy_packet_v2`와 버전별 `validate_strategy_decision` 함수는 회귀시험과 실험 평가에서 직접 사용할 수 있지만 운영 결과를 폐기하거나 재생성하는 데 사용하지 않는다.
 
 ## 실행
 
@@ -71,8 +51,9 @@ PYTHONPATH=src python -m Agent_Team.Strategy_Agent.cli \
   --target-news Output_total/News/SK바이오팜_20251031/final_report.json \
   --target-yfinance Output_total/Y_Finance/SK바이오팜_20251031/final_report.json \
   --peer-comparison Output_total/Competitor/SK바이오팜_20251031/peer_comparison_dataset.json \
+  --peer-analysis Output_total/Competitor/SK바이오팜_20251031/peer_comparison_report.json \
   --output-dir Output_total/Strategy/SK바이오팜_20251031 \
-  --packet-version v2
+  --packet-version v4
 ```
 
 ## 산출물
@@ -81,17 +62,17 @@ PYTHONPATH=src python -m Agent_Team.Strategy_Agent.cli \
 strategy_input_bundle.json
 strategy_compact_packet_v2.json
 strategy_packet_provenance_v2.json
-strategy_packet_telemetry_v2.json
-strategy_decision_output_v2.json
-strategy_decision_cache_v2.json
-strategy_semantic_validation_v2.json
+strategy_context_package_v4.json
+strategy_context_telemetry_v4.json
+strategy_decision_output_v4.json
+strategy_decision_cache_v4.json
 strategy_report.json
 strategy_report.md
 ```
 
-v2 성공 후 같은 output directory의 v1 planner, decision packet과 decision-basis artifact는 제거된다. `--packet-version v1`은 제한적인 rollback 실행에만 사용하며 v1/v2 파일을 하나의 downstream 입력으로 혼합하지 않는다.
+v4 성공 후 같은 output directory의 이전 판단 산출물은 제거된다. `--packet-version v3`, `v2`, `v1`은 비교 및 호환 경로이며 서로 다른 버전의 판단 파일을 하나의 downstream 입력으로 혼합하지 않는다.
 
-## Hold 편향 평가
+## 이전 의견 등급 계약 평가
 
 ```bash
 PYTHONPATH=src python -m Agent_Team.Strategy_Agent.evaluate_recommendation_bias \
@@ -99,4 +80,4 @@ PYTHONPATH=src python -m Agent_Team.Strategy_Agent.evaluate_recommendation_bias 
   --env-file configs/.env
 ```
 
-평가 호출은 `LLM_RUN_ROLE=evaluation`으로 기록되며 정상 14-call 보고서 파이프라인 집계에서 제외된다.
+평가 호출은 `LLM_RUN_ROLE=evaluation`으로 기록되며 정상 15-call 보고서 파이프라인 집계에서 제외된다.

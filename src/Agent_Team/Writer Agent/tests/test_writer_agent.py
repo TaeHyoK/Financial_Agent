@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import inspect
 import json
 import subprocess
@@ -15,11 +16,12 @@ sys.path.insert(0, str(AGENT_DIR))
 
 import writer_agent as writer_agent_module
 from formatted_html_renderer import build_complete_html, render_formatted_html_report
-from html_report_spec import REPORT_SECTIONS
+from html_report_spec import REPORT_DISCLAIMER, REPORT_SECTIONS
 from html_report_validator import validate_html_report
 from html_report_writer import (
     _build_context,
     _call_openai_writer,
+    _market_relative_observation_text,
     _raw_payload_shape_errors,
     _system_prompt,
     build_writer_llm_input,
@@ -29,11 +31,9 @@ from html_report_writer import (
 )
 from writer_agent import (
     REQUIRED_STRATEGY_INPUT_FILES,
-    WRITER_VALIDATOR_VERSION,
     WriterAgentConfig,
     _coerce_config,
     discover_default_run_key,
-    load_cached_writer_response,
 )
 from writer_handoff import build_writer_handoff, handoff_json_size, validate_writer_handoff
 
@@ -46,7 +46,7 @@ def test_default_run_paths_resolve_to_current_repo() -> None:
 
     assert cfg.strategy_packet == DEFAULT_OUTPUT_ROOT / "Strategy" / RUN_KEY / "strategy_compact_packet_v2.json"
     assert cfg.strategy_provenance == DEFAULT_OUTPUT_ROOT / "Strategy" / RUN_KEY / "strategy_packet_provenance_v2.json"
-    assert cfg.strategy_decision == DEFAULT_OUTPUT_ROOT / "Strategy" / RUN_KEY / "strategy_decision_output_v2.json"
+    assert cfg.strategy_decision == DEFAULT_OUTPUT_ROOT / "Strategy" / RUN_KEY / "strategy_decision_output_v4.json"
 
 
 def test_default_run_discovery_requires_all_strategy_inputs(tmp_path: Path) -> None:
@@ -58,6 +58,7 @@ def test_default_run_discovery_requires_all_strategy_inputs(tmp_path: Path) -> N
     (incomplete / "strategy_report.json").write_text("{}", encoding="utf-8")
     for filename in REQUIRED_STRATEGY_INPUT_FILES:
         (complete / filename).write_text("{}", encoding="utf-8")
+    (complete / "strategy_decision_output_v4.json").write_text("{}", encoding="utf-8")
 
     assert discover_default_run_key(tmp_path) == "COMPLETE_20251031"
 
@@ -160,67 +161,13 @@ def test_writer_request_fingerprint_changes_with_model_or_handoff() -> None:
     assert original != writer_request_fingerprint(writer_handoff=changed_handoff, model="gpt-5.4")
 
 
-def test_failed_semantic_validation_does_not_reuse_fingerprinted_raw_response(tmp_path: Path) -> None:
-    path = tmp_path / "llm_writer_output.json"
-    path.write_text(
-        json.dumps(
-            {
-                "fingerprint": "same",
-                "raw_payload": _sample_payload(),
-                "validation_status": "fail",
-                "validator_version": WRITER_VALIDATOR_VERSION,
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    assert load_cached_writer_response(
-        llm_output_path=path,
-        expected_fingerprint="same",
-    ) is None
-    assert load_cached_writer_response(
-        llm_output_path=path,
-        expected_fingerprint="same",
-        allow_failed_validation=True,
-    ) is not None
-    assert load_cached_writer_response(
-        llm_output_path=path,
-        expected_fingerprint="different",
-    ) is None
-
-
-def test_legacy_failed_validation_report_blocks_raw_response_reuse(tmp_path: Path) -> None:
-    path = tmp_path / "llm_writer_output.json"
-    path.write_text(
-        json.dumps({"fingerprint": "same", "raw_payload": _sample_payload()}),
-        encoding="utf-8",
-    )
-    validation_path = tmp_path / "writer_validation_report.json"
-    validation_path.write_text(json.dumps({"status": "fail"}), encoding="utf-8")
-
-    assert load_cached_writer_response(
-        llm_output_path=path,
-        expected_fingerprint="same",
-        validation_report_path=validation_path,
-    ) is None
-
-
-def test_writer_cli_retries_one_gate_c_failure_with_fresh_attempt(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_writer_cli_runs_once_without_semantic_retry(tmp_path: Path, monkeypatch) -> None:
     output_dir = tmp_path / "Writer"
     calls = {"count": 0}
 
     def fake_run(_config):
         calls["count"] += 1
-        if calls["count"] == 1:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            (output_dir / "writer_failure_report.json").write_text(
-                json.dumps({"status": "fail", "stage": "gate_c"}),
-                encoding="utf-8",
-            )
-            return {"validation_status": "fail"}
-        return {"validation_status": "pass"}
+        return {"status": "success"}
 
     monkeypatch.setattr(writer_agent_module, "run_writer_agent", fake_run)
 
@@ -230,14 +177,12 @@ def test_writer_cli_retries_one_gate_c_failure_with_fresh_attempt(
             RUN_KEY,
             "--output-dir",
             str(output_dir),
-            "--semantic-attempts",
-            "2",
         ]
     )
 
     assert result == 0
-    assert calls["count"] == 2
-    assert (output_dir / "attempts/attempt_01/writer_failure_report.json").exists()
+    assert calls["count"] == 1
+    assert not (output_dir / "attempts").exists()
 
 
 def test_writer_uses_one_llm_call_without_repair(monkeypatch) -> None:
@@ -287,7 +232,74 @@ def test_renderer_outputs_six_sections_with_data_limits_and_no_view_change_or_ta
     assert "목표주가" not in html
     assert "@page" in html and "size: A4" in html
     assert html.count("<table>") >= 2
-    assert "<strong>Hold</strong>" in html
+    assert payload["metadata"]["recommendation"] == "Hold"
+    assert "Hold" not in html
+    assert "Buy" not in html
+    assert "Sell" not in html
+    assert f'class="report-disclaimer">{REPORT_DISCLAIMER}</footer>' in html
+    assert "font-size: 4.4pt" in html
+    assert "text-align: center" in html
+
+
+def test_renderer_allows_complete_report_to_flow_across_print_pages() -> None:
+    handoff = _writer_handoff_from_sources()
+    payload = normalize_report_payload(_sample_payload(), writer_handoff=handoff)
+
+    html = build_complete_html(payload)
+
+    assert ".a4-sheet {\n      width: 210mm;\n      min-height: 297mm;" in html
+    assert "max-height: none;" in html
+    assert "#risk-monitoring-matrix {" in html
+    assert "break-before: page;" in html
+    validation = validate_html_report(
+        report_payload=payload,
+        html_content=html,
+        writer_handoff=handoff,
+    )
+    assert validation["a4_print_layout"] == "pass"
+
+
+def test_renderer_embeds_market_chart_assets(tmp_path: Path) -> None:
+    handoff = _writer_handoff_from_sources()
+    payload = normalize_report_payload(_sample_payload(), writer_handoff=handoff)
+    payload["market_charts"] = [
+        {"src": "assets/full_period_technical.png", "caption": "분석기간 주가 및 기술지표"}
+    ]
+
+    html = build_complete_html(payload)
+
+    assert "주요 시장 차트" in html
+    assert '<img src="assets/full_period_technical.png"' in html
+    assert "분석기간 주가 및 기술지표" in html
+
+
+def test_rendered_report_contains_png_charts_without_external_files(tmp_path: Path) -> None:
+    handoff = _writer_handoff_from_sources()
+    payload = normalize_report_payload(_sample_payload(), writer_handoff=handoff)
+    payload["market_charts"] = [
+        {"src": "assets/full_period_technical.png", "caption": "분석기간 주가 및 기술지표"}
+    ]
+    chart_path = tmp_path / "assets" / "full_period_technical.png"
+    chart_path.parent.mkdir(parents=True)
+    chart_path.write_bytes(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF"
+            "gAI/txqfAAAAAElFTkSuQmCC"
+        )
+    )
+
+    result = render_formatted_html_report(payload, tmp_path)
+    html = Path(result["html_report"]).read_text(encoding="utf-8")
+
+    assert 'src="data:image/png;base64,' in html
+    assert 'src="assets/full_period_technical.png"' not in html
+    assert payload["market_charts"][0]["src"] == "assets/full_period_technical.png"
+    validation = validate_html_report(
+        report_payload=payload,
+        html_content=html,
+        writer_handoff=handoff,
+    )
+    assert validation["status"] == "pass"
 
 
 def test_validator_passes_grounded_fixed_format_html() -> None:
@@ -302,6 +314,42 @@ def test_validator_passes_grounded_fixed_format_html() -> None:
     assert validation["large_number_grounding"] == "pass"
     assert validation["absolute_paths_removed"] == "pass"
     assert validation["forbidden_content_removed"] == "pass"
+    assert validation["reader_recommendation_labels_hidden"] == "pass"
+    assert validation["fixed_disclaimer"] == "pass"
+
+
+def test_validator_rejects_reader_visible_recommendation_label() -> None:
+    handoff = _writer_handoff_from_sources()
+    payload = normalize_report_payload(_sample_payload(), writer_handoff=handoff)
+    html = build_complete_html(payload).replace(
+        '<footer class="report-disclaimer">',
+        '<p>Hold 의견이다.</p><footer class="report-disclaimer">',
+        1,
+    )
+
+    validation = validate_html_report(
+        report_payload=payload,
+        html_content=html,
+        writer_handoff=handoff,
+    )
+
+    assert validation["status"] == "fail"
+    assert validation["reader_recommendation_labels_hidden"] == "fail"
+
+
+def test_validator_rejects_missing_fixed_disclaimer() -> None:
+    handoff = _writer_handoff_from_sources()
+    payload = normalize_report_payload(_sample_payload(), writer_handoff=handoff)
+    html = build_complete_html(payload).replace(REPORT_DISCLAIMER, "", 1)
+
+    validation = validate_html_report(
+        report_payload=payload,
+        html_content=html,
+        writer_handoff=handoff,
+    )
+
+    assert validation["status"] == "fail"
+    assert validation["fixed_disclaimer"] == "fail"
 
 
 def test_validator_rejects_invalid_grounding_ref() -> None:
@@ -398,6 +446,24 @@ def test_normalize_report_payload_converts_raw_technical_terms() -> None:
     assert "monitoring" not in paragraph
     assert "2025년 3분기 누적" in paragraph
     assert "2024년 연간 실적" in paragraph
+
+
+def test_market_relative_observation_uses_report_style_period_note() -> None:
+    text = _market_relative_observation_text(
+        {
+            "comparison_entities": {"benchmark_name": "KOSPI"},
+            "primary_observation": {
+                "periods": {"stock_period_excess_return": "2025-10-01..2025-10-30"}
+            },
+        },
+        {
+            "기준일": "2025-10-30",
+            "지표": {"60일 KOSPI 상대강도": "-18.01%"},
+        },
+    )
+
+    assert "warm-up" not in text
+    assert "주: 60거래일 수익률은 분석 시작일 이전 주가를 포함하여 산출함" in text
 
 
 def test_raw_payload_shape_errors_reject_missing_extra_and_nested_sections() -> None:
@@ -588,7 +654,7 @@ def _sample_payload() -> dict:
         else:
             sections[section["key"]] = {
                 item_key: {
-                    "paragraphs": [f"{item_title}: <strong>Hold</strong> 근거를 설명한다."],
+                    "paragraphs": [f"{item_title}: <strong>핵심 근거</strong>를 설명한다."],
                     "bullets": [],
                     "grounding_refs": text_refs.get(section["key"], ["OP001"]),
                 }

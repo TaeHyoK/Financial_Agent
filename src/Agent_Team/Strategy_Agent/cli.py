@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import shutil
 from pathlib import Path
 
 from orchestration.ablation import AblationConfig, DOMAIN_ORDER, normalize_domain
@@ -23,7 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build CLI parser."""
 
     parser = argparse.ArgumentParser(
-        description="Create a Strategy Agent Buy/Hold/Sell report from target reports and a structured peer dataset."
+        description="Create an evidence-grounded Strategy response from target reports and a structured peer dataset."
     )
     parser.add_argument("--target-company-name", default=None, help="Target company display name.")
     parser.add_argument("--target-run-key", "--run-key", default=None, help="Target run_key, e.g. SK바이오팜_20251031.")
@@ -34,6 +33,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--peer-comparison",
         default=None,
         help="Explicit pairwise peer_comparison_dataset.json.",
+    )
+    parser.add_argument(
+        "--peer-analysis",
+        default=None,
+        help="Peer comparison agent's peer_comparison_report.json.",
     )
     parser.add_argument("--output-dir", default=None, help="Output directory for Strategy files.")
     parser.add_argument(
@@ -52,8 +56,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--packet-version",
         default=None,
-        choices=["v1", "v2"],
-        help="Strategy packet/decision contract. Defaults to STRATEGY_PACKET_VERSION or v2.",
+        choices=["v1", "v2", "v3", "v4"],
+        help="Strategy packet/decision contract. Defaults to STRATEGY_PACKET_VERSION or v4.",
     )
     parser.add_argument("--env-file", default=None, help="Optional .env path. Defaults to configs/.env in agent.py.")
     parser.add_argument(
@@ -79,12 +83,6 @@ def build_parser() -> argparse.ArgumentParser:
             "Decision horizon policy: default, unspecified, short_term (1 month), "
             "medium_term (3 months), or long_term (6 months)."
         ),
-    )
-    parser.add_argument(
-        "--semantic-attempts",
-        type=int,
-        default=2,
-        help="Maximum fresh Strategy generations for post-Gate-A generation/finalize/Gate-B failures.",
     )
     parser.add_argument("--log-level", default="INFO")
     return parser
@@ -115,54 +113,30 @@ def main(argv: list[str] | None = None) -> int:
         target_run_key = args.target_run_key or Path(args.target_financial).expanduser().parent.name
         target_company_name = args.target_company_name or target_run_key.rsplit("_", 1)[0]
         output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else Path(args.output_root).expanduser().resolve() / "Strategy" / target_run_key
-        failure_markers = (
-            output_dir / "strategy_failure_report_v2.json",
-            output_dir / "strategy_decision_output_v2.failed.json",
+        report = run_strategy_agent(
+            target_company_name=target_company_name,
+            target_run_key=target_run_key,
+            target_financial_path=Path(args.target_financial).expanduser().resolve(),
+            target_news_path=Path(args.target_news).expanduser().resolve(),
+            target_yfinance_path=Path(args.target_yfinance).expanduser().resolve(),
+            output_dir=output_dir,
+            peer_comparison_path=Path(args.peer_comparison).expanduser().resolve() if args.peer_comparison else None,
+            peer_analysis_path=Path(args.peer_analysis).expanduser().resolve() if args.peer_analysis else None,
+            llm_provider=args.llm_provider,
+            llm_model=args.llm_model,
+            llm_timeout=args.llm_timeout,
+            env_file=Path(args.env_file).expanduser().resolve() if args.env_file else DEFAULT_ENV_FILE,
+            packet_version=args.packet_version,
+            ablation_config=ablation.as_dict(),
+            decision_horizon_profile=args.decision_horizon_profile,
         )
-        semantic_attempts = max(1, int(args.semantic_attempts))
-        for semantic_attempt in range(1, semantic_attempts + 1):
-            before = {
-                path: path.stat().st_mtime_ns if path.exists() else None
-                for path in failure_markers
-            }
-            try:
-                report = run_strategy_agent(
-                    target_company_name=target_company_name,
-                    target_run_key=target_run_key,
-                    target_financial_path=Path(args.target_financial).expanduser().resolve(),
-                    target_news_path=Path(args.target_news).expanduser().resolve(),
-                    target_yfinance_path=Path(args.target_yfinance).expanduser().resolve(),
-                    output_dir=output_dir,
-                    peer_comparison_path=Path(args.peer_comparison).expanduser().resolve() if args.peer_comparison else None,
-                    llm_provider=args.llm_provider,
-                    llm_model=args.llm_model,
-                    llm_timeout=args.llm_timeout,
-                    env_file=Path(args.env_file).expanduser().resolve() if args.env_file else DEFAULT_ENV_FILE,
-                    packet_version=args.packet_version,
-                    ablation_config=ablation.as_dict(),
-                    decision_horizon_profile=args.decision_horizon_profile,
-                )
-                break
-            except Exception:
-                changed_failure = any(
-                    path.exists()
-                    and path.stat().st_mtime_ns != before[path]
-                    for path in failure_markers
-                )
-                if not changed_failure or semantic_attempt >= semantic_attempts:
-                    raise
-                _archive_strategy_failure_attempt(output_dir, semantic_attempt)
-                logger.warning(
-                    "Strategy semantic attempt %s/%s failed after Gate A; generating a fresh response.",
-                    semantic_attempt,
-                    semantic_attempts,
-                )
     else:
         report = generate_strategy_report(
             run_key=args.target_run_key,
             target_config=Path(args.target_config).expanduser().resolve() if args.target_config else None,
             output_root=Path(args.output_root).expanduser().resolve(),
             peer_comparison=Path(args.peer_comparison).expanduser().resolve() if args.peer_comparison else None,
+            peer_analysis=Path(args.peer_analysis).expanduser().resolve() if args.peer_analysis else None,
             llm_provider=args.llm_provider,
             llm_model=args.llm_model,
             llm_timeout=args.llm_timeout,
@@ -176,21 +150,11 @@ def main(argv: list[str] | None = None) -> int:
         "Wrote Strategy report for %s (%s): %s",
         report.get("target_company_name") or report.get("target_company"),
         report.get("target_run_key"),
-        report.get("final_recommendation"),
+        report.get("strategy_brief")
+        or report.get("decision")
+        or report.get("final_recommendation"),
     )
     return 0
-
-
-def _archive_strategy_failure_attempt(output_dir: Path, attempt: int) -> None:
-    attempt_dir = output_dir / "attempts" / f"attempt_{attempt:02d}"
-    attempt_dir.mkdir(parents=True, exist_ok=True)
-    for filename in (
-        "strategy_failure_report_v2.json",
-        "strategy_decision_output_v2.failed.json",
-    ):
-        source = output_dir / filename
-        if source.exists():
-            shutil.copy2(source, attempt_dir / filename)
 
 
 if __name__ == "__main__":

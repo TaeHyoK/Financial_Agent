@@ -706,12 +706,10 @@ def _write_request_preview(path: Path, request_payload: dict[str, Any]) -> None:
 def _require_valid_row(row: dict[str, Any], *, label: str) -> None:
     required_passes = (
         row.get("status") == "success",
-        row.get("gate_a") == "pass",
-        row.get("gate_b") == "pass",
-        row.get("writer_gate") == "pass",
+        row.get("writer_status") == "success",
     )
     if not all(required_passes):
-        raise ValueError(f"Report pair input did not pass all generation gates: {label}")
+        raise ValueError(f"Report pair input did not complete successfully: {label}")
     report = Path(str(row.get("report_html") or "")).expanduser().resolve()
     manifest = Path(str(row.get("pipeline_manifest") or "")).expanduser().resolve()
     if not report.exists() or not manifest.exists():

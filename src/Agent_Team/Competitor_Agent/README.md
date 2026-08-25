@@ -1,12 +1,13 @@
 # Peer Resolution and Comparison
 
-This package contains deterministic peer identity and pairwise comparison components. It does not call an LLM and does not generate competitor prose.
+This package selects one domestic peer, builds a deterministic pairwise dataset, and runs one comparison analysis over both companies' Financial, News, and YFinance handoffs. Peer identity selection and numeric calculations do not use an LLM; only the final cross-company interpretation does.
 
 ## Inputs
 
 - Target stock code and selected date
 - Naver Finance / WiseReport FG000 industry candidates
 - Target and peer `Financial/final_report.json`
+- Target and peer `News/final_report.json`
 - Target and peer `Y_Finance/market_full_dataset.csv`
 - Target and peer `Y_Finance/final_report.json`
 
@@ -34,11 +35,29 @@ PYTHONPATH=src python -m Agent_Team.Competitor_Agent.peer_comparison_cli \
   --output-root Output_total
 ```
 
+Run the comparison analysis after the dataset is ready:
+
+```bash
+PYTHONPATH=src python -m Agent_Team.Competitor_Agent.comparison_agent_cli \
+  --target-company-name SK바이오팜 \
+  --peer-company-name 일성아이에스 \
+  --target-financial Output_total/Financial/SK바이오팜_20251031/final_report.json \
+  --target-news Output_total/News/SK바이오팜_20251031/final_report.json \
+  --target-yfinance Output_total/Y_Finance/SK바이오팜_20251031/final_report.json \
+  --peer-financial Output_total/Financial/일성아이에스_20251031/final_report.json \
+  --peer-news Output_total/News/일성아이에스_20251031/final_report.json \
+  --peer-yfinance Output_total/Y_Finance/일성아이에스_20251031/final_report.json \
+  --pairwise-dataset Output_total/Competitor/SK바이오팜_20251031/peer_comparison_dataset.json \
+  --output-dir Output_total/Competitor/SK바이오팜_20251031
+```
+
 ## Output
 
 ```text
 Output_total/Competitor/{target_run_key}/peer_resolution.json
 Output_total/Competitor/{target_run_key}/peer_comparison_dataset.json
+Output_total/Competitor/{target_run_key}/peer_comparison_context.json
+Output_total/Competitor/{target_run_key}/peer_comparison_report.json
 ```
 
-The dataset preserves period, date, unit, and missing-field metadata. It does not contain ranks, industry averages, strengths, risks, investment implications, or generated summary sentences.
+The dataset preserves period, date, unit, and missing-field metadata. The comparison report records the LLM's relative findings and the exact basis cards it selected. Neither artifact represents an industry ranking or average, and the comparison agent does not issue an investment action or target price.

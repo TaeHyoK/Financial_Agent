@@ -76,5 +76,6 @@ include = ["Agent_Team*", "shared*", "orchestration*", "single_llm*"]
 exclude = ["__pycache__*"]
 
 [tool.setuptools.package-data]
+"Agent_Team.Competitor_Agent" = ["prompts/*.md"]
 orchestration = ["prompts/*.md"]
 single_llm = ["prompts/*.md", "configs/*.yaml"]

@@ -16,6 +16,7 @@ from Agent_Team.Strategy_Agent.agent import (
 )
 from Agent_Team.Strategy_Agent.contracts_v2 import (
     build_compact_strategy_packet_v2,
+    build_peer_analysis_card,
     build_peer_pair_cards,
     finalize_strategy_decision_v2,
     strategy_decision_response_format_v2,
@@ -23,57 +24,91 @@ from Agent_Team.Strategy_Agent.contracts_v2 import (
 )
 
 
-def test_strategy_cli_retries_one_post_gate_a_failure(tmp_path: Path, monkeypatch) -> None:
+def test_peer_analysis_card_drops_points_using_excluded_domains() -> None:
+    analysis = {
+        "target_company": "대상기업",
+        "peer_company": "비교기업",
+        "comparison_brief": "재무와 시장을 함께 비교했다.",
+        "comparison_points": [
+            {
+                "topic": "재무",
+                "basis": [{"card_key": "pair.financial.metrics", "usage_reason": "재무 비교"}],
+            },
+            {
+                "topic": "시장",
+                "basis": [{"card_key": "pair.market.metrics", "usage_reason": "시장 비교"}],
+            },
+        ],
+        "comparison_limitations": ["비교기업 한 곳 기준"],
+        "selected_basis_cards": [
+            {
+                "card_key": "pair.financial.metrics",
+                "label": "재무",
+                "company_scope": "pair",
+                "domain": "financial",
+                "observation": {"value": 1},
+            },
+            {
+                "card_key": "pair.market.metrics",
+                "label": "시장",
+                "company_scope": "pair",
+                "domain": "market",
+                "observation": {"value": 2},
+            },
+        ],
+        "source_path": "/tmp/peer_comparison_report.json",
+    }
+
+    result = build_peer_analysis_card(analysis, included_domains={"financial"})
+
+    assert result is not None
+    card, _raw_ids, _source_paths = result
+    observation = card["primary_observation"]
+    assert [point["topic"] for point in observation["comparison_points"]] == ["재무"]
+    assert "comparison_brief" not in observation
+    assert [item["card_key"] for item in observation["selected_basis"]] == [
+        "pair.financial.metrics"
+    ]
+
+
+def test_strategy_cli_does_not_retry_failed_generation(tmp_path: Path, monkeypatch) -> None:
     output_dir = tmp_path / "Strategy"
     calls = {"count": 0}
 
     def fake_run_strategy_agent(**_kwargs):
         calls["count"] += 1
-        if calls["count"] == 1:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            (output_dir / "strategy_failure_report_v2.json").write_text(
-                json.dumps({"status": "fail", "stage": "gate_b"}),
-                encoding="utf-8",
-            )
-            raise ValueError("Gate B failed")
-        return {
-            "target_company_name": "대상기업",
-            "target_run_key": "대상기업_20251031",
-            "final_recommendation": {"opinion": "Hold", "investment_horizon": "1개월"},
-        }
+        raise RuntimeError("generation failed")
 
     monkeypatch.setattr(strategy_cli, "run_strategy_agent", fake_run_strategy_agent)
 
-    result = strategy_cli.main(
-        [
-            "--target-company-name",
-            "대상기업",
-            "--target-run-key",
-            "대상기업_20251031",
-            "--target-financial",
-            str(tmp_path / "financial.json"),
-            "--target-news",
-            str(tmp_path / "news.json"),
-            "--target-yfinance",
-            str(tmp_path / "yfinance.json"),
-            "--output-dir",
-            str(output_dir),
-            "--packet-version",
-            "v2",
-            "--decision-horizon-profile",
-            "short_term",
-            "--semantic-attempts",
-            "2",
-        ]
-    )
+    with pytest.raises(RuntimeError, match="generation failed"):
+        strategy_cli.main(
+            [
+                "--target-company-name",
+                "대상기업",
+                "--target-run-key",
+                "대상기업_20251031",
+                "--target-financial",
+                str(tmp_path / "financial.json"),
+                "--target-news",
+                str(tmp_path / "news.json"),
+                "--target-yfinance",
+                str(tmp_path / "yfinance.json"),
+                "--output-dir",
+                str(output_dir),
+                "--packet-version",
+                "v2",
+                "--decision-horizon-profile",
+                "short_term",
+            ]
+        )
 
-    assert result == 0
-    assert calls["count"] == 2
-    assert (output_dir / "attempts/attempt_01/strategy_failure_report_v2.json").exists()
+    assert calls["count"] == 1
+    assert not (output_dir / "attempts").exists()
 
 
 def test_compact_packet_is_self_contained_and_keeps_raw_ids_only_in_provenance() -> None:
-    packet, provenance, telemetry, gate_a = build_compact_strategy_packet_v2(_bundle())
+    packet, provenance, telemetry, input_summary = build_compact_strategy_packet_v2(_bundle())
 
     serialized = json.dumps(packet, ensure_ascii=False)
     assert packet["packet_version"] == "strategy_compact_packet_v2"
@@ -87,7 +122,8 @@ def test_compact_packet_is_self_contained_and_keeps_raw_ids_only_in_provenance()
     assert packet["cards"]["market.relative_performance"]["comparison_label"] == "KOSPI 대비"
     assert packet["cards"]["peer.valuation"]["comparison_entities"]["peer_companies"] == ["비교기업"]
     assert telemetry["serialized_bytes"] > 0
-    assert gate_a["status"] == "pass"
+    assert input_summary["contract"] == "strategy_input_v2"
+    assert input_summary["status"] == "pass"
 
 
 def test_full_context_ablation_keeps_compact_contract_and_adds_reports() -> None:
@@ -325,6 +361,17 @@ def test_gate_b_rejects_card_key_in_reader_assessment() -> None:
         validate_strategy_decision_v2(output, packet=packet, provenance=provenance)
 
 
+def test_gate_b_rejects_recommendation_label_in_reader_text() -> None:
+    packet, provenance, _telemetry, _gate_a = build_compact_strategy_packet_v2(_bundle())
+    output = _decision_output(packet)
+    output["recommendation_bridge"]["forward_support"] = (
+        "재무 개선과 비교기업 대비 배수 부담을 고려해 Hold로 판단한다."
+    )
+
+    with pytest.raises(ValueError, match="Reader-facing recommendation label leaked"):
+        validate_strategy_decision_v2(output, packet=packet, provenance=provenance)
+
+
 def test_strategy_gate_b_rejects_incomparable_peer_finding() -> None:
     bundle = _bundle()
     bundle["peer_comparison"]["metrics"][1]["valuation_metrics"]["calculated_as_of_date"] = "2025-10-29"
@@ -450,7 +497,7 @@ def test_run_strategy_v2_revalidates_cached_horizon_against_profile(tmp_path: Pa
             )
 
     assert mocked_llm.call_count == 1
-    assert (output_dir / "strategy_decision_output_v2.failed.json").exists()
+    assert not (output_dir / "strategy_decision_output_v2.failed.json").exists()
 
 
 def test_gate_b_uses_comparison_metadata_instead_of_prose_keywords() -> None:

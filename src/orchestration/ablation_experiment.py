@@ -154,7 +154,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--peer-stock-code", default="")
     parser.add_argument("--llm-timeout", type=_positive_int, default=300)
     parser.add_argument("--max-retries", type=_non_negative_int, default=1)
-    parser.add_argument("--semantic-attempts", type=_positive_int, default=2)
     parser.add_argument("--final-stage-timeout", type=_positive_int, default=900)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
@@ -515,8 +514,6 @@ def build_condition_command(
         str(args.llm_timeout),
         "--max-retries",
         str(args.max_retries),
-        "--semantic-attempts",
-        str(args.semantic_attempts),
         "--final-stage-timeout",
         str(args.final_stage_timeout),
     ]
@@ -607,6 +604,7 @@ def run_frozen_final_stage(
     source = _load_json(source_manifest)
     source_outputs = source.get("outputs") if isinstance(source.get("outputs"), dict) else {}
     target = source.get("target") if isinstance(source.get("target"), dict) else {}
+    peer = source.get("peer") if isinstance(source.get("peer"), dict) else {}
     run_key = str(source.get("run_key") or "")
     company_name = str(target.get("company_name") or args.company_name)
     if not run_key:
@@ -631,8 +629,35 @@ def run_frozen_final_stage(
             / "final_report.json"
         ),
         "peer_comparison": source_outputs.get("peer_comparison"),
+        "peer_analysis": source_outputs.get("peer_analysis"),
     }
-    missing = [name for name, path in required_inputs.items() if name != "peer_comparison" and not _path_exists(path)]
+    source_root = (
+        Path(str(source_outputs["strategy_report"])).parents[2]
+        if source_outputs.get("strategy_report")
+        else None
+    )
+    peer_run_key = str(peer.get("run_key") or "")
+    if source_root is not None and peer_run_key:
+        required_inputs.update(
+            {
+                "peer_financial": str(source_root / "Financial" / peer_run_key / "final_report.json"),
+                "peer_news": str(source_root / "News" / peer_run_key / "final_report.json"),
+                "peer_yfinance": str(source_root / "Y_Finance" / peer_run_key / "final_report.json"),
+            }
+        )
+    missing = [
+        name
+        for name, path in required_inputs.items()
+        if name
+        not in {
+            "peer_comparison",
+            "peer_analysis",
+            "peer_financial",
+            "peer_news",
+            "peer_yfinance",
+        }
+        and not _path_exists(path)
+    ]
     if missing:
         raise ValueError(f"Frozen Full upstream is missing required files: {missing}")
 
@@ -654,23 +679,25 @@ def run_frozen_final_stage(
         and "--no-competitor" not in condition_flags
     )
     reuse_full_strategy = condition.name == "free_form_writer"
+    generate_peer_analysis = False
     reused_strategy_artifacts: dict[str, str] = {}
     if reuse_full_strategy:
-        source_decision = Path(str(source_outputs.get("strategy_decision_output_v2") or ""))
+        source_decision = Path(str(source_outputs.get("strategy_decision_output_v4") or ""))
         if not source_decision.exists():
             raise ValueError(
-                "Writer-only ablation requires Full's strategy_decision_output_v2.json."
+                "Writer-only ablation requires Full's strategy_decision_output_v4.json."
             )
         source_strategy_dir = source_decision.resolve().parent
         strategy_filenames = (
             "strategy_report.json",
             "strategy_compact_packet_v2.json",
             "strategy_packet_provenance_v2.json",
-            "strategy_decision_output_v2.json",
-            "strategy_semantic_validation_v2.json",
+            "strategy_context_package_v4.json",
+            "strategy_generation_context_v4.json",
+            "strategy_context_telemetry_v4.json",
+            "strategy_decision_output_v4.json",
             "strategy_packet_telemetry_v2.json",
-            "strategy_decision_profile_v2.json",
-            "strategy_generation_context_v2.json",
+            "strategy_decision_profile_v4.json",
         )
         missing_strategy = [
             filename for filename in strategy_filenames if not (source_strategy_dir / filename).exists()
@@ -704,15 +731,13 @@ def run_frozen_final_stage(
         "--output-dir",
         str(strategy_dir),
         "--packet-version",
-        "v2",
+        "v4",
         "--llm-model",
         args.llm_model,
         "--llm-timeout",
         str(args.llm_timeout),
         "--decision-horizon-profile",
         args.decision_horizon_profile,
-        "--semantic-attempts",
-        str(args.semantic_attempts),
         "--env-file",
         str(Path(args.env_file).expanduser().resolve()),
         "--experiment-name",
@@ -720,11 +745,28 @@ def run_frozen_final_stage(
     ]
     for domain in included_domains:
         strategy_command.extend(["--include-domain", domain])
-    if include_competitor:
+    if include_competitor and not reuse_full_strategy:
         if not _path_exists(required_inputs.get("peer_comparison")):
             raise ValueError("Frozen Full upstream has no peer comparison dataset.")
+        if not _path_exists(required_inputs.get("peer_analysis")):
+            missing_peer_reports = [
+                name
+                for name in ("peer_financial", "peer_news", "peer_yfinance")
+                if not _path_exists(required_inputs.get(name))
+            ]
+            if missing_peer_reports or not peer_run_key:
+                raise ValueError(
+                    "Frozen upstream has no reusable peer analysis and cannot regenerate it: "
+                    f"{missing_peer_reports or ['peer_run_key']}"
+                )
+            generated_peer_analysis = (
+                condition_root / "Competitor" / run_key / "peer_comparison_report.json"
+            )
+            required_inputs["peer_analysis"] = str(generated_peer_analysis)
+            generate_peer_analysis = True
         strategy_command.extend(["--peer-comparison", str(required_inputs["peer_comparison"])])
-    else:
+        strategy_command.extend(["--peer-analysis", str(required_inputs["peer_analysis"])])
+    elif not include_competitor:
         strategy_command.append("--no-competitor")
     if not use_sy:
         strategy_command.append("--no-sy")
@@ -743,18 +785,60 @@ def run_frozen_final_stage(
         "--strategy-provenance",
         str(strategy_dir / "strategy_packet_provenance_v2.json"),
         "--strategy-decision",
-        str(strategy_dir / "strategy_decision_output_v2.json"),
+        str(strategy_dir / "strategy_decision_output_v4.json"),
         "--output-dir",
         str(writer_dir),
         "--env-file",
         str(Path(args.env_file).expanduser().resolve()),
         "--llm-model",
         args.llm_model,
-        "--semantic-attempts",
-        str(args.semantic_attempts),
     ]
+    chart_dir = source_root / "Y_Finance" / run_key / "charts" if source_root else None
+    if chart_dir is not None:
+        for chart_path in (
+            chart_dir / "full_period_technical.png",
+            chart_dir / "full_period_kospi_fx.png",
+            chart_dir / f"summary_{run_key.rsplit('_', 1)[-1]}.png",
+        ):
+            writer_command.extend(["--market-chart", str(chart_path)])
     if condition.name == "free_form_writer":
         writer_command.append("--free-form")
+
+    comparison_command: list[str] = []
+    if generate_peer_analysis:
+        comparison_command = [
+            sys.executable,
+            "-m",
+            "Agent_Team.Competitor_Agent.comparison_agent_cli",
+            "--target-company-name",
+            company_name,
+            "--peer-company-name",
+            str(peer.get("company_name") or peer_run_key.rsplit("_", 1)[0]),
+            "--target-financial",
+            str(required_inputs["target_financial"]),
+            "--target-news",
+            str(required_inputs["target_news"]),
+            "--target-yfinance",
+            str(required_inputs["target_yfinance"]),
+            "--peer-financial",
+            str(required_inputs["peer_financial"]),
+            "--peer-news",
+            str(required_inputs["peer_news"]),
+            "--peer-yfinance",
+            str(required_inputs["peer_yfinance"]),
+            "--pairwise-dataset",
+            str(required_inputs["peer_comparison"]),
+            "--output-dir",
+            str(condition_root / "Competitor" / run_key),
+            "--llm-model",
+            args.llm_model,
+            "--llm-timeout",
+            str(args.llm_timeout),
+            "--env-file",
+            str(Path(args.env_file).expanduser().resolve()),
+        ]
+        for domain in included_domains:
+            comparison_command.extend(["--include-domain", domain])
 
     environment = os.environ.copy()
     source_pythonpath = str(PROJECT_ROOT / "src")
@@ -778,6 +862,17 @@ def run_frozen_final_stage(
     strategy_stderr = log_dir / f"{condition.name}__strategy.stderr.log"
     writer_stdout = log_dir / f"{condition.name}__writer.stdout.log"
     writer_stderr = log_dir / f"{condition.name}__writer.stderr.log"
+    comparison_stdout = log_dir / f"{condition.name}__peer_comparison_analysis.stdout.log"
+    comparison_stderr = log_dir / f"{condition.name}__peer_comparison_analysis.stderr.log"
+    comparison_rc = 0
+    if comparison_command:
+        comparison_rc = _run_logged_command(
+            comparison_command,
+            env=environment,
+            stdout_path=comparison_stdout,
+            stderr_path=comparison_stderr,
+            timeout=args.final_stage_timeout,
+        )
     if reuse_full_strategy:
         strategy_rc = 0
         _write_text(
@@ -785,7 +880,7 @@ def run_frozen_final_stage(
             "Reused Full's byte-identical Strategy artifacts for Writer-only ablation.\n",
         )
         _write_text(strategy_stderr, "")
-    else:
+    elif comparison_rc == 0:
         strategy_rc = _run_logged_command(
             strategy_command,
             env=environment,
@@ -793,6 +888,8 @@ def run_frozen_final_stage(
             stderr_path=strategy_stderr,
             timeout=args.final_stage_timeout,
         )
+    else:
+        strategy_rc = 125
     writer_rc = 125
     if strategy_rc == 0:
         writer_rc = _run_logged_command(
@@ -803,15 +900,18 @@ def run_frozen_final_stage(
             timeout=args.final_stage_timeout,
         )
 
-    strategy_validation = _load_json_optional(strategy_dir / "strategy_semantic_validation_v2.json")
-    writer_validation = _load_json_optional(writer_dir / "writer_validation_report.json")
+    strategy_output = _load_json_optional(strategy_dir / "strategy_decision_output_v4.json")
+    writer_status = _load_json_optional(writer_dir / "writer_run_status.json")
     report_path = writer_dir / "report.html"
     completed = (
+        comparison_rc == 0
+        and
         strategy_rc == 0
         and writer_rc == 0
-        and strategy_validation.get("status") == "pass"
-        and writer_validation.get("status") == "pass"
-        and report_path.exists()
+        and bool(strategy_output)
+        and writer_status.get("status") == "success"
+        and report_path.is_file()
+        and report_path.stat().st_size > 0
     )
     usage = summarize_execution_usage(
         usage_manifest,
@@ -820,7 +920,7 @@ def run_frozen_final_stage(
         expected_logical_calls_by_role={
             "target": 0,
             "peer": 0,
-            "final": 1 if reuse_full_strategy else 2,
+            "final": (1 if reuse_full_strategy else 2) + int(bool(comparison_command)),
         },
     )
     _write_json(usage_summary_path, usage)
@@ -828,7 +928,10 @@ def run_frozen_final_stage(
     if not completed:
         error = {
             "type": "FrozenFinalStageFailure",
-            "message": f"strategy_rc={strategy_rc}, writer_rc={writer_rc}",
+            "message": (
+                f"comparison_rc={comparison_rc}, strategy_rc={strategy_rc}, "
+                f"writer_rc={writer_rc}"
+            ),
         }
     final_manifest = {
         "execution_id": execution_id,
@@ -844,26 +947,31 @@ def run_frozen_final_stage(
         "outputs": {
             "strategy_report": str(strategy_dir / "strategy_report.json"),
             "strategy_compact_packet_v2": str(strategy_dir / "strategy_compact_packet_v2.json"),
-            "strategy_decision_output_v2": str(strategy_dir / "strategy_decision_output_v2.json"),
+            "strategy_decision_output_v4": str(strategy_dir / "strategy_decision_output_v4.json"),
+            "writer_run_status": str(writer_dir / "writer_run_status.json"),
             "writer_report": str(report_path),
+            "peer_analysis": str(required_inputs.get("peer_analysis") or ""),
             "llm_usage_manifest": str(usage_manifest),
             "llm_usage_summary": str(usage_summary_path),
         },
         "validation": {
             "status": "pass" if completed else "fail",
-            "final_recommendation": _nested_value(
-                _load_json_optional(strategy_dir / "strategy_decision_output_v2.json"),
-                "decision",
-                "opinion",
+            "strategy_judgment": _nested_value(
+                _load_json_optional(strategy_dir / "strategy_decision_output_v4.json"),
+                "strategy_brief",
+                "thesis",
             ),
         },
         "llm_usage": usage,
         "error": error,
         "commands": {
+            "peer_comparison_analysis": comparison_command,
             "strategy": [] if reuse_full_strategy else strategy_command,
             "writer": writer_command,
         },
         "logs": {
+            "peer_comparison_analysis_stdout": str(comparison_stdout) if comparison_command else "",
+            "peer_comparison_analysis_stderr": str(comparison_stderr) if comparison_command else "",
             "strategy_stdout": str(strategy_stdout),
             "strategy_stderr": str(strategy_stderr),
             "writer_stdout": str(writer_stdout),
@@ -875,7 +983,11 @@ def run_frozen_final_stage(
         "returncode": 0 if completed else 1,
         "manifest_path": str(final_manifest_path),
         "result": load_condition_result(final_manifest_path),
-        "commands": [writer_command] if reuse_full_strategy else [strategy_command, writer_command],
+        "commands": (
+            [writer_command]
+            if reuse_full_strategy
+            else [*([comparison_command] if comparison_command else []), strategy_command, writer_command]
+        ),
     }
 
 
@@ -986,18 +1098,16 @@ def load_condition_result(path: Path) -> dict[str, Any]:
     outputs = manifest.get("outputs") if isinstance(manifest.get("outputs"), dict) else {}
     validation = manifest.get("validation") if isinstance(manifest.get("validation"), dict) else {}
     usage = manifest.get("llm_usage") if isinstance(manifest.get("llm_usage"), dict) else {}
-    strategy_validation = _load_json_optional(
-        _sibling_output(outputs.get("strategy_decision_output_v2"), "strategy_semantic_validation_v2.json")
-    )
     strategy_packet = _load_json_optional(outputs.get("strategy_compact_packet_v2"))
-    strategy_decision = _load_json_optional(outputs.get("strategy_decision_output_v2"))
-    writer_validation = _load_json_optional(
-        _sibling_output(outputs.get("writer_report"), "writer_validation_report.json")
+    strategy_decision = _load_json_optional(outputs.get("strategy_decision_output_v4"))
+    writer_status = _load_json_optional(
+        outputs.get("writer_run_status")
+        or _sibling_output(outputs.get("writer_report"), "writer_run_status.json")
     )
     telemetry = _load_json_optional(
         _sibling_output(outputs.get("strategy_compact_packet_v2"), "strategy_packet_telemetry_v2.json")
     )
-    decision = strategy_decision.get("decision") if isinstance(strategy_decision.get("decision"), dict) else {}
+    decision = strategy_decision.get("strategy_brief") if isinstance(strategy_decision.get("strategy_brief"), dict) else {}
     cards = strategy_packet.get("cards") if isinstance(strategy_packet.get("cards"), dict) else {}
     usage_values = usage.get("usage") if isinstance(usage.get("usage"), dict) else {}
     expected_calls = usage.get("expected_cold_cache_logical_calls")
@@ -1018,13 +1128,10 @@ def load_condition_result(path: Path) -> dict[str, Any]:
         "pipeline_status": manifest.get("status"),
         "error": manifest.get("error") or {},
         "validation_status": validation.get("status"),
-        "recommendation": decision.get("opinion") or validation.get("final_recommendation"),
+        "strategy_judgment": decision.get("thesis") or validation.get("strategy_judgment"),
         "investment_horizon": decision.get("horizon"),
         "data_coverage": decision.get("evidence_sufficiency"),
-        "gate_a_status": _nested_status(strategy_validation, "gate_a"),
-        "gate_b_status": _nested_status(strategy_validation, "gate_b"),
-        "writer_validation_status": writer_validation.get("status"),
-        "writer_blocking_failures": writer_validation.get("blocking_failures") or [],
+        "writer_status": writer_status.get("status"),
         "strategy_card_count": len(cards),
         "strategy_context_mode": telemetry.get("strategy_context_mode"),
         "generation_payload_bytes": telemetry.get("generation_payload_bytes"),
@@ -1064,11 +1171,9 @@ def build_summary(manifest: dict[str, Any]) -> dict[str, Any]:
                 "attempt": item.get("attempt", 1),
                 "execution_mode": item.get("execution_mode"),
                 "status": item.get("status"),
-                "recommendation": result.get("recommendation"),
+                "strategy_judgment": result.get("strategy_judgment"),
                 "data_coverage": result.get("data_coverage"),
-                "gate_a": result.get("gate_a_status"),
-                "gate_b": result.get("gate_b_status"),
-                "writer_gate": result.get("writer_validation_status"),
+                "writer_status": result.get("writer_status"),
                 "cards": result.get("strategy_card_count"),
                 "strategy_context_mode": result.get("strategy_context_mode"),
                 "generation_payload_bytes": result.get("generation_payload_bytes"),
@@ -1083,7 +1188,6 @@ def build_summary(manifest: dict[str, Any]) -> dict[str, Any]:
                 "pipeline_manifest": item.get("pipeline_manifest"),
                 "report_html": result.get("report_html"),
                 "error": result.get("error") or {},
-                "writer_blocking_failures": result.get("writer_blocking_failures") or [],
             }
         )
     return {
@@ -1109,15 +1213,15 @@ def render_summary_markdown(summary: dict[str, Any]) -> str:
         f"- Status: `{summary.get('status')}`",
         f"- Counts: `{json.dumps(summary.get('counts') or {}, ensure_ascii=False)}`",
         "",
-        "| Condition | Rep | Status | Opinion | Coverage | Gate A | Gate B | Writer | Cards | Calls | Tokens | Seconds |",
-        "| --- | ---: | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: |",
+        "| Condition | Rep | Status | Strategy judgment | Coverage | Writer | Cards | Calls | Tokens | Seconds |",
+        "| --- | ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: |",
     ]
     for row in summary.get("runs") or []:
         if not isinstance(row, dict):
             continue
         lines.append(
-            "| {condition} | {replicate} | {status} | {recommendation} | {data_coverage} | "
-            "{gate_a} | {gate_b} | {writer_gate} | {cards} | {calls} | {total_tokens} | "
+            "| {condition} | {replicate} | {status} | {strategy_judgment} | {data_coverage} | "
+            "{writer_status} | {cards} | {calls} | {total_tokens} | "
             "{elapsed_seconds} |".format(
                 calls=(
                     f"{row.get('observed_logical_calls', '')}/"

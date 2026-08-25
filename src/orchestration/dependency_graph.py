@@ -20,9 +20,9 @@ STEP_SPECS: tuple[StepSpec, ...] = (
     StepSpec("news_llm", dependencies=("news_export",), requires_llm=True),
     StepSpec("news_analysis", dependencies=("financial_layer_1", "yfinance_layer_1", "news_llm"), requires_llm=True),
     StepSpec("news_sy", dependencies=("news_analysis",), requires_llm=True),
-    StepSpec("financial_analyst", dependencies=("financial_layer_1", "yfinance_layer_1", "news_sy"), requires_llm=True),
+    StepSpec("financial_analyst", dependencies=("financial_layer_1", "yfinance_layer_1", "news_export"), requires_llm=True),
     StepSpec("financial_sy", dependencies=("financial_analyst",), requires_llm=True),
-    StepSpec("yfinance_report", dependencies=("financial_layer_1", "yfinance_layer_1", "news_sy"), requires_llm=True),
+    StepSpec("yfinance_report", dependencies=("financial_layer_1", "yfinance_layer_1", "news_llm"), requires_llm=True),
     StepSpec("yfinance_sy", dependencies=("yfinance_report",), requires_llm=True),
 )
 

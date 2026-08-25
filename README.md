@@ -13,8 +13,10 @@
 1. 공시에서 재무 항목과 제품별 매출을 추출하고, 시장 자료에서 수익률·기술지표·가치평가 지표를 계산한다.
 2. 뉴스 기사는 URL 중복을 제거한 뒤 공시의 사업 내용과 기사 간 유사도를 계산하여 순위를 정하고, 같은 날의 유사 기사를 사건 단위로 묶는다.
 3. 각 영역별 에이전트는 담당 자료를 주 분석자료로 사용하고, 다른 분석 영역에서 산출한 자료를 보조자료로 함께 참조한다.
-4. 대상기업과 국내 비교기업에 같은 분석 절차를 적용하고 두 기업의 재무·시장 지표 차이를 투자 판단에 반영한다.
+4. 대상기업과 국내 비교기업에 같은 분석 절차를 적용하고 두 기업의 재무·뉴스·시장 분석과 동일 기준의 수치 차이를 함께 비교한다.
 5. 분석 기준일 이전에 공개된 공시, 기사, 시장 자료만 사용한다.
+
+보조자료는 다른 에이전트가 작성한 주장이 아니라 자료 가공 단계의 산출물을 직접 사용한다. 시장 분석에는 30일 날짜별 뉴스 요약을 제공하여 거래일별 가격·거래량 변화와 함께 살펴보고, 재무 분석에는 기업 관련도 상위 10개 뉴스 사건의 날짜·제목·본문 일부를 제공한다.
 
 ## 분석 구조
 
@@ -31,7 +33,7 @@
 | 재무 분석 | OpenDART 정기공시 | 재무제표, 제품·서비스 매출, 주식 수 및 재무비율 산출 |
 | 뉴스 분석 | Google News와 원 기사 | 중복 제거, 사업 내용 기반 관련도 순위, 일자별 사건 구성 |
 | 시장 분석 | 종목, KOSPI, 원/달러 자료 | 수익률, 기술지표, 상대성과 및 가치평가 지표 산출 |
-| 비교기업 분석 | 대상기업과 비교기업의 분석 결과 | 같은 기준으로 산출한 재무·시장 지표 비교 |
+| 비교기업 분석 | 대상기업과 비교기업의 재무·뉴스·시장 분석 결과 | 동일 기준 수치 비교와 두 기업의 상대적 강점·약점 해석 |
 | 투자전략 | 세 영역의 분석 결과와 비교 자료 | 매수·보유·매도 의견, 근거와 위험 요인 작성 |
 | 보고서 작성 | 투자전략 결과 | 투자 의견, 주요 근거, 위험 요인 및 자료 한계로 구성된 HTML 생성 |
 
@@ -72,7 +74,6 @@ PYTHONPATH=src python -m orchestration.full_report_pipeline \
   --selected-date 20251031 \
   --news-window 1m \
   --decision-horizon-profile short_term \
-  --semantic-attempts 2 \
   --llm-model gpt-5.4-mini \
   --no-progress
 ```
@@ -84,8 +85,7 @@ financial-report \
   --company-name 현대모비스 \
   --selected-date 20251031 \
   --news-window 1m \
-  --decision-horizon-profile short_term \
-  --semantic-attempts 2
+  --decision-horizon-profile short_term
 ```
 
 `selected_date`는 장 시작 전의 분석 시점을 뜻한다. 따라서 위 실행에서 공시·뉴스·시장 자료의 마지막 사용일은 2025년 10월 30일이다. 기업명으로 OpenDART 법인번호와 종목코드를 확인하고, 국내 비교기업 한 곳을 자동으로 선정한다. 비교기업을 직접 지정해야 할 때는 `--peer-stock-code`를 사용한다.
@@ -102,6 +102,7 @@ Output_total/
 ├── News/{run_key}/final_report.json
 ├── Y_Finance/{run_key}/final_report.json
 ├── Competitor/{run_key}/peer_comparison_dataset.json
+├── Competitor/{run_key}/peer_comparison_report.json
 ├── Strategy/{run_key}/strategy_report.json
 ├── Writer/{run_key}/report.html
 └── runs/{run_key}/full_pipeline_manifest.json
@@ -147,7 +148,7 @@ bash scripts/run_six_company_single_llm_v3_background.sh plan
     │   ├── News_Agent/            # 뉴스 수집, 관련도 계산 및 사건 분석
     │   ├── YFinance_Agent/        # 시장 자료와 가치평가 분석
     │   ├── Competitor_Agent/      # 비교기업 선정 및 비교 자료 생성
-    │   ├── Strategy_Agent/        # 투자 의견과 위험 요인 생성
+    │   ├── Strategy_Agent/        # 판단 방향과 위험 요인 생성
     │   └── Writer Agent/          # 최종 HTML 보고서 작성
     ├── orchestration/             # 전체 실행, 실험 및 평가 절차
     ├── shared/                    # 공통 자료 계약과 언어 모델 호출

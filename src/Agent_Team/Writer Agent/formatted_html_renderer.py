@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import base64
+import copy
 from html import escape
 from pathlib import Path
 from typing import Any
 
-from html_report_spec import REPORT_SECTIONS, TABLE_ITEM_KEYS, resolve_report_item_title
+from html_report_spec import (
+    REPORT_DISCLAIMER,
+    REPORT_SECTIONS,
+    TABLE_ITEM_KEYS,
+    resolve_report_item_title,
+)
 from writer_io import write_text
 
 
@@ -29,7 +36,9 @@ def render_formatted_html_report(
 
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    html = build_complete_html(report_payload)
+    html = build_complete_html(
+        _embed_market_chart_assets(report_payload, output_dir=output_dir)
+    )
     report_path = output_dir / "report.html"
     write_text(report_path, html)
     legacy_final_path = output_dir / "final_report.html"
@@ -40,6 +49,36 @@ def render_formatted_html_report(
         "report_html": str(report_path),
         "html_content": html,
     }
+
+
+def _embed_market_chart_assets(
+    report_payload: dict[str, Any],
+    *,
+    output_dir: Path,
+) -> dict[str, Any]:
+    """Return a render-only payload whose local PNG charts are embedded in HTML."""
+
+    embedded = copy.deepcopy(report_payload)
+    output_dir = output_dir.resolve()
+    charts = embedded.get("market_charts")
+    if not isinstance(charts, list):
+        return embedded
+    for chart in charts:
+        if not isinstance(chart, dict):
+            continue
+        source_ref = str(chart.get("src") or "").strip()
+        if not source_ref or source_ref.startswith("data:image/"):
+            continue
+        source = (output_dir / source_ref).resolve()
+        try:
+            source.relative_to(output_dir)
+        except ValueError:
+            continue
+        if not source.is_file() or source.suffix.lower() != ".png":
+            continue
+        encoded = base64.b64encode(source.read_bytes()).decode("ascii")
+        chart["src"] = f"data:image/png;base64,{encoded}"
+    return embedded
 
 
 def build_complete_html(report_payload: dict[str, Any]) -> str:
@@ -82,8 +121,10 @@ def build_complete_html(report_payload: dict[str, Any]) -> str:
         {_sidebar_header(metadata)}
 {_render_sidebar_key_data(metadata)}
 {_render_sidebar_signal_summary(report_payload)}
+{_render_sidebar_market_charts(report_payload)}
       </div>
     </div>
+    <footer class="report-disclaimer">{_text(REPORT_DISCLAIMER)}</footer>
   </main>
 </body>
 </html>
@@ -93,13 +134,11 @@ def build_complete_html(report_payload: dict[str, Any]) -> str:
 def _document_header(metadata: dict[str, Any]) -> str:
     company = metadata.get("company_name") or MISSING_VALUE
     base_date = metadata.get("base_date") or MISSING_VALUE
-    recommendation = metadata.get("recommendation") or MISSING_VALUE
     return f"""
     <header class="document-header">
       <p class="report-name">{_inline(company)} 투자 리서치</p>
       <div class="meta-grid">
         <div><span>기준일</span><strong>{_inline(base_date)}</strong></div>
-        <div><span>투자의견</span><strong>{_inline(recommendation)}</strong></div>
       </div>
     </header>
 """
@@ -120,14 +159,12 @@ def _sidebar_header(metadata: dict[str, Any]) -> str:
 
 
 def _render_sidebar_key_data(metadata: dict[str, Any]) -> str:
-    recommendation = metadata.get("recommendation") or MISSING_VALUE
     coverage = _level_label(metadata.get("data_coverage"))
     confidence = _level_label(metadata.get("decision_confidence"))
     return f"""
         <section class="sidebar-panel key-data-panel">
           <h2>핵심 정보</h2>
           <dl>
-            <div><dt>투자의견</dt><dd>{_inline(recommendation)}</dd></div>
             <div><dt>자료 범위</dt><dd>{_inline(coverage)}</dd></div>
             <div><dt>판단 확신도</dt><dd>{_inline(confidence)}</dd></div>
           </dl>
@@ -139,7 +176,19 @@ def _render_sidebar_signal_summary(report_payload: dict[str, Any]) -> str:
     sections = _dict(report_payload.get("sections"))
     evidence = _dict(_dict(sections.get("key_evidence_table")).get("evidence_table"))
     rows = [row for row in evidence.get("rows") or [] if isinstance(row, dict)]
-    groups = {
+    role_based = any(str(row.get("_strategy_role") or "") for row in rows)
+    groups = ({
+        "핵심 근거": [
+            str(row.get("핵심 근거") or "").strip()
+            for row in rows
+            if row.get("_strategy_role") == "primary"
+        ][:3],
+        "반대 근거": [
+            str(row.get("핵심 근거") or "").strip()
+            for row in rows
+            if row.get("_strategy_role") == "counter"
+        ][:3],
+    } if role_based else {
         "긍정 요인": [
             str(row.get("핵심 근거") or "").strip()
             for row in rows
@@ -150,7 +199,7 @@ def _render_sidebar_signal_summary(report_payload: dict[str, Any]) -> str:
             for row in rows
             if row.get("_investment_effect") == "negative"
         ][:3],
-    }
+    })
     visible_groups = {label: values for label, values in groups.items() if values}
     if not visible_groups:
         return ""
@@ -166,6 +215,30 @@ def _render_sidebar_signal_summary(report_payload: dict[str, Any]) -> str:
         <section class="sidebar-panel signal-panel">
           <h2>판단 요인</h2>
 {content}
+        </section>
+"""
+
+
+def _render_sidebar_market_charts(report_payload: dict[str, Any]) -> str:
+    charts = [
+        chart
+        for chart in report_payload.get("market_charts") or []
+        if isinstance(chart, dict) and str(chart.get("src") or "").strip()
+    ]
+    if not charts:
+        return ""
+    figures = "\n".join(
+        f"""
+          <figure class="market-chart">
+            <img src="{escape(str(chart['src']), quote=True)}" alt="{escape(str(chart.get('caption') or '시장 차트'), quote=True)}">
+            <figcaption>{_text(chart.get('caption') or '시장 차트')}</figcaption>
+          </figure>"""
+        for chart in charts[:3]
+    )
+    return f"""
+        <section class="sidebar-panel market-chart-panel">
+          <h2>주요 시장 차트</h2>
+{figures}
         </section>
 """
 
@@ -323,6 +396,10 @@ def _render_table_row(row: Any, columns: list[str], *, item_key: str = "") -> st
                 "부담 요인": "impact-negative",
                 "혼합": "impact-mixed",
                 "중립": "impact-neutral",
+                "핵심 근거": "impact-positive",
+                "반대 근거": "impact-negative",
+                "위험 신호": "impact-mixed",
+                "판단 문맥": "impact-reference",
             }.get(str(cell), "impact-reference")
             rendered_cells.append(
                 f'<td class="evidence-impact-cell"><span class="impact-badge {effect_class}">'
@@ -412,18 +489,19 @@ def _css() -> str:
     }
     .a4-sheet {
       width: 210mm;
-      height: 297mm;
+      min-height: 297mm;
       margin: 0 auto;
       padding: 6mm 7mm;
+      position: relative;
       background: #ffffff;
-      overflow: hidden;
+      overflow: visible;
     }
     .paper-grid {
       display: grid;
       grid-template-columns: minmax(0, 145mm) 44mm;
       column-gap: 7mm;
       align-items: start;
-      height: 285mm;
+      min-height: 281.5mm;
     }
     .main-column,
     .visual-sidebar {
@@ -583,8 +661,18 @@ def _css() -> str:
       width: 35%;
     }
     .visual-sidebar {
-      height: 285mm;
-      overflow: hidden;
+      min-height: 0;
+      overflow: visible;
+    }
+    .report-disclaimer {
+      position: static;
+      margin: 2mm 0 0;
+      color: #6b7280;
+      font-size: 4.4pt;
+      font-weight: 400;
+      line-height: 1.2;
+      text-align: center;
+      white-space: nowrap;
     }
     .sidebar-summary {
       margin: 0 0 3mm;
@@ -685,6 +773,22 @@ def _css() -> str:
       height: 1.1mm;
       background: var(--ink);
     }
+    .market-chart {
+      margin: 0 0 1.5mm;
+    }
+    .market-chart img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border: 0.35pt solid #d1d5db;
+    }
+    .market-chart figcaption {
+      margin-top: 0.45mm;
+      color: var(--muted);
+      font-size: 5.2pt;
+      line-height: 1.1;
+      text-align: center;
+    }
     @media print {
       @page {
         size: A4;
@@ -693,39 +797,51 @@ def _css() -> str:
       html,
       body {
         width: 210mm;
-        height: 297mm;
-        min-height: 297mm;
+        height: auto;
+        min-height: 0;
         margin: 0 !important;
         padding: 0 !important;
         background: #ffffff;
-        overflow: hidden;
+        overflow: visible;
       }
       .a4-sheet {
         width: 210mm;
-        height: 297mm;
-        max-height: 297mm;
+        height: 594mm;
+        min-height: 594mm;
+        max-height: none;
         margin: 0 !important;
         padding: 6mm 7mm;
         box-shadow: none !important;
-        overflow: hidden;
-        break-after: avoid;
-        page-break-after: avoid;
+        overflow: visible;
       }
       .paper-grid {
         display: grid;
         grid-template-columns: minmax(0, 145mm) 44mm;
         column-gap: 7mm;
-        height: 285mm;
-        overflow: hidden;
+        height: auto;
+        min-height: 0;
+        overflow: visible;
       }
       .visual-sidebar {
-        height: 285mm;
-        overflow: hidden;
+        height: auto;
+        overflow: visible;
       }
       .report-section,
       .sidebar-panel {
         break-inside: auto;
         page-break-inside: auto;
+      }
+      #risk-monitoring-matrix {
+        break-before: page;
+        page-break-before: always;
+      }
+      .report-disclaimer {
+        position: absolute;
+        right: 7mm;
+        bottom: 2.2mm;
+        left: 7mm;
+        margin: 0;
+        white-space: nowrap;
       }
     }
     @media screen {
@@ -755,6 +871,11 @@ def _css() -> str:
         margin-top: 18px;
         padding-left: 0;
         border-left: 0;
+      }
+      .report-disclaimer {
+        position: static;
+        margin-top: 18px;
+        white-space: normal;
       }
       .meta-grid {
         grid-template-columns: 1fr;

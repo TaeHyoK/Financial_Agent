@@ -50,23 +50,17 @@ def write_financial_runtime_manifest(
             "dart_main": str(paths.dart_main),
             "dart_master": str(paths.dart_master),
             "yfinance_market_summary": "" if primary_data_only else str(paths.market_summary),
-            "news_llm_period_summaries": "" if primary_data_only else str(paths.news_llm_period_summaries),
-            "news_verified_report": "" if primary_data_only else str(paths.news_verified_report),
-            "news_validation": "" if primary_data_only else str(paths.news_sy_validations),
-            "news_evidence_map": "" if primary_data_only else str(paths.news_evidence_map),
+            "news_company_top10": "" if primary_data_only else str(paths.news_company_top10),
         },
         "input_roles": {
             "dart_main": "primary_financial_anchor",
             "dart_master": "primary_detailed_statement_evidence",
             "yfinance_market_summary": "market_context",
-            "news_llm_period_summaries": "news_context",
-            "news_verified_report": "verified_news_secondary_context",
-            "news_validation": "verified_news_claim_ledger",
-            "news_evidence_map": "raw_news_evidence_catalog",
+            "news_company_top10": "company_related_news_secondary_data",
         },
         "source_notes": {
             "news_granularity": "day",
-            "news_window": "Derived from config.date_range by default; latest day is used as raw sub data.",
+            "news_window": "The ten highest-ranked company-related News events are used as Financial subdata.",
             "market_window": "Derived from config.date_range by default; market_summary is selected_date only.",
             "dart_window": (
                 "Latest regular filing available by selected_date, prior-year same-period filing, "
@@ -102,6 +96,7 @@ def build_outputs_manifest(paths: RunPaths) -> dict[str, Any]:
         "news": {
             "context_exports": str(paths.news_context_export_dir),
             "llm_period_summaries": str(paths.news_llm_period_summaries),
+            "company_related_news_top10": str(paths.news_company_top10),
             "handoff": str(paths.news_handoff),
             "sy_validations": str(paths.news_sy_validations),
             "verified_report": str(paths.news_verified_report),

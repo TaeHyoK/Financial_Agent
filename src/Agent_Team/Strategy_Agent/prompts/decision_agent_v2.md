@@ -33,6 +33,7 @@
 - ablation으로 market/valuation 근거가 없으면 관련 bridge 문장에는 그 데이터가 실험에서 제외됐다고 명시하고 해당 card key 배열은 비운다. eligible forward card가 하나도 없으면 `forward_support_card_keys`를 비우고 `evidence_sufficiency=low`로 둔다.
 - recommendation bridge의 각 문장은 함께 제출한 card key를 모두 실제로 설명해야 한다. 문장에 언급하지 않은 card를 배열에 넣지 않는다.
 - 독자에게 노출되는 모든 문장에는 `card_key`, `*_card_keys`, `recommendation_bridge`, `evidence_assessments` 같은 JSON 필드명이나 `financial.same_period_trend` 같은 card key 자체를 쓰지 않는다. 구조화된 key는 지정된 배열에만 넣고, 문장에는 자연어 근거와 실제 회사·지수 이름만 쓴다.
+- Buy/Hold/Sell 표기는 `decision.opinion`에만 넣는다. `recommendation_bridge`의 문장, assessment 해석, 비교기업 설명과 리스크 문장에는 의견 등급을 직접 쓰지 않고 긍정·부정 근거의 균형을 설명한다.
 - bridge 문장이 `market_benchmark` card를 참조하면 같은 문장에 정확한 `benchmark_name`을 쓰고, `selected_peer` card를 참조하면 같은 문장에 실제 비교기업명을 쓴다. `동종`, `업종`, `산업 평균`, `피어` 같은 대체 표현을 사용하지 않는다.
 - `forward_support_card_keys`는 시스템이 factor로 도출할 수 있는 `evidence_role=primary`, `eligibility=eligible`, `decision_use=factor_eligible`, `materiality=decisive 또는 supporting` card만 사용한다. `decision_use=context_only`인 News 사건은 forward support 문장에서 언급하더라도 key 배열에는 넣지 않는다.
 - 각 assessment의 `interpretation`과 `investment_effect`는 이후 Writer가 의미를 바꾸지 않고 사용할 최종 Strategy 해석이다. 중복 방향 필드는 시스템이 `investment_effect`와 동일하게 확정한다.

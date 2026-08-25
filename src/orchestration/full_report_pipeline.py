@@ -46,9 +46,8 @@ from .usage_summary import summarize_execution_usage
 
 logger = logging.getLogger(__name__)
 
-FINAL_STAGE_NAMES = frozenset({"strategy", "writer"})
+FINAL_STAGE_NAMES = frozenset({"peer_comparison_analysis", "strategy", "writer"})
 DEFAULT_FINAL_STAGE_TIMEOUT_SECONDS = 900
-DEFAULT_SEMANTIC_ATTEMPTS = 2
 STAGE_LOG_TAIL_CHARACTERS = 4000
 
 
@@ -110,6 +109,10 @@ class FullPipelinePaths:
     @property
     def peer_comparison(self) -> Path:
         return self.competitor_dir / "peer_comparison_dataset.json"
+
+    @property
+    def peer_analysis(self) -> Path:
+        return self.competitor_dir / "peer_comparison_report.json"
 
     @property
     def strategy_dir(self) -> Path:
@@ -215,12 +218,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--llm-model", default="gpt-5.4-mini")
     parser.add_argument("--llm-timeout", type=int, default=300)
     parser.add_argument("--max-retries", type=int, default=1)
-    parser.add_argument(
-        "--semantic-attempts",
-        type=_positive_int,
-        default=DEFAULT_SEMANTIC_ATTEMPTS,
-        help="Maximum Strategy/Writer generations for semantic or gate failures.",
-    )
     parser.add_argument(
         "--final-stage-timeout",
         type=_positive_int,
@@ -463,6 +460,19 @@ def run_full_pipeline(args: argparse.Namespace) -> dict[str, Any]:
                         ),
                         common_env,
                     ),
+                    (
+                        "peer_comparison_analysis",
+                        build_peer_analysis_command(
+                            paths=paths,
+                            peer_run_key=peer_run_key,
+                            target=target,
+                            peer=peer,
+                            args=args,
+                            ablation=ablation,
+                            env_file=env_file,
+                        ),
+                        common_env,
+                    ),
                 ]
             )
         stage_commands.extend(
@@ -667,6 +677,52 @@ def build_peer_comparison_command(
     ]
 
 
+def build_peer_analysis_command(
+    *,
+    paths: FullPipelinePaths,
+    peer_run_key: str,
+    target: CompanyIdentity,
+    peer: CompanyIdentity,
+    args: argparse.Namespace,
+    ablation: AblationConfig,
+    env_file: Path,
+) -> list[str]:
+    command = [
+        sys.executable,
+        "-m",
+        "Agent_Team.Competitor_Agent.comparison_agent_cli",
+        "--target-company-name",
+        target.company_name,
+        "--peer-company-name",
+        peer.company_name,
+        "--target-financial",
+        str(paths.output_root / "Financial" / paths.run_key / "final_report.json"),
+        "--target-news",
+        str(paths.output_root / "News" / paths.run_key / "final_report.json"),
+        "--target-yfinance",
+        str(paths.output_root / "Y_Finance" / paths.run_key / "final_report.json"),
+        "--peer-financial",
+        str(paths.output_root / "Financial" / peer_run_key / "final_report.json"),
+        "--peer-news",
+        str(paths.output_root / "News" / peer_run_key / "final_report.json"),
+        "--peer-yfinance",
+        str(paths.output_root / "Y_Finance" / peer_run_key / "final_report.json"),
+        "--pairwise-dataset",
+        str(paths.peer_comparison),
+        "--output-dir",
+        str(paths.competitor_dir),
+        "--llm-model",
+        args.llm_model,
+        "--llm-timeout",
+        str(args.llm_timeout),
+        "--env-file",
+        str(env_file),
+    ]
+    for domain in ablation.included_domains:
+        command.extend(["--include-domain", domain])
+    return command
+
+
 def build_strategy_command(
     *,
     paths: FullPipelinePaths,
@@ -694,20 +750,19 @@ def build_strategy_command(
         "--output-dir",
         str(paths.strategy_dir),
         "--packet-version",
-        "v2",
+        "v4",
         "--llm-model",
         args.llm_model,
         "--llm-timeout",
         str(args.llm_timeout),
         "--decision-horizon-profile",
         args.decision_horizon_profile,
-        "--semantic-attempts",
-        str(args.semantic_attempts),
         "--env-file",
         str(env_file),
     ]
     if ablation.include_competitor:
         command.extend(["--peer-comparison", str(paths.peer_comparison)])
+        command.extend(["--peer-analysis", str(paths.peer_analysis)])
     for domain in ablation.included_domains:
         command.extend(["--include-domain", domain])
     if not ablation.use_sy:
@@ -739,16 +794,21 @@ def build_writer_command(
         "--strategy-provenance",
         str(paths.strategy_dir / "strategy_packet_provenance_v2.json"),
         "--strategy-decision",
-        str(paths.strategy_dir / "strategy_decision_output_v2.json"),
+        str(paths.strategy_dir / "strategy_decision_output_v4.json"),
         "--output-dir",
         str(paths.writer_dir),
         "--env-file",
         str(env_file),
         "--llm-model",
         args.llm_model,
-        "--semantic-attempts",
-        str(args.semantic_attempts),
     ]
+    chart_dir = paths.output_root / "Y_Finance" / paths.run_key / "charts"
+    for chart_path in (
+        chart_dir / "full_period_technical.png",
+        chart_dir / "full_period_kospi_fx.png",
+        chart_dir / f"summary_{paths.run_key.rsplit('_', 1)[-1]}.png",
+    ):
+        command.extend(["--market-chart", str(chart_path)])
     if ablation.writer_mode == "free_form":
         command.append("--free-form")
     return command
@@ -767,26 +827,29 @@ def validate_full_pipeline_outputs(
         if include_competitor
         else {}
     )
-    strategy = _load_json(paths.strategy_dir / "strategy_decision_output_v2.json")
-    writer_validation = _load_json(paths.writer_dir / "writer_validation_report.json")
-    recommendation = str((strategy.get("decision") or {}).get("opinion") or "")
+    strategy_path = paths.strategy_dir / "strategy_decision_output_v4.json"
+    strategy = _load_json(strategy_path)
+    writer_status = _load_json(paths.writer_dir / "writer_run_status.json")
+    report_path = paths.writer_dir / "report.html"
     checks = {
         "target_domain_pipeline": target_manifest.get("status") == "success",
-        "strategy_recommendation": recommendation in {"Buy", "Hold", "Sell"},
-        "writer_validation": writer_validation.get("status") == "pass",
-        "writer_html": (paths.writer_dir / "report.html").exists(),
+        "strategy_output": strategy_path.is_file() and bool(strategy),
+        "label_free_strategy_contract": strategy.get("decision_version") == "strategy_decision_output_v4",
+        "writer_run": writer_status.get("status") == "success",
+        "writer_html": report_path.is_file() and report_path.stat().st_size > 0,
     }
     if include_competitor:
         checks["peer_domain_pipeline"] = peer_manifest.get("status") == "success"
         checks["peer_comparison_dataset"] = paths.peer_comparison.exists()
+        checks["peer_comparison_analysis"] = paths.peer_analysis.exists()
     failed = [name for name, passed in checks.items() if not passed]
     if failed:
         raise FullPipelineError(f"Full-pipeline output validation failed: {', '.join(failed)}")
     return {
         "status": "pass",
         "checks": checks,
-        "final_recommendation": recommendation,
-        "writer_report": str(paths.writer_dir / "report.html"),
+        "strategy_output": str(strategy_path),
+        "writer_report": str(report_path),
     }
 
 
@@ -1092,7 +1155,6 @@ def _base_manifest(
             "news_total_max_results": args.news_total_max_results,
             "decision_horizon_profile": args.decision_horizon_profile,
             "decision_horizon": resolved_horizon,
-            "semantic_attempts": args.semantic_attempts,
             "final_stage_timeout_seconds": args.final_stage_timeout,
             "llm_model": args.llm_model,
             "dry_run": bool(args.dry_run),
@@ -1117,12 +1179,14 @@ def _base_manifest(
             "news_config": str(paths.news_config),
             "peer_resolution": str(paths.peer_resolution),
             "peer_comparison": str(paths.peer_comparison),
+            "peer_analysis": str(paths.peer_analysis),
             "strategy_report": str(paths.strategy_dir / "strategy_report.json"),
             "strategy_compact_packet_v2": str(paths.strategy_dir / "strategy_compact_packet_v2.json"),
             "strategy_packet_provenance_v2": str(paths.strategy_dir / "strategy_packet_provenance_v2.json"),
-            "strategy_decision_output_v2": str(paths.strategy_dir / "strategy_decision_output_v2.json"),
+            "strategy_decision_output_v4": str(paths.strategy_dir / "strategy_decision_output_v4.json"),
             "writer_editorial_packet_v2": str(paths.writer_dir / "writer_editorial_packet_v2.json"),
             "writer_packet_provenance_v2": str(paths.writer_dir / "writer_packet_provenance_v2.json"),
+            "writer_run_status": str(paths.writer_dir / "writer_run_status.json"),
             "writer_report": str(paths.writer_dir / "report.html"),
             "llm_usage_manifest": str(paths.usage_manifest),
             "llm_usage_summary": str(paths.usage_summary),
@@ -1138,7 +1202,7 @@ def _expected_calls(ablation: AblationConfig, *, reused_domain_snapshot: bool = 
     return {
         "target": domain_calls,
         "peer": domain_calls if ablation.include_competitor else 0,
-        "final": 2,
+        "final": 3 if ablation.include_competitor else 2,
     }
 
 

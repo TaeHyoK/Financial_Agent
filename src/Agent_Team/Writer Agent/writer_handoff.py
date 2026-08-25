@@ -19,6 +19,7 @@ HANDOFF_VERSION = "1.0"
 EDITORIAL_PACKET_VERSION = "writer_editorial_packet_v2"
 WRITER_PROVENANCE_VERSION = "writer_packet_provenance_v2"
 FINAL_RECOMMENDATIONS = {"Buy", "Hold", "Sell"}
+LABEL_FREE_STRATEGY_VERSION = "strategy_decision_output_v4"
 WRITER_COMPONENTS = (
     "investment_call_thesis",
     "business_market_context",
@@ -50,6 +51,13 @@ def build_writer_editorial_packet(
     strategy_provenance: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Build the bounded Writer v2 input and its external provenance map."""
+
+    if strategy_decision.get("decision_version") == LABEL_FREE_STRATEGY_VERSION:
+        return _build_writer_editorial_packet_v4(
+            strategy_packet=strategy_packet,
+            strategy_decision=strategy_decision,
+            strategy_provenance=strategy_provenance,
+        )
 
     source_cards = _dict(strategy_packet.get("cards"))
     assessments = {
@@ -204,6 +212,246 @@ def build_writer_editorial_packet(
     return packet, provenance
 
 
+def _build_writer_editorial_packet_v4(
+    *,
+    strategy_packet: dict[str, Any],
+    strategy_decision: dict[str, Any],
+    strategy_provenance: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Build a Writer packet from the label-free, agent-led Strategy decision."""
+
+    source_cards = _dict(strategy_packet.get("cards"))
+    brief = _require_dict(strategy_decision.get("strategy_brief"), "strategy_brief")
+    basis_rows = [
+        copy.deepcopy(item)
+        for item in _list(strategy_decision.get("basis_cards"))
+        if isinstance(item, dict) and str(item.get("card_key") or "") in source_cards
+    ]
+    selected_keys = _dedupe(item.get("card_key") for item in basis_rows)
+    if not selected_keys:
+        raise ValueError("Writer requires at least one Strategy v4 basis card.")
+    basis_by_key = {str(item.get("card_key")): item for item in basis_rows}
+    cards = {
+        card_key: _writer_card_v4(source_cards[card_key], basis_by_key[card_key])
+        for card_key in selected_keys
+    }
+    rationale_keys = _dedupe(
+        card_key
+        for item in _list(strategy_decision.get("rationale"))
+        if isinstance(item, dict)
+        for card_key in _text_list(item.get("basis_card_keys"))
+        if card_key in cards
+    )
+    risk_keys = _dedupe(
+        card_key
+        for item in _list(strategy_decision.get("key_risks"))
+        if isinstance(item, dict)
+        for card_key in _text_list(item.get("basis_card_keys"))
+        if card_key in cards
+    )
+    primary_counter_keys = [
+        card_key
+        for card_key in selected_keys
+        if basis_by_key[card_key].get("role") in {"primary", "counter"}
+    ]
+    thesis_keys = _dedupe([*rationale_keys, *primary_counter_keys]) or selected_keys
+    business_keys = [
+        card_key
+        for card_key in selected_keys
+        if cards[card_key].get("domain") in {"financial", "market", "valuation", "peer"}
+        and basis_by_key[card_key].get("role") != "monitoring"
+    ]
+    catalyst_keys = [
+        card_key for card_key in selected_keys if cards[card_key].get("domain") == "news"
+    ]
+    data_limit_keys = [
+        card_key
+        for card_key in selected_keys
+        if source_cards[card_key].get("reader_limitations")
+        or basis_by_key[card_key].get("role") in {"monitoring", "context"}
+    ]
+    required_by_component = {
+        "investment_call_thesis": thesis_keys,
+        "business_market_context": business_keys,
+        "key_evidence_table": selected_keys,
+        "catalysts_execution": catalyst_keys,
+        "risk_monitoring_matrix": risk_keys,
+        "data_limits": data_limit_keys or selected_keys[:4],
+    }
+    current_price_keys = [
+        card_key
+        for card_key in selected_keys
+        if cards[card_key].get("domain") in {"market", "valuation"}
+    ]
+    counter_keys = [
+        card_key
+        for card_key in selected_keys
+        if basis_by_key[card_key].get("role") == "counter"
+    ]
+    valuation_keys = [
+        card_key for card_key in selected_keys if cards[card_key].get("domain") == "valuation"
+    ] or counter_keys
+    risk_factors = []
+    for item in _list(strategy_decision.get("key_risks")):
+        if not isinstance(item, dict):
+            continue
+        keys = [key for key in _text_list(item.get("basis_card_keys")) if key in cards]
+        if not keys:
+            continue
+        risk = str(item.get("risk") or "").strip()
+        implication = str(item.get("current_implication") or "").strip()
+        risk_factors.append(
+            {
+                "category": _risk_category_from_card(cards[keys[0]]),
+                "basis_card_keys": keys,
+                "risk_summary": risk,
+                "reader_summary": " ".join(value for value in (risk, implication) if value),
+                "monitoring_point": implication,
+            }
+        )
+    target = _dict(strategy_packet.get("target_company"))
+    limitation_summary = str(brief.get("limitation_summary") or "").strip()
+    packet = {
+        "packet_version": EDITORIAL_PACKET_VERSION,
+        "strategy_contract_version": LABEL_FREE_STRATEGY_VERSION,
+        "target": {
+            "company_name": target.get("company_name"),
+            "run_key": target.get("run_key"),
+            "ticker": target.get("ticker"),
+            "selected_date": target.get("as_of_date") or target.get("selected_date"),
+        },
+        "decision": {
+            "judgment": brief.get("thesis"),
+            "existing_position_response": brief.get("existing_position_response"),
+            "new_entry_response": brief.get("new_entry_response"),
+            "investment_horizon": brief.get("horizon"),
+            "data_coverage": brief.get("evidence_sufficiency"),
+            "decision_confidence": brief.get("decision_confidence"),
+        },
+        "recommendation_bridge": {
+            "current_price_rationale": brief.get("price_context"),
+            "current_price_card_keys": current_price_keys,
+            "forward_support": " ".join(
+                value
+                for value in (
+                    str(brief.get("thesis") or "").strip(),
+                    f"기존 편입자 대응: {brief.get('existing_position_response')}",
+                    f"신규 접근자 대응: {brief.get('new_entry_response')}",
+                )
+                if value
+            ),
+            "forward_support_card_keys": thesis_keys,
+            "valuation_counterweight": " ".join(
+                value
+                for value in (
+                    str(brief.get("counterview") or "").strip(),
+                    limitation_summary,
+                )
+                if value
+            ),
+            "valuation_card_keys": valuation_keys or counter_keys,
+            "residual_uncertainty": limitation_summary,
+            "decision_confidence": brief.get("decision_confidence"),
+        },
+        "required_card_keys_by_component": required_by_component,
+        "cards": cards,
+        "peer_findings": [],
+        "risk_factors": risk_factors,
+        "general_limitations": copy.deepcopy(_list(strategy_packet.get("reader_limitations"))),
+        "required_limitations": [
+            {
+                "category": "strategy_scope",
+                "basis_card_keys": data_limit_keys,
+                "facts": {"summary": limitation_summary},
+            }
+        ] if limitation_summary else [],
+    }
+    provenance = _writer_provenance_for_cards(
+        cards=cards,
+        source_cards=source_cards,
+        strategy_provenance=strategy_provenance,
+        target_run_key=target.get("run_key"),
+    )
+    validate_writer_editorial_packet(
+        packet,
+        provenance=provenance,
+        strategy_packet=strategy_packet,
+    )
+    return packet, provenance
+
+
+def _writer_card_v4(source: dict[str, Any], basis: dict[str, Any]) -> dict[str, Any]:
+    role = str(basis.get("role") or "context")
+    reader_observation = _reader_observation(source)
+    primary_observation = copy.deepcopy(source.get("primary_observation") or {})
+    if str(source.get("domain") or "") == "news" and reader_observation:
+        primary_observation = copy.deepcopy(reader_observation)
+    card = {
+        "card_key": source.get("card_key"),
+        "axis": source.get("card_type"),
+        "domain": source.get("domain"),
+        "label": source.get("label"),
+        "primary_observation": primary_observation,
+        "strategy_interpretation": basis.get("usage_reason"),
+        "strategy_role": role,
+        "evidence_family": source.get("evidence_family"),
+        "observation_basis": source.get("observation_basis"),
+        "comparison_scope": source.get("comparison_scope"),
+        "decision_use": source.get("decision_use"),
+    }
+    for key in (
+        "comparison_label",
+        "comparison_entities",
+        "reader_limitations",
+    ):
+        if key in source:
+            card[key] = copy.deepcopy(source[key])
+    if reader_observation:
+        card["reader_observation"] = reader_observation
+    if source.get("secondary_context"):
+        card["secondary_context"] = copy.deepcopy(source["secondary_context"])
+    return card
+
+
+def _risk_category_from_card(card: dict[str, Any]) -> str:
+    return {
+        "financial": "financial",
+        "market": "market",
+        "valuation": "valuation",
+        "news": "business",
+        "peer": "business",
+    }.get(str(card.get("domain") or ""), "business")
+
+
+def _writer_provenance_for_cards(
+    *,
+    cards: dict[str, Any],
+    source_cards: dict[str, Any],
+    strategy_provenance: dict[str, Any],
+    target_run_key: Any,
+) -> dict[str, Any]:
+    source_provenance = _dict(strategy_provenance.get("cards"))
+    provenance_cards: dict[str, Any] = {}
+    for card_key, card in cards.items():
+        source_entry = _dict(source_provenance.get(card_key))
+        source_hash = str(source_entry.get("strategy_card_sha256") or "")
+        actual_source_hash = card_content_sha256(source_cards[card_key])
+        if source_hash != actual_source_hash:
+            raise ValueError(f"Strategy provenance hash mismatch before Writer handoff: {card_key}")
+        provenance_cards[card_key] = {
+            "source_strategy_card_sha256": source_hash,
+            "writer_editorial_card_sha256": card_content_sha256(card),
+            "source_evidence_ids": copy.deepcopy(_list(source_entry.get("source_evidence_ids"))),
+            "source_paths": copy.deepcopy(_list(source_entry.get("source_paths"))),
+            "source_files": copy.deepcopy(_list(source_entry.get("source_files"))),
+        }
+    return {
+        "provenance_version": WRITER_PROVENANCE_VERSION,
+        "target_run_key": target_run_key,
+        "cards": provenance_cards,
+    }
+
+
 def validate_writer_editorial_packet(
     packet: dict[str, Any],
     *,
@@ -219,7 +467,13 @@ def validate_writer_editorial_packet(
         if not str(target.get(key) or "").strip():
             raise ValueError(f"writer editorial target.{key} is required.")
     decision = _require_dict(packet.get("decision"), "decision")
-    if decision.get("opinion") not in FINAL_RECOMMENDATIONS:
+    label_free = packet.get("strategy_contract_version") == LABEL_FREE_STRATEGY_VERSION
+    if label_free:
+        if not str(decision.get("judgment") or "").strip():
+            raise ValueError("writer editorial decision.judgment is required for Strategy v4.")
+        if "opinion" in decision:
+            raise ValueError("label-free Writer decision cannot contain opinion.")
+    elif decision.get("opinion") not in FINAL_RECOMMENDATIONS:
         raise ValueError("writer editorial decision.opinion must be Buy/Hold/Sell.")
     if not str(decision.get("investment_horizon") or "").strip():
         raise ValueError("writer editorial decision.investment_horizon is required.")
@@ -247,7 +501,10 @@ def validate_writer_editorial_packet(
             raise ValueError(f"Writer card observation is required: {card_key}")
         if not str(card.get("strategy_interpretation") or "").strip():
             raise ValueError(f"Writer card Strategy interpretation is required: {card_key}")
-        if card.get("investment_effect") not in {"positive", "negative", "mixed", "neutral", "reference"}:
+        if label_free:
+            if card.get("strategy_role") not in {"primary", "counter", "monitoring", "context"}:
+                raise ValueError(f"Writer card Strategy role is invalid: {card_key}")
+        elif card.get("investment_effect") not in {"positive", "negative", "mixed", "neutral", "reference"}:
             raise ValueError(f"Writer card investment effect is invalid: {card_key}")
         if not str(card.get("evidence_family") or "").strip():
             raise ValueError(f"Writer card evidence_family is required: {card_key}")
@@ -335,12 +592,16 @@ def _writer_reader_text(packet: dict[str, Any]) -> dict[str, Any]:
 
 
 def _writer_card(source: dict[str, Any], assessment: dict[str, Any]) -> dict[str, Any]:
+    reader_observation = _reader_observation(source)
+    primary_observation = copy.deepcopy(source.get("primary_observation") or {})
+    if str(source.get("domain") or "") == "news" and reader_observation:
+        primary_observation = copy.deepcopy(reader_observation)
     card = {
         "card_key": source.get("card_key"),
         "axis": source.get("card_type"),
         "domain": source.get("domain"),
         "label": source.get("label"),
-        "primary_observation": copy.deepcopy(source.get("primary_observation") or {}),
+        "primary_observation": primary_observation,
         "strategy_interpretation": assessment.get("interpretation"),
         "investment_effect": assessment.get("investment_effect"),
         "materiality": assessment.get("materiality"),
@@ -352,7 +613,6 @@ def _writer_card(source: dict[str, Any], assessment: dict[str, Any]) -> dict[str
     for key in ("comparison_label", "comparison_entities"):
         if source.get(key):
             card[key] = copy.deepcopy(source[key])
-    reader_observation = _reader_observation(source)
     if reader_observation:
         card["reader_observation"] = reader_observation
     if source.get("secondary_context"):
@@ -388,6 +648,30 @@ def _reader_observation(
 ) -> dict[str, Any]:
     card_key = str(source.get("card_key") or "")
     observation = _dict(source.get("primary_observation"))
+    if str(source.get("domain") or "") == "news" or card_key.startswith("news."):
+        coverage = _dict(observation.get("coverage"))
+        article_count = coverage.get("deduplicated_article_count") or coverage.get("article_count")
+        publisher_count = coverage.get("unique_publisher_count")
+        coverage_parts = []
+        if article_count is not None:
+            coverage_parts.append(f"중복 제거 후 {article_count}건")
+        if publisher_count is not None:
+            coverage_parts.append(f"{publisher_count}개 매체")
+        financial_link = {
+            "observed": "기사에서 재무적 연계가 확인됨",
+            "not_observed": "기사에서 재무적 영향의 규모와 시점이 확인되지 않음",
+            "not_applicable": "재무적 영향과 직접 관련 없는 사건",
+            "mixed": "기사별 재무적 영향의 확인 범위가 서로 다름",
+        }.get(
+            str(observation.get("financial_link_status") or ""),
+            "기사에서 재무적 영향이 확인되지 않음",
+        )
+        return {
+            "발생일": observation.get("event_date"),
+            "사건 요약": observation.get("event_summary") or source.get("label"),
+            "보도 범위": " · ".join(coverage_parts) if coverage_parts else "보도 건수 확인 불가",
+            "재무적 영향": financial_link,
+        }
     if card_key == "financial.same_period_trend":
         return {
             "비교 기준": _period_pair_display(observation),
@@ -399,6 +683,29 @@ def _reader_observation(
                 _dict(observation.get("previous_values")),
                 source_unit=financial_source_unit,
             ),
+        }
+    if card_key == "financial.annual_trend":
+        return {
+            _period_display(_dict(item.get("period"))): {
+                "매출": _krw_100m(
+                    _dict(item.get("values")).get("revenue"),
+                    source_unit=financial_source_unit,
+                ),
+                "영업이익": _krw_100m(
+                    _dict(item.get("values")).get("operating_profit"),
+                    source_unit=financial_source_unit,
+                ),
+                "순이익": _krw_100m(
+                    _dict(item.get("values")).get("net_income"),
+                    source_unit=financial_source_unit,
+                ),
+                "영업현금흐름": _krw_100m(
+                    _dict(item.get("values")).get("operating_cash_flow"),
+                    source_unit=financial_source_unit,
+                ),
+            }
+            for item in _list(observation.get("annual_history"))
+            if isinstance(item, dict)
         }
     if card_key == "financial.cash_flow":
         return {
@@ -442,6 +749,29 @@ def _reader_observation(
                 if isinstance(item, dict)
             ],
             "범위": "주요 제품·서비스 공시표 기준",
+        }
+    if card_key == "market.absolute_trend":
+        metrics = _dict(observation.get("metrics"))
+        return {
+            "기준일": observation.get("as_of_date"),
+            "종가": _price_display(metrics.get("stock_close")),
+            "5거래일 수익률": _ratio_percent(metrics.get("stock_return_5d")),
+            "20거래일 수익률": _ratio_percent(metrics.get("stock_return_20d")),
+            "60거래일 수익률": _ratio_percent(metrics.get("stock_return_60d")),
+            "20일 이동평균 대비": _ratio_percent(metrics.get("stock_close_to_ma20")),
+            "60일 이동평균 대비": _ratio_percent(metrics.get("stock_close_to_ma60")),
+        }
+    if card_key == "market.momentum_volume":
+        metrics = _dict(observation.get("metrics"))
+        return {
+            "기준일": observation.get("as_of_date"),
+            "14일 RSI": _number_display(metrics.get("stock_rsi_14")),
+            "MACD 히스토그램": _number_display(metrics.get("stock_macd_hist")),
+            "MACD 히스토그램 전일 대비 변화": _number_display(
+                metrics.get("stock_macd_hist_change_1d")
+            ),
+            "20일 변동성": _ratio_percent(metrics.get("stock_volatility_20")),
+            "20일 평균 대비 거래량": _times_display(metrics.get("stock_volume_ratio_20")),
         }
     if card_key == "valuation.selected_date":
         labels = {
@@ -583,6 +913,27 @@ def _krw_unit_multiplier(source_unit: str) -> int:
 def _ratio_percent(value: Any) -> str:
     try:
         return f"{float(value) * 100:.2f}%"
+    except (TypeError, ValueError):
+        return "데이터 추가 필요"
+
+
+def _price_display(value: Any) -> str:
+    try:
+        return f"{float(value):,.0f}원"
+    except (TypeError, ValueError):
+        return "데이터 추가 필요"
+
+
+def _number_display(value: Any) -> str:
+    try:
+        return f"{float(value):,.2f}"
+    except (TypeError, ValueError):
+        return "데이터 추가 필요"
+
+
+def _times_display(value: Any) -> str:
+    try:
+        return f"{float(value):,.2f}배"
     except (TypeError, ValueError):
         return "데이터 추가 필요"
 

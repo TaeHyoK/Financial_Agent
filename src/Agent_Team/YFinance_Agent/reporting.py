@@ -91,6 +91,7 @@ def generate_analyst_report(
     )
     monthly = build_monthly_market_table(market)
     primary_evidence_catalog = build_market_primary_evidence_catalog(market_summary)
+    primary_evidence_catalog.update(build_daily_market_evidence_catalog(market))
     secondary_context = {
         "financial": build_dart_secondary_context(dart),
         "news": build_news_secondary_context(news, source_path=news_json),
@@ -106,7 +107,7 @@ def generate_analyst_report(
                 "시장 판단과 문맥은 YFinance 전용 데이터만 사용합니다."
                 if primary_data_only
                 else (
-                    "시장 판단은 YFinance 근거만 사용하고, 검증된 News/DART 근거는 "
+                    "시장 판단은 YFinance 근거만 사용하고, 뉴스 날짜별 요약과 DART 자료는 "
                     "표현 강도와 한계 점검용 보조 문맥으로만 사용합니다."
                 )
             ),
@@ -190,6 +191,8 @@ def generate_agent_json_report_with_llm(
                     "Write in Korean. Use only primary_market_evidence for market conclusions. "
                     "Use financial and news secondary_context only to assess whether it corroborates, "
                     "contradicts, is neutral to, or is insufficient for a primary market observation. "
+                    "Match each dated news summary to the same trading date or the next trading session, "
+                    "and compare it with the dated daily market evidence. Describe temporal market response, not causality. "
                     "Secondary context is framing_and_limitation_only and cannot change primary evidence status. "
                     "Never claim that a news or financial item caused a price movement. "
                     "Do not infer operating performance, news impact, or accounting outcomes from price data. "
@@ -313,6 +316,51 @@ def build_market_primary_evidence_catalog(
     return catalog
 
 
+def build_daily_market_evidence_catalog(
+    frame: pd.DataFrame,
+    *,
+    max_rows: int = 30,
+) -> dict[str, dict[str, Any]]:
+    """Build dated market observations for matching News summaries to trading days."""
+
+    data = frame.sort_values("date").copy()
+    stock_price_column = _stock_analysis_price_column(data)
+    data["_stock_daily_return"] = data[stock_price_column].pct_change(fill_method=None)
+    data["_kospi_daily_return"] = data["kospi_close"].pct_change(fill_method=None)
+    data["_fx_daily_return"] = data["fx_close"].pct_change(fill_method=None)
+    data = data.tail(max(max_rows, 1))
+    catalog: dict[str, dict[str, Any]] = {}
+    for _, row in data.iterrows():
+        source_date = _date_str(row["date"])
+        stock_return = _number(row.get("_stock_daily_return"))
+        kospi_return = _number(row.get("_kospi_daily_return"))
+        value = {
+            "stock_close": _number(row.get("stock_close")),
+            "stock_daily_return": stock_return,
+            "kospi_daily_return": kospi_return,
+            "stock_excess_daily_return": (
+                _number(stock_return - kospi_return)
+                if stock_return is not None and kospi_return is not None
+                else None
+            ),
+            "stock_volume_ratio_20": _number(row.get("stock_volume_ratio_20")),
+            "fx_daily_return": _number(row.get("_fx_daily_return")),
+        }
+        evidence_id = canonical_evidence_id("market", f"daily_{source_date}")
+        catalog[evidence_id] = {
+            "evidence_id": evidence_id,
+            "domain": "market",
+            "origin_type": "deterministic_derived",
+            "source_ref": f"market_full_dataset.daily.{source_date.replace('-', '_')}",
+            "source_date": source_date,
+            "period": source_date,
+            "metric": "daily_market_snapshot",
+            "value": value,
+        }
+    validate_evidence_catalog(catalog, allowed_domains={"market"})
+    return catalog
+
+
 def build_dart_secondary_context(payload: dict[str, Any]) -> dict[str, Any]:
     """Build a compact financial fact catalog without generated interpretation."""
 
@@ -369,104 +417,61 @@ def build_news_secondary_context(
     *,
     source_path: Path,
 ) -> dict[str, Any]:
-    """Load a compact ledger of admissible News claims and raw event evidence."""
+    """Load the date-indexed News summaries directly, without News Agent claims."""
 
-    output = payload.get("output") if isinstance(payload.get("output"), dict) else payload
-    if not isinstance(output, dict):
-        return {"status": "unavailable", "claims": [], "evidence_catalog": {}}
-    sy_validation = output.get("sy_validation") or {}
-    admissibility = sy_validation.get("claim_admissibility") or []
-    validation_path = _resolve_related_artifact(
-        sy_validation.get("validation_report_path") or payload.get("verification_report_path"),
-        source_path=source_path,
-        fallback_names=("sy_claim_validations.json",),
-    )
-    validations: list[dict[str, Any]] = []
-    if validation_path is not None:
-        validation_payload = _load_json(validation_path)
-        if isinstance(validation_payload, dict):
-            validations = [
-                item
-                for item in validation_payload.get("claim_validations", [])
-                if isinstance(item, dict)
-            ]
-    if not validations:
-        statements = _news_claim_statements(output)
-        validations = [
-            {**item, "claim": statements.get(str(item.get("claim_id") or ""), "")}
-            for item in admissibility
-            if isinstance(item, dict)
-        ]
-
-    evidence_map_path = _resolve_related_artifact(
-        output.get("evidence_map_path"),
-        source_path=source_path,
-        fallback_names=("news_agent_evidence_map.json",),
-    )
-    raw_evidence_map: dict[str, Any] = {}
-    if evidence_map_path is not None:
-        loaded = _load_json(evidence_map_path)
-        if isinstance(loaded, dict):
-            raw_evidence_map = loaded
-
-    candidates = sorted(
-        (
-            item
-            for item in validations
-            if item.get("evidence_use") in {"strong", "context_only"}
-            and str(item.get("claim") or "").strip()
-        ),
-        key=lambda item: (0 if item.get("evidence_use") == "strong" else 1, str(item.get("claim_id") or "")),
-    )
-    claims: list[dict[str, Any]] = []
-    selected_evidence_ids: set[str] = set()
-    seen_evidence_sets: set[tuple[str, ...]] = set()
-    for item in candidates:
-        evidence_ids = tuple(
-            dict.fromkeys(
-                str(evidence_id)
-                for evidence_id in item.get("evidence_ids", [])
-                if _is_raw_news_evidence(raw_evidence_map.get(str(evidence_id)))
-            )
-        )
-        if not evidence_ids or evidence_ids in seen_evidence_sets:
-            continue
-        seen_evidence_sets.add(evidence_ids)
-        selected_evidence_ids.update(evidence_ids)
-        claims.append(
-            {
-                "claim_id": str(item.get("claim_id") or ""),
-                "statement": str(item.get("claim") or "").strip(),
-                "evidence_use": item.get("evidence_use"),
-                "evidence_ids": list(evidence_ids),
-                "limitations": [
-                    str(value)
-                    for value in item.get("limitations", [])
-                    if str(value).strip()
-                ],
-            }
-        )
-        if len(claims) >= 6:
-            break
-
+    del source_path  # Kept in the public signature for CLI compatibility.
+    periods = _news_period_summary_items(payload)[:30]
     catalog: dict[str, dict[str, Any]] = {}
-    for evidence_id in sorted(selected_evidence_ids):
-        raw = raw_evidence_map.get(evidence_id) or {}
-        source_date = str(raw.get("time") or raw.get("period") or "")[:10]
+    for period in periods:
+        source_date = str(period.get("period") or "")[:10]
+        period_summary = str(period.get("period_summary") or "").strip()
+        if not source_date or not period_summary:
+            continue
+        evidence_id = canonical_evidence_id("news", f"daily_{source_date}")
         catalog[evidence_id] = {
             "evidence_id": evidence_id,
             "domain": "news",
-            "origin_type": "raw_source",
-            "source_ref": f"news_evidence_map.{evidence_id}",
+            "origin_type": "model_summarized",
+            "source_ref": f"news_periods.{source_date.replace('-', '_')}",
             "source_date": source_date,
-            "period": str(raw.get("period") or ""),
-            "metric": "news_event",
-            "text": str(raw.get("title") or ""),
-            "relation_type": raw.get("relation_type"),
+            "period": source_date,
+            "metric": "daily_news_context",
+            "text": period_summary,
+            "issues": [
+                {
+                    key: issue.get(key)
+                    for key in ("issue", "mention_count", "importance")
+                    if issue.get(key) not in (None, "", [], {})
+                }
+                for issue in period.get("issues") or []
+                if isinstance(issue, dict) and str(issue.get("issue") or "").strip()
+            ],
+            "source_event_ids": [
+                str(event_id)
+                for event_id in period.get("source_event_ids") or []
+                if str(event_id).strip()
+            ],
         }
     validate_evidence_catalog(catalog, allowed_domains={"news"})
-    status = "available" if claims and catalog else "unavailable"
-    return {"status": status, "claims": claims if status == "available" else [], "evidence_catalog": catalog}
+    return {
+        "status": "available" if catalog else "unavailable",
+        "input_type": "daily_news_summaries",
+        "period_count": len(catalog),
+        "evidence_catalog": catalog,
+    }
+
+
+def _news_period_summary_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    output = payload.get("output") if isinstance(payload.get("output"), dict) else {}
+    if isinstance(output.get("periods"), list):
+        return [item for item in output["periods"] if isinstance(item, dict)]
+    return [
+        result["output"]
+        for result in payload.get("period_results") or []
+        if isinstance(result, dict)
+        and result.get("status") in {None, "success"}
+        and isinstance(result.get("output"), dict)
+    ]
 
 
 def _combined_secondary_catalog(
@@ -491,45 +496,13 @@ def _first_usable_comparison(comparisons: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-def _news_claim_statements(output: dict[str, Any]) -> dict[str, str]:
-    block = (output.get("analysis_blocks") or {}).get("news_only") or {}
-    statements: list[str] = []
-    summary = str(block.get("summary") or "").strip()
-    if summary:
-        statements.append(summary)
-    for key in ("positive_signals", "negative_signals", "key_risks", "uncertainties"):
-        for item in block.get(key) or []:
-            statement = str(item.get("claim") if isinstance(item, dict) else item or "").strip()
-            if statement:
-                statements.append(statement)
-    return {f"NCLAIM_{index:03d}": statement for index, statement in enumerate(statements, start=1)}
-
-
-def _resolve_related_artifact(
-    value: Any,
-    *,
-    source_path: Path,
-    fallback_names: tuple[str, ...],
-) -> Path | None:
-    candidates: list[Path] = []
-    if value:
-        configured = Path(str(value)).expanduser()
-        candidates.append(configured if configured.is_absolute() else source_path.parent / configured)
-        candidates.extend((source_path.parent / configured.name, source_path.parent.parent / configured.name))
-    for name in fallback_names:
-        candidates.extend((source_path.parent / name, source_path.parent.parent / name))
-    for candidate in candidates:
-        if candidate.exists() and candidate.is_file():
-            return candidate
-    return None
-
-
-def _is_raw_news_evidence(value: Any) -> bool:
-    return isinstance(value, dict) and value.get("source_domain") == "news" and value.get("source_type") == "recent_raw_event"
-
-
 def _news_company_name(payload: dict[str, Any]) -> str | None:
     output = payload.get("output") if isinstance(payload.get("output"), dict) else payload
+    company = output.get("company") if isinstance(output, dict) else None
+    if isinstance(company, dict):
+        name = str(company.get("company_name") or "").strip()
+        if name:
+            return name
     target = output.get("target_entity") if isinstance(output, dict) else None
     if isinstance(target, dict):
         name = str(target.get("company_name") or "").strip()
@@ -725,7 +698,7 @@ def _secondary_context_assessment_schema(
     return {
         "type": "object",
         "properties": {
-            "context_id": {"type": "string"},
+            "context_id": {"type": "string", "enum": [f"{domain}_context"]},
             "source_domain": {"type": "string", "enum": [domain]},
             "effect": {"type": "string", "enum": sorted(SECONDARY_CONTEXT_EFFECTS)},
             "statement": {"type": "string"},

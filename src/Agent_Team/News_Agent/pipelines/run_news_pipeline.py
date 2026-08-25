@@ -61,6 +61,73 @@ def _build_article_previews(
     return previews
 
 
+def _build_report_event(
+    event: NewsEventRecord,
+    *,
+    raw_records_by_id: dict[str, RawNewsRecord],
+    relevance_rank: int,
+) -> dict[str, Any]:
+    evidence = []
+    chunk_ids = event.matched_chunk_ids.split(",") if event.matched_chunk_ids else []
+    chunk_texts = event.matched_chunk_texts.split(" ||| ") if event.matched_chunk_texts else []
+    chunk_sections = (
+        event.matched_chunk_section_types.split(",")
+        if event.matched_chunk_section_types
+        else []
+    )
+    chunk_similarities = (
+        [float(value) for value in event.matched_chunk_similarities.split(",")]
+        if event.matched_chunk_similarities
+        else []
+    )
+    for chunk_id, chunk_text, section, similarity in zip(
+        chunk_ids,
+        chunk_texts,
+        chunk_sections,
+        chunk_similarities,
+    ):
+        evidence.append(
+            {
+                "chunk_id": chunk_id,
+                "section_type": section,
+                "text": chunk_text,
+                "similarity": similarity,
+            }
+        )
+    member_article_ids = list(event.member_article_ids or [])
+    member_records = [
+        raw_records_by_id[article_id]
+        for article_id in member_article_ids
+        if article_id in raw_records_by_id
+    ]
+    return {
+        "event_id": event.event_id,
+        "relevance_rank": relevance_rank,
+        "mention_count": event.mention_count,
+        "representative": {
+            "title": event.representative_title,
+            "snippet": event.representative_snippet,
+            "source": event.representative_source,
+            "time": event.representative_article_date,
+            "url": event.representative_url,
+        },
+        "articles": _build_article_previews(member_records),
+        "scores": {
+            "rel_dense": event.rel_dense,
+            "rel_rerank": event.rel_rerank,
+            "section_score": event.section_score,
+            "global_section_score": event.global_section_score,
+            "time_score": event.time_score,
+            "impact_score": event.impact_score,
+            "mention_score": event.mention_score,
+            "final_score": event.final_score,
+        },
+        "evidence": evidence,
+        "members": list(event.member_urls or []),
+        "member_article_ids": member_article_ids,
+    }
+
+
 def _dedupe_records(records: list[RawNewsRecord], dedup_on_url: bool) -> list[RawNewsRecord]:
     deduped: list[RawNewsRecord] = []
     seen_url: set[str] = set()
@@ -672,58 +739,22 @@ def run_daily_news(
             }
         )
 
-    top_events = sorted(selected_events, key=lambda e: e.final_score, reverse=True)
-    news_events_topk: list[dict] = []
-    for event in top_events:
-        evidence = []
-        chunk_ids = event.matched_chunk_ids.split(",") if event.matched_chunk_ids else []
-        chunk_texts = event.matched_chunk_texts.split(" ||| ") if event.matched_chunk_texts else []
-        chunk_sections = event.matched_chunk_section_types.split(",") if event.matched_chunk_section_types else []
-        chunk_similarities = (
-            [float(val) for val in event.matched_chunk_similarities.split(",")]
-            if event.matched_chunk_similarities
-            else []
+    all_report_events = [
+        _build_report_event(
+            event,
+            raw_records_by_id=raw_records_by_id,
+            relevance_rank=index,
         )
-        for cid, ctext, csec, csim in zip(chunk_ids, chunk_texts, chunk_sections, chunk_similarities):
-            evidence.append(
-                {
-                    "chunk_id": cid,
-                    "section_type": csec,
-                    "text": ctext,
-                    "similarity": csim,
-                }
-            )
-        member_article_ids = list(event.member_article_ids or [])
-        member_records = [raw_records_by_id[article_id] for article_id in member_article_ids if article_id in raw_records_by_id]
-        article_previews = _build_article_previews(member_records)
-
-        news_events_topk.append(
-            {
-                "event_id": event.event_id,
-                "mention_count": event.mention_count,
-                "representative": {
-                    "title": event.representative_title,
-                    "snippet": event.representative_snippet,
-                    "source": event.representative_source,
-                    "time": event.representative_article_date,
-                    "url": event.representative_url,
-                },
-                "articles": article_previews,
-                "scores": {
-                    "rel_dense": event.rel_dense,
-                    "rel_rerank": event.rel_rerank,
-                    "section_score": event.section_score,
-                    "global_section_score": event.global_section_score,
-                    "time_score": event.time_score,
-                    "impact_score": event.impact_score,
-                    "mention_score": event.mention_score,
-                    "final_score": event.final_score,
-                },
-                "evidence": evidence,
-                "members": list(event.member_urls or []),
-                "member_article_ids": member_article_ids,
-            }
-        )
+        for index, event in enumerate(ranked_all_events, start=1)
+    ]
+    report_events_by_id = {
+        str(event["event_id"]): event for event in all_report_events
+    }
+    news_events_topk = [
+        report_events_by_id[str(event.event_id)]
+        for event in selected_events
+        if str(event.event_id) in report_events_by_id
+    ]
 
     report_pack = {
         "collect_date": collect_date.isoformat(),
@@ -748,6 +779,7 @@ def run_daily_news(
             "top_k": int(event_top_k) if event_top_k is not None else None,
             "cross_date_clustering": False,
         },
+        "news_events_all": all_report_events,
         "news_events_topk": news_events_topk,
     }
 

@@ -484,7 +484,9 @@ def build_semantic_request(
                     "strong은 문장 범위 전체가 직접 근거로 지지될 때, context_only는 방향성 참고만 가능하거나 표현이 근거보다 강할 때, "
                     "exclude는 근거가 없거나 충돌할 때 사용합니다. News와 Market secondary context는 DART claim의 직접 근거가 아니며 "
                     "primary evidence status를 바꾸지 않습니다. secondary context는 일치·충돌·중립·확인 불가와 표현 한계만 평가하고 "
-                    "인과관계를 단정하지 마세요. Buy/Hold/Sell과 목표주가를 만들지 말고 JSON만 출력하세요."
+                    "인과관계를 단정하지 마세요. 뉴스 발생일이 재무자료의 대상 기간보다 뒤라면, 선행 재무자료가 뉴스의 효과를 "
+                    "확인하거나 반박한다고 해석하지 마세요. 이 경우 뉴스는 공시기간 이후의 사업 전개로, 재무자료는 사건 전의 "
+                    "기초체력으로 구분해 설명하세요. Buy/Hold/Sell과 목표주가를 만들지 말고 JSON만 출력하세요."
                 ),
             },
             {
@@ -539,6 +541,7 @@ def _financial_sy_user_payload(
         "usage": SECONDARY_CONTEXT_USAGE,
         "causal_assertions_allowed": False,
         "may_change_primary_evidence_status": False,
+        "chronology_required": True,
     }
     return payload
 

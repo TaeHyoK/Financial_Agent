@@ -7,7 +7,7 @@ import logging
 import os
 import shutil
 import sys
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +17,6 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from formatted_html_renderer import render_formatted_html_report
-from html_report_validator import validate_html_report
 from html_report_writer import (
     DEFAULT_LLM_MODEL,
     normalize_report_payload,
@@ -40,10 +39,9 @@ DEFAULT_RUN_KEY = ""
 REQUIRED_STRATEGY_INPUT_FILES = (
     "strategy_compact_packet_v2.json",
     "strategy_packet_provenance_v2.json",
-    "strategy_decision_output_v2.json",
 )
-WRITER_NORMALIZATION_VERSION = "7"
-WRITER_VALIDATOR_VERSION = "2"
+WRITER_NORMALIZATION_VERSION = "8"
+WRITER_RUNTIME_VERSION = "1"
 
 
 def discover_default_run_key(output_root: Path = OUTPUT_ROOT) -> str:
@@ -57,10 +55,21 @@ def discover_default_run_key(output_root: Path = OUTPUT_ROOT) -> str:
         for path in strategy_root.iterdir()
         if path.is_dir()
         and all((path / filename).exists() for filename in REQUIRED_STRATEGY_INPUT_FILES)
+        and any(
+            (path / filename).exists()
+            for filename in ("strategy_decision_output_v4.json", "strategy_decision_output_v2.json")
+        )
     ]
     if not candidates:
         return ""
-    candidates.sort(key=lambda path: (path / "strategy_decision_output_v2.json").stat().st_mtime, reverse=True)
+    candidates.sort(
+        key=lambda path: max(
+            (path / filename).stat().st_mtime
+            for filename in ("strategy_decision_output_v4.json", "strategy_decision_output_v2.json")
+            if (path / filename).exists()
+        ),
+        reverse=True,
+    )
     return candidates[0].name
 
 
@@ -69,12 +78,12 @@ class WriterAgentConfig:
     run_key: str = DEFAULT_RUN_KEY
     strategy_packet: Path = OUTPUT_ROOT / "Strategy" / DEFAULT_RUN_KEY / "strategy_compact_packet_v2.json"
     strategy_provenance: Path = OUTPUT_ROOT / "Strategy" / DEFAULT_RUN_KEY / "strategy_packet_provenance_v2.json"
-    strategy_decision: Path = OUTPUT_ROOT / "Strategy" / DEFAULT_RUN_KEY / "strategy_decision_output_v2.json"
+    strategy_decision: Path = OUTPUT_ROOT / "Strategy" / DEFAULT_RUN_KEY / "strategy_decision_output_v4.json"
     output_dir: Path = OUTPUT_ROOT / "Writer" / DEFAULT_RUN_KEY
+    market_charts: tuple[Path, ...] = ()
     env_file: Path = DEFAULT_ENV_FILE
     llm_model: str = DEFAULT_LLM_MODEL
     writer_mode: str = "deterministic"
-    revalidate_raw: bool = False
 
 
 def run_writer_agent(config: WriterAgentConfig | dict[str, Any]) -> dict[str, Any]:
@@ -87,7 +96,7 @@ def run_writer_agent(config: WriterAgentConfig | dict[str, Any]) -> dict[str, An
 
     strategy_packet = load_json(cfg.strategy_packet, "Strategy compact packet v2")
     strategy_provenance = load_json(cfg.strategy_provenance, "Strategy packet provenance v2")
-    strategy_decision = load_json(cfg.strategy_decision, "Strategy decision output v2")
+    strategy_decision = load_json(cfg.strategy_decision, "Strategy decision output")
     writer_handoff, writer_provenance = build_writer_editorial_packet(
         strategy_packet=strategy_packet,
         strategy_decision=strategy_decision,
@@ -101,7 +110,8 @@ def run_writer_agent(config: WriterAgentConfig | dict[str, Any]) -> dict[str, An
     source_files = {
         "strategy_compact_packet_v2": str(Path(cfg.strategy_packet).expanduser().resolve()),
         "strategy_packet_provenance_v2": str(Path(cfg.strategy_provenance).expanduser().resolve()),
-        "strategy_decision_output_v2": str(Path(cfg.strategy_decision).expanduser().resolve()),
+        "strategy_decision_output": str(Path(cfg.strategy_decision).expanduser().resolve()),
+        "market_charts": [str(Path(path).expanduser().resolve()) for path in cfg.market_charts],
         "env_file": env_status["env_file"] if env_status.get("env_file_exists") else "",
     }
 
@@ -128,29 +138,15 @@ def run_writer_agent(config: WriterAgentConfig | dict[str, Any]) -> dict[str, An
         expected_fingerprint=writer_fingerprint,
     )
     if cached is None:
-        cached_response = load_cached_writer_response(
-            llm_output_path=llm_output_path,
-            expected_fingerprint=writer_fingerprint,
-            validation_report_path=output_dir / "writer_validation_report.json",
-            allow_failed_validation=cfg.revalidate_raw,
-        )
         try:
-            if cached_response is not None:
-                raw_payload = cached_response["raw_payload"]
-                llm_writer_output = {
-                    **cached_response,
-                    "cache_status": "raw_response_reused",
-                    "call_count": 0,
-                }
-            else:
-                raw_payload, llm_writer_output = request_html_report_payload(
-                    writer_handoff=writer_handoff,
-                    model=cfg.llm_model,
-                    writer_mode=cfg.writer_mode,
-                )
-                llm_writer_output["fingerprint"] = writer_fingerprint
-                llm_writer_output["cache_status"] = "miss"
-                save_json(llm_output_path, llm_writer_output)
+            raw_payload, llm_writer_output = request_html_report_payload(
+                writer_handoff=writer_handoff,
+                model=cfg.llm_model,
+                writer_mode=cfg.writer_mode,
+            )
+            llm_writer_output["fingerprint"] = writer_fingerprint
+            llm_writer_output["cache_status"] = "miss"
+            save_json(llm_output_path, llm_writer_output)
             validate_raw_writer_payload(raw_payload)
             report_payload = normalize_report_payload(
                 raw_payload,
@@ -158,13 +154,6 @@ def run_writer_agent(config: WriterAgentConfig | dict[str, Any]) -> dict[str, An
                 writer_mode=cfg.writer_mode,
             )
         except Exception as exc:
-            _mark_writer_response_failed(
-                llm_output_path=llm_output_path,
-                fingerprint=writer_fingerprint,
-                stage="writer_response_validation_or_normalization",
-                error_type=type(exc).__name__,
-                message=str(exc),
-            )
             save_json(
                 failure_path,
                 {
@@ -173,7 +162,7 @@ def run_writer_agent(config: WriterAgentConfig | dict[str, Any]) -> dict[str, An
                     "error_type": type(exc).__name__,
                     "message": str(exc),
                     "fingerprint": writer_fingerprint,
-                    "validator_version": WRITER_VALIDATOR_VERSION,
+                    "runtime_version": WRITER_RUNTIME_VERSION,
                     "normalization_version": WRITER_NORMALIZATION_VERSION,
                     "raw_response_saved": llm_output_path.exists(),
                 },
@@ -181,66 +170,55 @@ def run_writer_agent(config: WriterAgentConfig | dict[str, Any]) -> dict[str, An
             raise
     else:
         report_payload, llm_writer_output = cached
-    save_json(payload_path, report_payload)
-    save_json(llm_output_path, llm_writer_output)
-    render_result = render_formatted_html_report(report_payload, output_dir)
-    validation = validate_html_report(
-        report_payload=report_payload,
-        html_content=render_result["html_content"],
-        writer_handoff=writer_handoff,
+    report_payload["market_charts"] = _prepare_market_chart_assets(
+        cfg.market_charts,
+        output_dir=output_dir,
     )
-
+    save_json(payload_path, report_payload)
+    render_result = render_formatted_html_report(report_payload, output_dir)
+    html_report_path = Path(render_result["html_report"])
+    if not html_report_path.is_file() or html_report_path.stat().st_size == 0:
+        raise RuntimeError("Writer did not create a non-empty report.html file.")
     llm_writer_output = {
         **llm_writer_output,
-        "validation_status": validation["status"],
-        "validator_version": WRITER_VALIDATOR_VERSION,
+        "run_status": "success",
+        "runtime_version": WRITER_RUNTIME_VERSION,
         "normalization_version": WRITER_NORMALIZATION_VERSION,
-        "validation_blocking_failures": list(validation.get("blocking_failures") or []),
     }
     save_json(llm_output_path, llm_writer_output)
-
-    if validation["status"] == "pass":
-        save_json(
-            cache_path,
-            {
-                "fingerprint": writer_fingerprint,
-                "normalization_version": WRITER_NORMALIZATION_VERSION,
-                "validator_version": WRITER_VALIDATOR_VERSION,
-            },
-        )
-    else:
-        if cache_path.exists():
-            cache_path.unlink()
-        save_json(
-            failure_path,
-            {
-                "status": "fail",
-                "stage": "gate_c",
-                "error_type": "WriterSemanticValidationError",
-                "message": "Writer output failed Gate C semantic validation.",
-                "fingerprint": writer_fingerprint,
-                "validator_version": WRITER_VALIDATOR_VERSION,
-                "normalization_version": WRITER_NORMALIZATION_VERSION,
-                "blocking_failures": list(validation.get("blocking_failures") or []),
-                "advisories": list(validation.get("advisories") or []),
-                "raw_response_saved": llm_output_path.exists(),
-            },
-        )
-    save_json(output_dir / "writer_validation_report.json", validation)
-    if validation["status"] == "pass":
-        if failure_path.exists():
-            failure_path.unlink()
-        _remove_deprecated_v1_writer_artifacts(output_dir)
+    save_json(
+        cache_path,
+        {
+            "fingerprint": writer_fingerprint,
+            "normalization_version": WRITER_NORMALIZATION_VERSION,
+            "runtime_version": WRITER_RUNTIME_VERSION,
+        },
+    )
+    save_json(
+        output_dir / "writer_run_status.json",
+        {
+            "status": "success",
+            "runtime_version": WRITER_RUNTIME_VERSION,
+            "html_report": str(html_report_path),
+        },
+    )
+    for retired_path in (
+        failure_path,
+        output_dir / "writer_validation_report.json",
+    ):
+        if retired_path.exists():
+            retired_path.unlink()
+    _remove_deprecated_v1_writer_artifacts(output_dir)
     logger.info("Wrote Writer Agent HTML report to %s", render_result["html_report"])
     return {
+        "status": "success",
         "output_dir": str(output_dir),
         "html_report": render_result["html_report"],
         "report_html": render_result["report_html"],
         "report_payload": str(output_dir / "writer_report_payload.json"),
         "writer_editorial_packet": str(editorial_packet_path),
         "writer_packet_provenance": str(provenance_path),
-        "validation_report": str(output_dir / "writer_validation_report.json"),
-        "validation_status": validation["status"],
+        "run_status": str(output_dir / "writer_run_status.json"),
     }
 
 
@@ -259,75 +237,13 @@ def load_cached_writer_outputs(
             return None
         if cache.get("normalization_version") != WRITER_NORMALIZATION_VERSION:
             return None
-        if cache.get("validator_version") != WRITER_VALIDATOR_VERSION:
+        if cache.get("runtime_version") != WRITER_RUNTIME_VERSION:
             return None
         payload = load_json(payload_path, "Writer report payload")
         llm_output = load_json(llm_output_path, "Writer LLM output")
     except (OSError, ValueError):
         return None
     return payload, llm_output
-
-
-def load_cached_writer_response(
-    *,
-    llm_output_path: Path,
-    expected_fingerprint: str,
-    validation_report_path: Path | None = None,
-    allow_failed_validation: bool = False,
-) -> dict[str, Any] | None:
-    if not llm_output_path.exists():
-        return None
-    try:
-        llm_output = load_json(llm_output_path, "Writer LLM output")
-    except (OSError, ValueError):
-        return None
-    if llm_output.get("fingerprint") != expected_fingerprint:
-        return None
-    if not isinstance(llm_output.get("raw_payload"), dict):
-        return None
-    validation_status = str(llm_output.get("validation_status") or "").strip().lower()
-    if not validation_status:
-        report_path = validation_report_path or llm_output_path.with_name("writer_validation_report.json")
-        if report_path.exists():
-            try:
-                validation_status = str(
-                    load_json(report_path, "Writer validation report").get("status") or ""
-                ).strip().lower()
-            except (OSError, ValueError):
-                validation_status = ""
-    if validation_status == "fail" and not allow_failed_validation:
-        return None
-    return llm_output
-
-
-def _mark_writer_response_failed(
-    *,
-    llm_output_path: Path,
-    fingerprint: str,
-    stage: str,
-    error_type: str,
-    message: str,
-) -> None:
-    if not llm_output_path.exists():
-        return
-    try:
-        llm_output = load_json(llm_output_path, "Writer LLM output")
-    except (OSError, ValueError):
-        return
-    if llm_output.get("fingerprint") != fingerprint:
-        return
-    save_json(
-        llm_output_path,
-        {
-            **llm_output,
-            "validation_status": "fail",
-            "validator_version": WRITER_VALIDATOR_VERSION,
-            "normalization_version": WRITER_NORMALIZATION_VERSION,
-            "failure_stage": stage,
-            "failure_error_type": error_type,
-            "failure_message": message,
-        },
-    )
 
 
 def _remove_deprecated_v1_writer_artifacts(output_dir: Path) -> None:
@@ -353,7 +269,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--strategy-decision",
         default=str(WriterAgentConfig.strategy_decision),
-        help="Override strategy_decision_output_v2.json path.",
+        help="Override strategy_decision_output_v4.json path.",
+    )
+    parser.add_argument(
+        "--market-chart",
+        action="append",
+        default=[],
+        help="PNG market chart to copy into and embed in the final report. Repeatable.",
     )
     parser.add_argument("--output-dir", default=str(WriterAgentConfig.output_dir), help="Override Writer output directory.")
     parser.add_argument("--env-file", default=str(WriterAgentConfig.env_file), help="Shared project env file containing OPENAI_API_KEY.")
@@ -363,20 +285,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="OpenAI model used by the LLM Writer.",
     )
     parser.add_argument(
-        "--revalidate-raw",
-        action="store_true",
-        help="Explicitly revalidate a fingerprinted raw response that previously failed Writer validation.",
-    )
-    parser.add_argument(
         "--free-form",
         action="store_true",
         help="Let Writer author thesis and table cells instead of deterministic assembly.",
-    )
-    parser.add_argument(
-        "--semantic-attempts",
-        type=int,
-        default=2,
-        help="Maximum fresh Writer generations for response-normalization or Gate-C failures.",
     )
     parser.add_argument("--log-level", default="INFO")
     return parser
@@ -392,63 +303,14 @@ def main(argv: list[str] | None = None) -> int:
         strategy_provenance=Path(args.strategy_provenance),
         strategy_decision=Path(args.strategy_decision),
         output_dir=Path(args.output_dir),
+        market_charts=tuple(Path(path) for path in args.market_chart),
         env_file=Path(args.env_file),
         llm_model=args.llm_model,
         writer_mode="free_form" if args.free_form else "deterministic",
-        revalidate_raw=args.revalidate_raw,
     )
     config = _coerce_config(config)
-    output_dir = Path(config.output_dir).expanduser().resolve()
-    failure_path = output_dir / "writer_failure_report.json"
-    semantic_attempts = max(1, int(args.semantic_attempts))
-    for semantic_attempt in range(1, semantic_attempts + 1):
-        before = failure_path.stat().st_mtime_ns if failure_path.exists() else None
-        try:
-            attempt_config = (
-                config
-                if semantic_attempt == 1
-                else replace(config, revalidate_raw=False)
-            )
-            result = run_writer_agent(attempt_config)
-        except Exception:
-            changed_failure = (
-                failure_path.exists()
-                and failure_path.stat().st_mtime_ns != before
-            )
-            if not changed_failure or semantic_attempt >= semantic_attempts:
-                raise
-            _archive_writer_failure_attempt(output_dir, semantic_attempt)
-            logger.warning(
-                "Writer semantic attempt %s/%s failed during response processing; generating a fresh response.",
-                semantic_attempt,
-                semantic_attempts,
-            )
-            continue
-        if result["validation_status"] == "pass":
-            return 0
-        _archive_writer_failure_attempt(output_dir, semantic_attempt)
-        if semantic_attempt < semantic_attempts:
-            logger.warning(
-                "Writer semantic attempt %s/%s failed Gate C; generating a fresh response.",
-                semantic_attempt,
-                semantic_attempts,
-            )
-    return 1
-
-
-def _archive_writer_failure_attempt(output_dir: Path, attempt: int) -> None:
-    attempt_dir = output_dir / "attempts" / f"attempt_{attempt:02d}"
-    attempt_dir.mkdir(parents=True, exist_ok=True)
-    for filename in (
-        "llm_writer_output.json",
-        "writer_report_payload.json",
-        "writer_validation_report.json",
-        "writer_failure_report.json",
-        "report.html",
-    ):
-        source = output_dir / filename
-        if source.exists():
-            shutil.copy2(source, attempt_dir / filename)
+    run_writer_agent(config)
+    return 0
 
 
 def _coerce_config(config: WriterAgentConfig | dict[str, Any]) -> WriterAgentConfig:
@@ -463,10 +325,10 @@ def _coerce_config(config: WriterAgentConfig | dict[str, Any]) -> WriterAgentCon
         strategy_provenance=Path(config.get("strategy_provenance", WriterAgentConfig.strategy_provenance)),
         strategy_decision=Path(config.get("strategy_decision", WriterAgentConfig.strategy_decision)),
         output_dir=Path(config.get("output_dir", WriterAgentConfig.output_dir)),
+        market_charts=tuple(Path(path) for path in config.get("market_charts", ())),
         env_file=Path(config.get("env_file", WriterAgentConfig.env_file)),
         llm_model=str(config.get("llm_model", WriterAgentConfig.llm_model)),
         writer_mode=str(config.get("writer_mode", WriterAgentConfig.writer_mode)),
-        revalidate_raw=bool(config.get("revalidate_raw", WriterAgentConfig.revalidate_raw)),
     )
     return _resolve_config_paths(cfg)
 
@@ -479,11 +341,12 @@ def _resolve_config_paths(config: WriterAgentConfig) -> WriterAgentConfig:
         run_key=run_key,
         strategy_packet=OUTPUT_ROOT / "Strategy" / run_key / "strategy_compact_packet_v2.json",
         strategy_provenance=OUTPUT_ROOT / "Strategy" / run_key / "strategy_packet_provenance_v2.json",
-        strategy_decision=OUTPUT_ROOT / "Strategy" / run_key / "strategy_decision_output_v2.json",
+        strategy_decision=OUTPUT_ROOT / "Strategy" / run_key / "strategy_decision_output_v4.json",
         output_dir=OUTPUT_ROOT / "Writer" / run_key,
+        market_charts=_default_market_charts(run_key),
         env_file=config.env_file,
         llm_model=config.llm_model,
-        revalidate_raw=config.revalidate_raw,
+        writer_mode=config.writer_mode,
     )
     empty_defaults = WriterAgentConfig()
     return WriterAgentConfig(
@@ -498,10 +361,53 @@ def _resolve_config_paths(config: WriterAgentConfig) -> WriterAgentConfig:
         if config.strategy_decision == empty_defaults.strategy_decision
         else config.strategy_decision,
         output_dir=default_for_run.output_dir if config.output_dir == empty_defaults.output_dir else config.output_dir,
+        market_charts=default_for_run.market_charts if not config.market_charts else config.market_charts,
         env_file=default_for_run.env_file if config.env_file == empty_defaults.env_file else config.env_file,
         llm_model=config.llm_model,
-        revalidate_raw=config.revalidate_raw,
+        writer_mode=config.writer_mode,
     )
+
+
+def _default_market_charts(run_key: str) -> tuple[Path, ...]:
+    charts_dir = OUTPUT_ROOT / "Y_Finance" / run_key / "charts"
+    selected = (
+        charts_dir / "full_period_technical.png",
+        charts_dir / "full_period_kospi_fx.png",
+        charts_dir / f"summary_{run_key.rsplit('_', 1)[-1]}.png",
+    )
+    return tuple(path for path in selected if path.is_file())
+
+
+def _prepare_market_chart_assets(
+    chart_paths: tuple[Path, ...],
+    *,
+    output_dir: Path,
+) -> list[dict[str, str]]:
+    captions = {
+        "full_period_technical.png": "분석기간 주가 및 기술지표",
+        "full_period_kospi_fx.png": "코스피 및 원·달러 환율 흐름",
+    }
+    assets_dir = output_dir / "assets"
+    assets: list[dict[str, str]] = []
+    for raw_path in chart_paths:
+        source = Path(raw_path).expanduser().resolve()
+        if not source.is_file() or source.suffix.lower() != ".png":
+            logger.warning("Skipping unavailable market chart: %s", source)
+            continue
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        destination = assets_dir / source.name
+        if source != destination:
+            shutil.copy2(source, destination)
+        caption = captions.get(source.name)
+        if caption is None and source.name.startswith("summary_"):
+            caption = "분석기간 시장 요약"
+        assets.append(
+            {
+                "src": f"assets/{destination.name}",
+                "caption": caption or source.stem.replace("_", " "),
+            }
+        )
+    return assets
 
 
 if __name__ == "__main__":

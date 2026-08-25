@@ -110,7 +110,7 @@ def main() -> None:
     news_json = (
         Path(args.news_json).expanduser().resolve()
         if args.news_json
-        else PROJECT_ROOT / "Output_total" / "News" / run_key / "context_exports" / "month" / "llm_period_summaries.json"
+        else PROJECT_ROOT / "Output_total" / "News" / run_key / "context_exports" / "day" / "llm_period_summaries.json"
     )
 
     if not args.skip_collect:

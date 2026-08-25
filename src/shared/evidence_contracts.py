@@ -7,7 +7,9 @@ import re
 from typing import Any, Iterable, Mapping
 
 
-EVIDENCE_ORIGIN_TYPES = frozenset({"raw_source", "deterministic_derived"})
+EVIDENCE_ORIGIN_TYPES = frozenset(
+    {"raw_source", "deterministic_derived", "model_summarized"}
+)
 SECONDARY_CONTEXT_EFFECTS = frozenset(
     {"corroborates", "contradicts", "neutral", "insufficient"}
 )
@@ -40,7 +42,7 @@ def validate_evidence_catalog(
     *,
     allowed_domains: Iterable[str] | None = None,
 ) -> None:
-    """Reject narrative, generated, or malformed evidence entries."""
+    """Reject malformed evidence entries and preserve their processing origin."""
 
     allowed = set(allowed_domains or _DOMAIN_PREFIXES)
     for evidence_id, evidence in catalog.items():

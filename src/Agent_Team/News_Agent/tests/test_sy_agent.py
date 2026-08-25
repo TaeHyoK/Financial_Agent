@@ -159,7 +159,7 @@ def test_news_llm_request_separates_secondary_context_and_audit_fields() -> None
         input_payload={
             "target_entity": {"company_name": "테스트", "as_of_date": "2025-10-31"},
             "input_policy": {"summary_periods": ["2025-10-30"], "recent_raw_periods": ["2025-10-31"]},
-            "news_context": {"older_period_summaries": [], "recent_raw_events": []},
+            "news_context": {"daily_summaries": [], "company_related_top_news": []},
             "cross_domain_context": {"financial": {"secret": 1}},
             "secondary_context": {
                 "financial": {

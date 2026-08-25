@@ -64,7 +64,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--env-file", type=Path, default=PROJECT_ROOT / "configs" / ".env")
     parser.add_argument("--llm-timeout", type=int, default=300)
     parser.add_argument("--max-retries", type=int, default=1)
-    parser.add_argument("--semantic-attempts", type=int, default=2)
     parser.add_argument("--final-stage-timeout", type=int, default=900)
     parser.add_argument("--decision-horizon-profile", default="short_term")
     parser.add_argument("--dry-run", action="store_true")
@@ -499,7 +498,7 @@ def _prepare_condition(
     local_steps: list[dict[str, Any]] = []
     if not dry_run:
         for materialize_run_key in (run_key, peer_run_key):
-            domains = ("financial", "news", "yfinance") if materialize_run_key == run_key else ("financial", "yfinance")
+            domains = ("financial", "news", "yfinance")
             for domain in domains:
                 source = _pre_sy_paths(source_root, materialize_run_key)[domain]
                 _materialize_no_sy_domain(
@@ -697,15 +696,13 @@ def _preview_final_commands(
         "--output-dir",
         str(strategy_dir),
         "--packet-version",
-        "v2",
+        "v4",
         "--llm-model",
         args.llm_model,
         "--llm-timeout",
         str(args.llm_timeout),
         "--decision-horizon-profile",
         args.decision_horizon_profile,
-        "--semantic-attempts",
-        str(args.semantic_attempts),
         "--env-file",
         str(args.env_file.expanduser().resolve()),
         "--experiment-name",
@@ -717,6 +714,8 @@ def _preview_final_commands(
         strategy.append("--no-competitor")
     else:
         strategy.extend(["--peer-comparison", str(outputs.get("peer_comparison") or "")])
+        if outputs.get("peer_analysis"):
+            strategy.extend(["--peer-analysis", str(outputs["peer_analysis"])])
     strategy.append("--no-sy")
     if "--primary-data-only" in condition.flags:
         strategy.append("--primary-data-only")
@@ -730,16 +729,21 @@ def _preview_final_commands(
         "--strategy-provenance",
         str(strategy_dir / "strategy_packet_provenance_v2.json"),
         "--strategy-decision",
-        str(strategy_dir / "strategy_decision_output_v2.json"),
+        str(strategy_dir / "strategy_decision_output_v4.json"),
         "--output-dir",
         str(writer_dir),
         "--env-file",
         str(args.env_file.expanduser().resolve()),
         "--llm-model",
         args.llm_model,
-        "--semantic-attempts",
-        str(args.semantic_attempts),
     ]
+    chart_dir = source_root / "Y_Finance" / run_key / "charts"
+    for chart_path in (
+        chart_dir / "full_period_technical.png",
+        chart_dir / "full_period_kospi_fx.png",
+        chart_dir / f"summary_{run_key.rsplit('_', 1)[-1]}.png",
+    ):
+        writer.extend(["--market-chart", str(chart_path)])
     return [strategy, writer]
 
 
@@ -753,9 +757,11 @@ def _assert_final_only_usage(manifest_path: Path) -> None:
         raise RuntimeError(
             f"Unexpected upstream LLM calls: target={target_calls}, peer={peer_calls}"
         )
-    if int(usage.get("observed_logical_calls") or 0) != 2:
+    commands = manifest.get("commands") if isinstance(manifest.get("commands"), dict) else {}
+    expected_calls = 3 if commands.get("peer_comparison_analysis") else 2
+    if int(usage.get("observed_logical_calls") or 0) != expected_calls:
         raise RuntimeError(
-            "Final-stage usage did not contain exactly one Strategy and one Writer logical call."
+            "Final-stage usage did not match the comparison/Strategy/Writer command set."
         )
 
 

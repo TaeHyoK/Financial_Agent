@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -227,3 +228,17 @@ def test_daily_pipeline_reranks_all_candidates_before_event_top_k(
     assert result["news_event_count_before_top_k"] == 3
     assert result["news_event_count"] == 2
     assert result["selection_stage"] == "post_rerank_same_day_cluster"
+
+    report_context = json.loads(
+        Path(result["report_context_path"]).read_text(encoding="utf-8")
+    )
+    assert [event["event_id"] for event in report_context["news_events_all"]] == [
+        "1",
+        "2",
+        "3",
+    ]
+    assert [event["event_id"] for event in report_context["news_events_topk"]] == [
+        "1",
+        "2",
+    ]
+    assert [event["relevance_rank"] for event in report_context["news_events_topk"]] == [1, 2]

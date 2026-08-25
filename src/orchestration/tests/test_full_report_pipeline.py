@@ -46,8 +46,6 @@ def test_full_pipeline_resolves_configs_and_builds_all_stages(tmp_path, monkeypa
             '("SK바이오팜" OR "세노바메이트")',
             "--decision-horizon-profile",
             "short_term",
-            "--semantic-attempts",
-            "3",
             "--final-stage-timeout",
             "123",
             "--output-root",
@@ -121,6 +119,7 @@ def test_full_pipeline_resolves_configs_and_builds_all_stages(tmp_path, monkeypa
         "target_domain_pipeline",
         "peer_domain_pipeline",
         "peer_comparison_dataset",
+        "peer_comparison_analysis",
         "strategy",
         "writer",
     ]
@@ -140,23 +139,32 @@ def test_full_pipeline_resolves_configs_and_builds_all_stages(tmp_path, monkeypa
     assert target_command[target_command.index("--news-query") + 1] == '("SK바이오팜" OR "세노바메이트")'
     peer_command = executed[1][1]
     assert "--news-query" not in peer_command
-    strategy_command = executed[3][1]
-    writer_command = executed[4][1]
-    assert strategy_command[strategy_command.index("--packet-version") + 1] == "v2"
+    comparison_command = executed[3][1]
+    strategy_command = executed[4][1]
+    writer_command = executed[5][1]
+    assert comparison_command[comparison_command.index("--peer-company-name") + 1] == "일성아이에스"
+    assert "--peer-news" in comparison_command
+    assert "--peer-analysis" in strategy_command
+    assert strategy_command[strategy_command.index("--packet-version") + 1] == "v4"
     assert strategy_command[strategy_command.index("--decision-horizon-profile") + 1] == "short_term"
-    assert strategy_command[strategy_command.index("--semantic-attempts") + 1] == "3"
+    assert "--semantic-attempts" not in strategy_command
     assert "--strategy-packet" in writer_command
     assert "--strategy-decision" in writer_command
-    assert writer_command[writer_command.index("--semantic-attempts") + 1] == "3"
+    assert writer_command[writer_command.index("--strategy-decision") + 1].endswith(
+        "strategy_decision_output_v4.json"
+    )
+    assert writer_command.count("--market-chart") == 3
+    assert "--semantic-attempts" not in writer_command
     assert "--decision-basis-by-section" not in writer_command
     assert stage_timeouts == {
         "target_domain_pipeline": None,
         "peer_domain_pipeline": None,
         "peer_comparison_dataset": None,
+        "peer_comparison_analysis": 123,
         "strategy": 123,
         "writer": 123,
     }
-    assert pre_execution_statuses == ["running"] * 5
+    assert pre_execution_statuses == ["running"] * 6
     assert all(env["LLM_TIMEOUT_SECONDS"] == "300" for env in stage_envs.values())
     assert all(env["LLM_TRANSPORT_RETRIES"] == "1" for env in stage_envs.values())
     assert manifest["request"]["news_window"] == "1m"
@@ -165,9 +173,8 @@ def test_full_pipeline_resolves_configs_and_builds_all_stages(tmp_path, monkeypa
     assert manifest["request"]["news_total_max_results"] == 40
     assert manifest["request"]["decision_horizon_profile"] == "short_term"
     assert manifest["request"]["decision_horizon"] == "1개월"
-    assert manifest["request"]["semantic_attempts"] == 3
     assert manifest["request"]["final_stage_timeout_seconds"] == 123
-    assert manifest["llm_usage"]["expected_cold_cache_logical_calls"] == 14
+    assert manifest["llm_usage"]["expected_cold_cache_logical_calls"] == 15
 
 
 def test_news_window_does_not_select_strategy_horizon() -> None:
@@ -239,26 +246,6 @@ def test_domain_pipeline_command_propagates_reused_snapshot(tmp_path) -> None:
     )
 
     assert command[command.index("--reuse-domain-data-from") + 1] == str(snapshot_root.resolve())
-
-
-def test_semantic_attempts_must_be_positive() -> None:
-    parser = build_parser()
-
-    try:
-        parser.parse_args(
-            [
-                "--company-name",
-                "Target",
-                "--selected-date",
-                "20250102",
-                "--semantic-attempts",
-                "0",
-            ]
-        )
-    except SystemExit as exc:
-        assert exc.code == 2
-    else:
-        raise AssertionError("zero semantic attempts must be rejected")
 
 
 def test_dry_run_does_not_execute_subprocesses(tmp_path, monkeypatch) -> None:

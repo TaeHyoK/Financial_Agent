@@ -9,6 +9,7 @@ import re
 from typing import Any
 
 from html_report_spec import (
+    LABEL_FREE_KEY_EVIDENCE_DISPLAY_COLUMNS,
     KEY_EVIDENCE_DISPLAY_COLUMNS,
     REPORT_SECTIONS,
     RISK_DISPLAY_COLUMNS,
@@ -24,7 +25,7 @@ from writer_handoff import (
 
 DEFAULT_LLM_MODEL = "gpt-5.4"
 MISSING_VALUE = "데이터 추가 필요"
-WRITER_CACHE_VERSION = "7"
+WRITER_CACHE_VERSION = "8"
 DETERMINISTIC_WRITER_MODE = "deterministic"
 FREE_FORM_WRITER_MODE = "free_form"
 WRITER_MODES = {DETERMINISTIC_WRITER_MODE, FREE_FORM_WRITER_MODE}
@@ -153,7 +154,7 @@ def normalize_report_payload(
         "metadata": {
             "company_name": company_name,
             "base_date": target.get("selected_date") or MISSING_VALUE,
-            "recommendation": decision.get("opinion") or MISSING_VALUE,
+            "recommendation": decision.get("opinion") or decision.get("judgment") or MISSING_VALUE,
             "investment_horizon": decision.get("investment_horizon") or MISSING_VALUE,
             "data_coverage": decision.get("data_coverage") or MISSING_VALUE,
             "decision_confidence": decision.get("decision_confidence") or MISSING_VALUE,
@@ -318,6 +319,10 @@ def _build_context(
             "no_new_information": "수치, 제품·서비스명, 회사명, 이벤트, 인과관계, 전망치를 새로 만들지 않는다.",
             "no_internal_narration": "Agent, prompt, validation workflow, 파일 경로, OP/claim/evidence ID를 독자 문장에 노출하지 않는다.",
             "no_forbidden_content": "목표주가, 컨센서스, 별도 투자의견 변경 시나리오를 작성하지 않는다.",
+            "hide_recommendation_label": (
+                "독자에게 보이는 문장에는 Buy, Hold, Sell 의견 등급을 직접 쓰지 않고 "
+                "투자기간과 긍정·부정 근거의 균형만 설명한다."
+            ),
             "plain_korean": "누적·연간·비교 기업·촉매·확인 항목은 일반 투자자가 이해할 수 있는 한국어로 쓴다.",
             "deduplication": "같은 수치나 이벤트를 여러 섹션에 반복하지 않고 각 섹션의 질문에 필요한 역할로만 배치한다.",
             "text_density": "텍스트 섹션은 1~2개 압축 문단만 사용하고 bullets는 빈 배열로 둔다. 상세 원 단위 수치와 전체 비교값은 key_evidence_table에 배치한다.",
@@ -335,19 +340,22 @@ def _build_context_v2(
     writer_mode = _normalize_writer_mode(writer_mode)
     required = _dict(writer_packet.get("required_card_keys_by_component"))
     free_form = writer_mode == FREE_FORM_WRITER_MODE
+    label_free = _is_label_free_writer_packet(writer_packet)
+    decision = _dict(writer_packet.get("decision"))
     return {
         "contract_version": EDITORIAL_PACKET_VERSION,
+        "label_free_strategy": label_free,
         "writer_mode": writer_mode,
         "task": "Strategy가 확정한 카드 해석을 보존해 한국어 one-paper 기업 리서치 payload를 편집한다.",
         "output_contract": _output_contract_v2(writer_packet, writer_mode=writer_mode),
         "section_role_guidance": _section_role_guidance(),
         "writing_rules": {
-            "recommendation_lock": _dict(writer_packet.get("decision")).get("opinion"),
+            "strategy_judgment_lock": decision.get("judgment") or decision.get("opinion"),
             "use_only_writer_input": True,
             "component_card_keys_exact": required,
             "recommendation_bridge_lock": _dict(writer_packet.get("recommendation_bridge")),
             "strategy_meaning_lock": (
-                "각 카드의 strategy_interpretation과 investment_effect를 바꾸거나 새 인과관계로 확대하지 않는다. "
+                "각 카드의 strategy_interpretation과 Strategy가 선택한 역할을 바꾸거나 새 인과관계로 확대하지 않는다. "
                 "output_contract에 제시된 숨은 검증 필드에는 해당 값을 정확히 복사한다."
             ),
             "key_evidence_row_policy": (
@@ -401,6 +409,10 @@ def _build_context_v2(
             "no_numeric_derivation": "입력 수치의 단위 환산, 비율 계산, 반올림 재계산을 하지 않는다.",
             "no_internal_narration": "Agent, prompt, validation, 파일 경로, card key를 독자 문장이나 보이는 표 셀에 쓰지 않는다.",
             "no_forbidden_content": "목표주가, 컨센서스, 별도 투자의견 변경 시나리오를 작성하지 않는다.",
+            "hide_recommendation_label": (
+                "독자에게 보이는 문장과 표에는 Buy, Hold, Sell 의견 등급을 쓰지 않고 "
+                "Strategy가 제시한 판단 방향과 대응 방안을 근거와 함께 설명한다."
+            ),
             "text_density": "텍스트 item은 1~2개 압축 문단만 사용하고 bullets는 빈 배열로 둔다.",
             "inline_html": ["<strong>"],
         },
@@ -545,7 +557,7 @@ def _find_keys(value: Any) -> set[str]:
 def _section_role_guidance() -> list[dict[str, Any]]:
     roles = {
         "investment_call_thesis": {
-            "reader_question": "현재 투자의견과 투자기간은 무엇이며, 어떤 긍정·부정 근거가 결론을 결정했는가?",
+            "reader_question": "현재 판단 방향과 투자기간은 무엇이며, 어떤 긍정·부정 근거가 결론을 결정했는가?",
             "content_focus": "decision과 decisive evidence를 사용해 결론부터 제시하고 contrary evidence를 함께 설명한다.",
         },
         "business_market_context": {
@@ -554,7 +566,7 @@ def _section_role_guidance() -> list[dict[str, Any]]:
         },
         "key_evidence_table": {
             "reader_question": "재무 추세, 제품 매출 구성, 선택일 밸류에이션, 시장, 1:1 peer의 핵심 수치는 무엇인가?",
-            "content_focus": "서로 다른 증거 축을 행으로 분리하고 관찰값·해석·투자의견 영향을 함께 쓴다.",
+            "content_focus": "서로 다른 증거 축을 행으로 분리하고 관찰값·해석·판단 영향을 함께 쓴다.",
         },
         "catalysts_execution": {
             "reader_question": "확인된 촉매는 무엇이며 실제 사업·재무 성과로 이어졌는가?",
@@ -595,6 +607,12 @@ def _output_contract_v2(
 ) -> dict[str, Any]:
     writer_mode = _normalize_writer_mode(writer_mode)
     free_form = writer_mode == FREE_FORM_WRITER_MODE
+    label_free = _is_label_free_writer_packet(writer_packet)
+    evidence_columns = (
+        LABEL_FREE_KEY_EVIDENCE_DISPLAY_COLUMNS
+        if label_free
+        else KEY_EVIDENCE_DISPLAY_COLUMNS
+    )
     required = _dict(writer_packet.get("required_card_keys_by_component"))
     cards = _dict(writer_packet.get("cards"))
     risks = [
@@ -609,9 +627,9 @@ def _output_contract_v2(
             if component == "key_evidence_table":
                 section_items[item_key] = {
                     "columns": (
-                        list(KEY_EVIDENCE_DISPLAY_COLUMNS)
+                        list(evidence_columns)
                         if free_form
-                        else ["근거 축", "관찰", "해석", "투자의견 영향"]
+                        else ["근거 축", "관찰", "해석", "판단 영향"]
                     ),
                     "rows": (
                         [
@@ -619,13 +637,22 @@ def _output_contract_v2(
                                 "핵심 근거": "card label을 독자용 한국어로 작성",
                                 "확인된 수치·사실": "reader_observation을 단위 변경 없이 작성",
                                 "투자 해석": "strategy_interpretation 의미를 보존해 작성",
-                                "영향": "investment_effect를 독자용 한국어로 작성",
+                                **(
+                                    {
+                                        "판단상 역할": "strategy_role을 독자용 한국어로 작성",
+                                        "_strategy_role": _dict(cards.get(card_key)).get("strategy_role"),
+                                    }
+                                    if label_free
+                                    else {
+                                        "영향": "investment_effect를 독자용 한국어로 작성",
+                                        "_investment_effect": _dict(cards.get(card_key)).get(
+                                            "investment_effect"
+                                        ),
+                                    }
+                                ),
                                 "_card_key": card_key,
                                 "_strategy_interpretation": _dict(cards.get(card_key)).get(
                                     "strategy_interpretation"
-                                ),
-                                "_investment_effect": _dict(cards.get(card_key)).get(
-                                    "investment_effect"
                                 ),
                             }
                             for card_key in card_keys
@@ -770,6 +797,12 @@ def _writer_report_schema_v2(
 ) -> dict[str, Any]:
     writer_mode = _normalize_writer_mode(writer_mode)
     free_form = writer_mode == FREE_FORM_WRITER_MODE
+    label_free = _is_label_free_writer_packet(writer_packet)
+    evidence_columns = (
+        LABEL_FREE_KEY_EVIDENCE_DISPLAY_COLUMNS
+        if label_free
+        else KEY_EVIDENCE_DISPLAY_COLUMNS
+    )
     required_by_component = _dict(writer_packet.get("required_card_keys_by_component"))
     risks = [
         item for item in writer_packet.get("risk_factors") or [] if isinstance(item, dict)
@@ -791,9 +824,9 @@ def _writer_report_schema_v2(
             if item_type == "table":
                 expected_columns = (
                     (
-                        list(KEY_EVIDENCE_DISPLAY_COLUMNS)
+                        list(evidence_columns)
                         if free_form
-                        else ["근거 축", "관찰", "해석", "투자의견 영향"]
+                        else ["근거 축", "관찰", "해석", "판단 영향"]
                     )
                     if component == "key_evidence_table"
                     else (
@@ -807,20 +840,31 @@ def _writer_report_schema_v2(
                 row_schema = _strict_schema_object({})
                 row_count = 0
                 if free_form and component == "key_evidence_table":
-                    row_schema = _strict_schema_object(
-                        {
+                    row_fields = {
                             "핵심 근거": {"type": "string"},
                             "확인된 수치·사실": {"type": "string"},
                             "투자 해석": {"type": "string"},
-                            "영향": {"type": "string"},
                             "_card_key": {
                                 "type": "string",
                                 "enum": allowed_card_keys,
                             },
                             "_strategy_interpretation": {"type": "string"},
-                            "_investment_effect": {"type": "string"},
-                        }
-                    )
+                    }
+                    if label_free:
+                        row_fields.update(
+                            {
+                                "판단상 역할": {"type": "string"},
+                                "_strategy_role": {"type": "string"},
+                            }
+                        )
+                    else:
+                        row_fields.update(
+                            {
+                                "영향": {"type": "string"},
+                                "_investment_effect": {"type": "string"},
+                            }
+                        )
+                    row_schema = _strict_schema_object(row_fields)
                     row_count = len(allowed_card_keys)
                 elif free_form and component == "risk_monitoring_matrix":
                     row_schema = _strict_schema_object(
@@ -999,7 +1043,7 @@ def _system_prompt(
 - user message의 writer_input만 사용한다. 새로운 수치, 회사, 제품·서비스, 이벤트, 인과관계, 전망을 만들지 않는다.
 - 숫자는 writer_input에 표시된 값과 단위를 그대로 사용한다. 곱셈·나눗셈·단위 환산으로 새 숫자를 만들지 않는다.
 - 이름이 _100m 또는 _100m_krw로 끝나는 값은 이미 억원 단위다. 원 단위 정수로 재계산하지 말고 억원으로 표시한다.
-- Strategy의 투자의견과 투자기간을 바꾸지 않는다.
+- Strategy의 판단 방향과 투자기간을 바꾸지 않는다.
 - sections 바로 아래에 정확히 6개 section key를 sibling으로 둔다. 중첩하거나 다른 section을 추가하지 않는다.
 - 각 section item에 사용한 writer_input.grounding_ref_map의 유효한 id를 grounding_refs로 넣는다.
 - OP/claim/evidence ID, Agent, prompt, validation workflow, 절대 파일 경로는 본문이나 표 셀에 쓰지 않는다.
@@ -1044,9 +1088,9 @@ def _system_prompt_v2(
 너는 범용 상장기업 리서치 Writer Agent다. 반드시 유효한 JSON object 하나만 반환한다.
 
 역할 경계:
-- Strategy가 이미 판단한 해석과 투자의견 영향을 독자가 읽기 좋은 한국어로 편집한다.
+- Strategy가 이미 판단한 해석과 판단 영향을 독자가 읽기 좋은 한국어로 편집한다.
 - Strategy 판단을 재평가하거나 새로운 해석, 인과관계, 전망, 수치, 회사, 제품·서비스, 이벤트를 만들지 않는다.
-- 투자의견과 투자기간을 변경하지 않는다.
+- 판단 방향과 투자기간을 변경하지 않는다.
 
 출력 계약:
 - output_contract의 sections와 item key를 정확히 유지하고 다른 key를 추가하지 않는다.
@@ -1058,10 +1102,10 @@ def _system_prompt_v2(
 - _limitation_claims의 category 이름이나 card key를 claim 문장에 노출하지 않는다. 검증용 category와 card key는 시스템이 원본 packet에서 연결한다.
 
 작성 규칙:
-- 보이는 key evidence 열은 각각 근거 축, 관찰, 해석, 투자의견 영향의 역할을 지킨다.
+- 보이는 key evidence 열은 각각 근거 축, 관찰, 해석, 판단 영향의 역할을 지킨다.
 - 카드에 reader_observation이 있으면 관찰 열은 그 표시값을 우선 사용하고 raw 숫자를 다시 환산하지 않는다.
 - 제품 card의 reconciliation이 matched가 아니면 관련 thesis, business, key evidence와 risk 문장에 `주요 제품·서비스 공시표 기준`이라고 명시하고 회사 전체 매출 구성으로 확대하지 않는다.
-- 관찰과 해석을 섞지 않고 strategy_interpretation의 의미와 investment_effect의 방향을 유지한다.
+- 관찰과 해석을 섞지 않고 strategy_interpretation의 의미와 입력에 제시된 판단 역할을 유지한다.
 - market_benchmark card는 명시된 benchmark_name 대비로 쓰고 selected_peer card는 명시된 회사명 대비로 쓴다.
 - industry_aggregate card가 없으면 업종·동종·산업 평균 비교 표현을 사용하지 않는다.
 - observation_basis=point_in_time인 card만으로 개선·악화·증가·감소 같은 시계열 변화를 주장하지 않는다.
@@ -1076,6 +1120,13 @@ def _system_prompt_v2(
 
 def _is_v2_writer_packet(value: Any) -> bool:
     return isinstance(value, dict) and value.get("packet_version") == EDITORIAL_PACKET_VERSION
+
+
+def _is_label_free_writer_packet(value: Any) -> bool:
+    return (
+        _is_v2_writer_packet(value)
+        and value.get("strategy_contract_version") == "strategy_decision_output_v4"
+    )
 
 
 def _writer_contract_version(value: dict[str, Any]) -> str:
@@ -1123,7 +1174,10 @@ def _enrich_writer_metadata_v2(payload: dict[str, Any], writer_packet: dict[str,
         card = _dict(cards.get(card_key))
         row["_card_key"] = card_key
         row["_strategy_interpretation"] = card.get("strategy_interpretation")
-        row["_investment_effect"] = card.get("investment_effect")
+        if _is_label_free_writer_packet(writer_packet):
+            row["_strategy_role"] = card.get("strategy_role")
+        else:
+            row["_investment_effect"] = card.get("investment_effect")
     if not evidence_item.get("card_keys"):
         inferred_keys = [
             str(row.get("_card_key") or "")
@@ -1171,10 +1225,7 @@ def _apply_locked_thesis_v2(
     thesis = thesis_section.setdefault("section_analysis", {})
     decision = _dict(writer_packet.get("decision"))
     bridge = _dict(writer_packet.get("recommendation_bridge"))
-    intro = (
-        f"<strong>{decision.get('opinion')}</strong>, "
-        f"{decision.get('investment_horizon')} 관점입니다."
-    )
+    intro = f"{decision.get('investment_horizon')} 관점입니다."
     forward = str(bridge.get("forward_support") or "").strip()
     current = str(bridge.get("current_price_rationale") or "").strip()
     valuation = str(bridge.get("valuation_counterweight") or "").strip()
@@ -1286,7 +1337,12 @@ def _apply_deterministic_evidence_table_v2(
         _dict(writer_packet.get("required_card_keys_by_component")).get("key_evidence_table")
     )
     cards = _dict(writer_packet.get("cards"))
-    evidence_item["columns"] = list(KEY_EVIDENCE_DISPLAY_COLUMNS)
+    label_free = _is_label_free_writer_packet(writer_packet)
+    evidence_item["columns"] = list(
+        LABEL_FREE_KEY_EVIDENCE_DISPLAY_COLUMNS
+        if label_free
+        else KEY_EVIDENCE_DISPLAY_COLUMNS
+    )
     evidence_item["rows"] = [
         {
             "핵심 근거": _evidence_display_label(card_key, card),
@@ -1298,10 +1354,19 @@ def _apply_deterministic_evidence_table_v2(
                     [card_key],
                 )
             ),
-            "영향": _effect_label(card.get("investment_effect")),
+            **(
+                {
+                    "판단상 역할": _strategy_role_label(card.get("strategy_role")),
+                    "_strategy_role": card.get("strategy_role"),
+                }
+                if label_free
+                else {
+                    "영향": _effect_label(card.get("investment_effect")),
+                    "_investment_effect": card.get("investment_effect"),
+                }
+            ),
             "_card_key": card_key,
             "_strategy_interpretation": card.get("strategy_interpretation"),
-            "_investment_effect": card.get("investment_effect"),
         }
         for card_key in required
         for card in [_dict(cards.get(card_key))]
@@ -1510,7 +1575,7 @@ def _market_relative_observation_text(card: dict[str, Any], value: Any) -> str:
             display_value = f"{display_value[:-1]}%p"
         lines.append(f"{display_label}: {display_value}")
     if any("60거래일" in line for line in lines):
-        lines.append("주: 60거래일 지표는 요청기간 이전 warm-up 데이터 포함")
+        lines.append("주: 60거래일 수익률은 분석 시작일 이전 주가를 포함하여 산출함")
     return "\n".join(line for line in lines if line) or MISSING_VALUE
 
 
@@ -1663,6 +1728,15 @@ def _effect_label(value: Any) -> str:
         "neutral": "중립",
         "reference": "참고",
     }.get(str(value or ""), "참고")
+
+
+def _strategy_role_label(value: Any) -> str:
+    return {
+        "primary": "핵심 근거",
+        "counter": "반대 근거",
+        "monitoring": "위험 신호",
+        "context": "판단 문맥",
+    }.get(str(value or ""), "판단 문맥")
 
 
 def _risk_display_title(risk: dict[str, Any]) -> str:

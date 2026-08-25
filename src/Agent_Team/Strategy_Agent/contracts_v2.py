@@ -25,7 +25,7 @@ from orchestration.ablation import config_from_mapping
 PACKET_VERSION = "strategy_compact_packet_v2"
 PROVENANCE_VERSION = "strategy_packet_provenance_v2"
 DECISION_VERSION = "strategy_decision_output_v2"
-STRATEGY_CACHE_VERSION = "3"
+STRATEGY_CACHE_VERSION = "4"
 
 STRATEGY_SECTIONS = (
     "investment_thesis",
@@ -84,7 +84,7 @@ def build_compact_strategy_packet_v2(
     *,
     model: str = "",
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Build the bounded LLM packet, external provenance, telemetry, and Gate A sidecar."""
+    """Build the bounded LLM packet, provenance, telemetry, and input summary."""
 
     reports = _dict(input_bundle.get("target_reports"))
     ablation = config_from_mapping(input_bundle.get("ablation"))
@@ -130,6 +130,14 @@ def build_compact_strategy_packet_v2(
     for card, raw_ids, source_paths in build_peer_pair_cards(_dict(input_bundle.get("peer_comparison"))):
         if _peer_card_source_domain(card) in included_domains:
             add_card(card, raw_ids=raw_ids, source_paths=source_paths)
+
+    peer_analysis_card = build_peer_analysis_card(
+        _dict(input_bundle.get("peer_comparison_analysis")),
+        included_domains=included_domains,
+    )
+    if peer_analysis_card is not None:
+        card, raw_ids, source_paths = peer_analysis_card
+        add_card(card, raw_ids=raw_ids, source_paths=source_paths)
 
     _attach_secondary_context(
         cards,
@@ -179,8 +187,8 @@ def build_compact_strategy_packet_v2(
         provenance_rows[card_key]["strategy_card_sha256"] = card_content_sha256(card)
 
     telemetry = _packet_telemetry(packet, model=model)
-    gate_a = {
-        "gate": "A",
+    input_summary = {
+        "contract": "strategy_input_v2",
         "status": "pass",
         "packet_version": PACKET_VERSION,
         "machine_limitations": machine_records,
@@ -188,14 +196,14 @@ def build_compact_strategy_packet_v2(
         "telemetry": telemetry,
     }
     validate_compact_strategy_packet_v2(packet, provenance)
-    return packet, provenance, telemetry, gate_a
+    return packet, provenance, telemetry, input_summary
 
 
 def validate_compact_strategy_packet_v2(
     packet: dict[str, Any],
     provenance: dict[str, Any],
 ) -> None:
-    """Gate A: validate packet shape, card routing, budgets, and provenance."""
+    """Validate packet construction, card routing, budgets, and provenance."""
 
     if packet.get("packet_version") != PACKET_VERSION:
         raise ValueError(f"Unsupported Strategy packet version: {packet.get('packet_version')}")
@@ -542,7 +550,7 @@ def _filter_forward_support_card_keys(
     assessments: dict[str, dict[str, Any]],
     opinion: str,
 ) -> list[str]:
-    """Keep only evidence that Gate B permits as forward decision support."""
+    """Keep legacy-v2 evidence eligible for forward decision support."""
 
     allowed_effects = {
         "Buy": {"positive", "mixed"},
@@ -572,7 +580,7 @@ def validate_strategy_decision_v2(
     provenance: dict[str, Any],
     required_horizon: str | None = None,
 ) -> dict[str, Any]:
-    """Gate B: reject integrity violations and report decision-policy advisories."""
+    """Evaluate legacy-v2 integrity for experiments and regression tests."""
 
     if not isinstance(output, dict) or output.get("decision_version") != DECISION_VERSION:
         raise ValueError(f"Strategy decision_version must be {DECISION_VERSION}.")
@@ -726,14 +734,16 @@ def validate_strategy_decision_v2(
             if not isinstance(card, dict) or section not in (card.get("allowed_sections") or []):
                 raise ValueError(f"Invalid section card reference: {section} -> {card_key}")
 
+    reader_text = _strategy_reader_text(output)
+    _assert_no_reader_recommendation_labels(reader_text)
     assert_no_internal_references_in_reader_text(
-        _strategy_reader_text(output),
+        reader_text,
         card_keys=cards,
         location="strategy_decision_output_v2.reader_text",
     )
     assert_no_opaque_ids(output, location="strategy_decision_output_v2")
     return {
-        "gate": "B",
+        "evaluation": "strategy_decision_v2_integrity",
         "status": "pass",
         "decision_version": DECISION_VERSION,
         "card_count": len(cards),
@@ -781,6 +791,18 @@ def _strategy_reader_text(output: dict[str, Any]) -> dict[str, Any]:
             if isinstance(item, dict)
         ],
     }
+
+
+def _assert_no_reader_recommendation_labels(value: dict[str, Any]) -> None:
+    """Keep the structured opinion out of prose projected into the final report."""
+
+    serialized = compact_json(value, sort_keys=True)
+    match = re.search(r"(?<![A-Za-z])(?:buy|hold|sell)(?![A-Za-z])", serialized, re.IGNORECASE)
+    if match:
+        raise ValueError(
+            "Reader-facing recommendation label leaked outside decision.opinion: "
+            f"{match.group(0)!r}"
+        )
 
 
 def _validate_factor_keys(
@@ -1638,6 +1660,91 @@ def build_peer_pair_cards(
     return results[: CARD_BUDGETS["peer"]]
 
 
+def build_peer_analysis_card(
+    peer_analysis: dict[str, Any],
+    *,
+    included_domains: set[str],
+) -> tuple[dict[str, Any], list[str], list[str]] | None:
+    """Expose the comparison agent's judgment as one evidence-linked peer card."""
+
+    if not peer_analysis:
+        return None
+    selected_cards = {
+        str(item.get("card_key") or ""): item
+        for item in _list(peer_analysis.get("selected_basis_cards"))
+        if isinstance(item, dict) and str(item.get("card_key") or "").strip()
+    }
+    allowed_card_keys = {
+        key
+        for key, item in selected_cards.items()
+        if _comparison_source_domain(str(item.get("domain") or "")) in included_domains
+    }
+    points = []
+    used_keys: set[str] = set()
+    for item in _list(peer_analysis.get("comparison_points")):
+        if not isinstance(item, dict):
+            continue
+        basis = [entry for entry in _list(item.get("basis")) if isinstance(entry, dict)]
+        basis_keys = {str(entry.get("card_key") or "") for entry in basis}
+        if not basis_keys or not basis_keys.issubset(allowed_card_keys):
+            continue
+        points.append(copy.deepcopy(item))
+        used_keys.update(basis_keys)
+    if not points:
+        return None
+    target_company = str(peer_analysis.get("target_company") or "").strip()
+    peer_company = str(peer_analysis.get("peer_company") or "").strip()
+    all_domains_included = included_domains == {"financial", "news", "yfinance"}
+    observation = {
+        "comparison_points": points,
+        "selected_basis": [
+            {
+                "card_key": key,
+                "label": selected_cards[key].get("label"),
+                "company_scope": selected_cards[key].get("company_scope"),
+                "domain": selected_cards[key].get("domain"),
+                "observation": copy.deepcopy(selected_cards[key].get("observation") or {}),
+                "usage_reasons": copy.deepcopy(selected_cards[key].get("usage_reasons") or []),
+            }
+            for key in sorted(used_keys)
+        ],
+        "comparison_limitations": _dedupe_strings(
+            peer_analysis.get("comparison_limitations") or []
+        ),
+    }
+    if all_domains_included:
+        observation["comparison_brief"] = str(peer_analysis.get("comparison_brief") or "").strip()
+    card = _card(
+        "peer.agent_analysis",
+        domain="peer",
+        card_type="agent_comparison",
+        label="대상기업과 선정 비교기업 종합 비교",
+        allowed_sections=(
+            "investment_thesis",
+            "peer_competitor_positioning",
+            "risk_view",
+            "decision_balance",
+        ),
+        evidence_family="selected_peer_analysis",
+        observation_basis="pairwise_comparison",
+        comparison_scope="selected_peer",
+        comparison_label=f"{peer_company} 대비" if peer_company else "선정 비교기업 대비",
+        comparison_entities={
+            "target_company": target_company,
+            "peer_companies": [peer_company] if peer_company else [],
+            "peer_count": 1 if peer_company else 0,
+        },
+        observation=observation,
+        reader_limitations=observation["comparison_limitations"],
+    )
+    source_path = str(peer_analysis.get("source_path") or "").strip()
+    return card, [], [source_path] if source_path else []
+
+
+def _comparison_source_domain(domain: str) -> str:
+    return "yfinance" if domain in {"market", "valuation"} else domain
+
+
 def _news_cards(
     report: dict[str, Any],
     validation: dict[str, Any],
@@ -2175,15 +2282,18 @@ def _packet_telemetry(packet: dict[str, Any], *, model: str) -> dict[str, Any]:
 
 
 def _source_files_for_domain(metadata: dict[str, Any], domain: str) -> list[str]:
-    key = {
+    keys = {
         "financial": "target_financial_path",
         "news": "target_news_path",
         "market": "target_yfinance_path",
         "valuation": "target_yfinance_path",
-        "peer": "peer_comparison_path",
+        "peer": ("peer_comparison_path", "peer_analysis_path"),
     }.get(domain)
-    value = metadata.get(key) if key else None
-    return [str(value)] if value else []
+    if not keys:
+        return []
+    if isinstance(keys, str):
+        keys = (keys,)
+    return [str(metadata[key]) for key in keys if metadata.get(key)]
 
 
 def _card_counts(cards: dict[str, Any]) -> dict[str, int]:

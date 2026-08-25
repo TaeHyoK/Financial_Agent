@@ -1,4 +1,30 @@
 from Agent_Team.Financial_Agent.SY_Agent import langgraph_flow as sy
+from Agent_Team.Financial_Agent.langgraph_flow import _company_news_top10_context
+
+
+def test_financial_news_subdata_uses_top10_events_without_agent_claims_or_urls() -> None:
+    context = _company_news_top10_context(
+        {
+            "events": [
+                {
+                    "event_id": "1",
+                    "relevance_rank": 1,
+                    "mention_count": 2,
+                    "title": "사업 관련 뉴스",
+                    "snippet": "기업의 신규 사업 계획이 발표됐다.",
+                    "source": "테스트 매체",
+                    "url": "https://example.com/should-not-pass",
+                    "time": "2025-10-30",
+                }
+            ]
+        }
+    )
+
+    assert context["status"] == "available"
+    assert context["input_type"] == "company_related_news_top_10"
+    assert "claims" not in context
+    assert "url" not in str(context)
+    assert context["evidence_catalog"]["NEWS_RAW_2025-10-30_1"]["title"] == "사업 관련 뉴스"
 
 
 def test_collection_dates_rejects_same_day_or_future_filing() -> None:
@@ -166,6 +192,8 @@ def test_financial_sy_request_separates_dart_and_secondary_context() -> None:
     assert "NEWS_RAW_2025-10-31_1" not in primary_only_content
     assert "E001" in primary_only_content
     assert "output_schema" not in with_context_content
+    assert '"chronology_required":true' in with_context_content
+    assert "뉴스 발생일이 재무자료의 대상 기간보다 뒤라면" in with_context["messages"][0]["content"]
     assert with_context["response_format"]["type"] == "json_schema"
     schema = with_context["response_format"]["json_schema"]["schema"]
     assert schema["additionalProperties"] is False

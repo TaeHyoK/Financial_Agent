@@ -10,12 +10,18 @@ from html_report_spec import (
     INVESTMENT_THESIS_ITEM_KEY,
     INVESTMENT_THESIS_SECTION_KEY,
     KEY_EVIDENCE_DISPLAY_COLUMNS,
+    LABEL_FREE_KEY_EVIDENCE_DISPLAY_COLUMNS,
+    REPORT_DISCLAIMER,
     REPORT_SECTIONS,
     RISK_DISPLAY_COLUMNS,
     SUPPORTED_INVESTMENT_HORIZONS,
     investment_horizon_heading,
 )
-from html_report_writer import _plain_korean_text, _qualify_partial_product_scope_v2
+from html_report_writer import (
+    _plain_korean_text,
+    _qualify_partial_product_scope_v2,
+    _strategy_role_label,
+)
 from writer_handoff import EDITORIAL_PACKET_VERSION
 
 
@@ -43,6 +49,10 @@ def validate_html_report(
         "forbidden_content_removed": _validate_forbidden_content(report_payload, notes),
         "required_tables": _validate_required_tables(html_content, notes),
         "recommendation_consistency": _validate_recommendation(report_payload, writer_handoff, notes),
+        "reader_recommendation_labels_hidden": _validate_reader_recommendation_labels(
+            html_content, notes
+        ),
+        "fixed_disclaimer": _validate_fixed_disclaimer(html_content, notes),
         "investment_horizon_heading": _validate_investment_horizon_heading(
             report_payload,
             html_content,
@@ -152,8 +162,6 @@ def _validate_a4_print_layout(html_content: str, notes: list[str]) -> str:
         "@page",
         "size: A4",
         "width: 210mm",
-        "height: 297mm",
-        "max-height: 297mm",
         'class="a4-sheet"',
         'class="paper-grid"',
         'class="visual-sidebar"',
@@ -164,18 +172,59 @@ def _validate_a4_print_layout(html_content: str, notes: list[str]) -> str:
         "page-break-inside: auto",
     ]
     missing = [term for term in required_terms if term not in html_content]
+    single_page_layout = all(
+        term in html_content
+        for term in ("height: 297mm", "max-height: 297mm")
+    )
+    complete_two_page_layout = all(
+        term in html_content
+        for term in ("height: 594mm", "max-height: none", "break-before: page")
+    )
     if missing:
         notes.append(f"Missing A4 print layout term(s): {missing}")
-    return _pass_fail(not missing)
+    if not single_page_layout and not complete_two_page_layout:
+        notes.append("Missing a supported complete A4 pagination layout.")
+    return _pass_fail(not missing and (single_page_layout or complete_two_page_layout))
 
 
 def _validate_recommendation(report_payload: dict[str, Any], writer_handoff: dict[str, Any], notes: list[str]) -> str:
-    expected = str(_dict(writer_handoff.get("decision")).get("opinion") or "").strip()
+    decision = _dict(writer_handoff.get("decision"))
+    expected = str(decision.get("opinion") or decision.get("judgment") or "").strip()
     actual = str(report_payload.get("metadata", {}).get("recommendation") or "").strip()
     ok = bool(expected) and actual == expected
     if not ok:
         notes.append(f"Recommendation mismatch: expected={expected!r}, actual={actual!r}")
     return _pass_fail(ok)
+
+
+def _validate_reader_recommendation_labels(html_content: str, notes: list[str]) -> str:
+    visible_text = _visible_html_text(html_content)
+    matches = sorted(
+        {
+            match.group(0)
+            for match in re.finditer(
+                r"(?<![A-Za-z])(?:buy|hold|sell)(?![A-Za-z])",
+                visible_text,
+                flags=re.IGNORECASE,
+            )
+        }
+    )
+    if matches:
+        notes.append(f"Reader-visible recommendation label(s) remain: {matches}")
+    return _pass_fail(not matches)
+
+
+def _validate_fixed_disclaimer(html_content: str, notes: list[str]) -> str:
+    required_terms = [
+        f'class="report-disclaimer">{REPORT_DISCLAIMER}</footer>',
+        ".report-disclaimer {",
+        "font-size: 4.4pt",
+        "text-align: center",
+    ]
+    missing = [term for term in required_terms if term not in html_content]
+    if missing:
+        notes.append(f"Fixed report disclaimer is missing or misformatted: {missing}")
+    return _pass_fail(not missing)
 
 
 def _validate_investment_horizon_heading(
@@ -303,6 +352,7 @@ def _validate_strategy_meaning_preservation(
         return "pass"
     errors: list[str] = []
     cards = _dict(writer_handoff.get("cards"))
+    label_free = _is_label_free_writer_packet(writer_handoff)
     required = _dict(writer_handoff.get("required_card_keys_by_component"))
     sections = _dict(report_payload.get("sections"))
     evidence_item = _dict(_dict(sections.get("key_evidence_table")).get("evidence_table"))
@@ -323,10 +373,12 @@ def _validate_strategy_meaning_preservation(
             errors.append(f"key_evidence_table references unknown card: {card_key!r}")
             continue
         interpretation = str(card.get("strategy_interpretation") or "")
-        effect = str(card.get("investment_effect") or "")
         if row.get("_strategy_interpretation") != interpretation:
             errors.append(f"Strategy interpretation metadata changed: {card_key}")
-        if row.get("_investment_effect") != effect:
+        if label_free:
+            if row.get("_strategy_role") != card.get("strategy_role"):
+                errors.append(f"Strategy role metadata changed: {card_key}")
+        elif row.get("_investment_effect") != card.get("investment_effect"):
             errors.append(f"Investment effect metadata changed: {card_key}")
         if not str(row.get("확인된 수치·사실") or "").strip():
             errors.append(f"Key evidence observation is empty: {card_key}")
@@ -377,11 +429,17 @@ def _validate_strategy_presentation_preservation(
         return "pass"
     errors: list[str] = []
     cards = _dict(writer_handoff.get("cards"))
+    label_free = _is_label_free_writer_packet(writer_handoff)
     required = _dict(writer_handoff.get("required_card_keys_by_component"))
     sections = _dict(report_payload.get("sections"))
     evidence_item = _dict(_dict(sections.get("key_evidence_table")).get("evidence_table"))
     evidence_rows = [row for row in _list(evidence_item.get("rows")) if isinstance(row, dict)]
-    if _text_list(evidence_item.get("columns")) != list(KEY_EVIDENCE_DISPLAY_COLUMNS):
+    expected_columns = (
+        LABEL_FREE_KEY_EVIDENCE_DISPLAY_COLUMNS
+        if label_free
+        else KEY_EVIDENCE_DISPLAY_COLUMNS
+    )
+    if _text_list(evidence_item.get("columns")) != list(expected_columns):
         errors.append("key_evidence_table display columns changed")
     expected_evidence_keys = _text_list(required.get("key_evidence_table"))
     actual_evidence_keys = [str(row.get("_card_key") or "") for row in evidence_rows]
@@ -405,9 +463,14 @@ def _validate_strategy_presentation_preservation(
         ).strip()
         if str(row.get("투자 해석") or "").strip() != expected_visible_interpretation:
             errors.append(f"Visible Strategy interpretation was paraphrased: {card_key}")
-        expected_effect_label = _effect_label(str(card.get("investment_effect") or ""))
-        if str(row.get("영향") or "").strip() != expected_effect_label:
-            errors.append(f"Visible investment effect label changed: {card_key}")
+        if label_free:
+            expected_role_label = _strategy_role_label(card.get("strategy_role"))
+            if str(row.get("판단상 역할") or "").strip() != expected_role_label:
+                errors.append(f"Visible Strategy role label changed: {card_key}")
+        else:
+            expected_effect_label = _effect_label(str(card.get("investment_effect") or ""))
+            if str(row.get("영향") or "").strip() != expected_effect_label:
+                errors.append(f"Visible investment effect label changed: {card_key}")
 
     risk_item = _dict(_dict(sections.get("risk_monitoring_matrix")).get("risk_monitoring_table"))
     risk_rows = [row for row in _list(risk_item.get("rows")) if isinstance(row, dict)]
@@ -566,7 +629,12 @@ def _validate_internal_metadata_hidden(
     writer_handoff: dict[str, Any],
     notes: list[str],
 ) -> str:
-    visible = f"{_reader_payload_text(report_payload)}\n{html_content}"
+    reader_html = re.sub(
+        r"(?is)(?P<prefix>\bsrc\s*=\s*(?P<quote>[\"']))data:image/.*?(?P=quote)",
+        r"\g<prefix>[embedded image]\g<quote>",
+        html_content,
+    )
+    visible = f"{_reader_payload_text(report_payload)}\n{reader_html}"
     blocked_terms = [
         "required_key_evidence",
         "grounding_ref_map",
@@ -574,12 +642,13 @@ def _validate_internal_metadata_hidden(
         "_card_key",
         "_strategy_interpretation",
         "_investment_effect",
+        "_strategy_role",
         "_basis_card_keys",
         "_strategy_risk_summary",
         "_claim_units",
         "_limitation_categories",
     ]
-    found = [term for term in blocked_terms if term in html_content]
+    found = [term for term in blocked_terms if term in reader_html]
     raw_ids = sorted(
         set(
             re.findall(
@@ -594,7 +663,7 @@ def _validate_internal_metadata_hidden(
         leaked_card_keys = sorted(
             card_key
             for card_key in _dict(writer_handoff.get("cards"))
-            if card_key and card_key in html_content
+            if card_key and card_key in reader_html
         )
     if found:
         notes.append(f"Internal metadata field(s) rendered: {found}")
@@ -740,6 +809,16 @@ def _visible_heading_text(value: str) -> str:
     return " ".join(unescape(re.sub(r"<[^>]+>", "", value)).split())
 
 
+def _visible_html_text(html_content: str) -> str:
+    without_noncontent = re.sub(
+        r"<(?:style|script)\b[^>]*>.*?</(?:style|script)\s*>",
+        " ",
+        html_content,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    return " ".join(unescape(re.sub(r"<[^>]+>", " ", without_noncontent)).split())
+
+
 def _reader_payload_text(report_payload: dict[str, Any]) -> str:
     return str(_visible_value({"metadata": report_payload.get("metadata"), "sections": report_payload.get("sections")}))
 
@@ -822,6 +901,13 @@ def _text_list(value: Any) -> list[str]:
 
 def _is_v2_writer_packet(value: Any) -> bool:
     return isinstance(value, dict) and value.get("packet_version") == EDITORIAL_PACKET_VERSION
+
+
+def _is_label_free_writer_packet(value: Any) -> bool:
+    return (
+        _is_v2_writer_packet(value)
+        and value.get("strategy_contract_version") == "strategy_decision_output_v4"
+    )
 
 
 def _effect_label(value: Any) -> str:

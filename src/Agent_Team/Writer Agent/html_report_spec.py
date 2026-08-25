@@ -14,6 +14,11 @@ SUPPORTED_INVESTMENT_HORIZONS = (
 )
 INVESTMENT_THESIS_SECTION_KEY = "investment_call_thesis"
 INVESTMENT_THESIS_ITEM_KEY = "section_analysis"
+REPORT_DISCLAIMER = (
+    "본 리포트는 투자 판단을 위한 참고자료이며, 최종 투자 결정과 그에 따른 책임은 "
+    "투자자 본인에게 있습니다. 불확실성과 변동 가능성을 충분히 고려하여 보수적인 "
+    "관점에서 접근하시기 바랍니다."
+)
 
 
 REPORT_SECTIONS: list[dict[str, Any]] = [
@@ -79,6 +84,13 @@ KEY_EVIDENCE_DISPLAY_COLUMNS = (
     "확인된 수치·사실",
     "투자 해석",
     "영향",
+)
+
+LABEL_FREE_KEY_EVIDENCE_DISPLAY_COLUMNS = (
+    "핵심 근거",
+    "확인된 수치·사실",
+    "투자 해석",
+    "판단상 역할",
 )
 
 RISK_DISPLAY_COLUMNS = (

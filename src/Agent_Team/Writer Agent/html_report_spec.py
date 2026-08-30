@@ -26,18 +26,18 @@ REPORT_SECTIONS: list[dict[str, Any]] = [
         "key": "investment_call_thesis",
         "id": "investment-call-thesis",
         "title": "Investment Call & Thesis",
-        "display_title": "투자의견 요약",
+        "display_title": "투자 판단 요약",
         "items": [
-            ("section_analysis", "투자기간 판단 근거", "text"),
+            ("section_analysis", "현재 대응과 판단 근거", "text"),
         ],
     },
     {
         "key": "business_market_context",
         "id": "business-market-context",
         "title": "Business & Market Context",
-        "display_title": "사업·시장 현황",
+        "display_title": "실적 변화와 가격 평가",
         "items": [
-            ("section_analysis", "매출 구성과 주가 흐름", "text"),
+            ("section_analysis", "손익·현금흐름과 시장 가격", "text"),
         ],
     },
     {
@@ -46,16 +46,16 @@ REPORT_SECTIONS: list[dict[str, Any]] = [
         "title": "Key Evidence Table",
         "display_title": "핵심 판단 근거",
         "items": [
-            ("evidence_table", "투자의견을 구성한 주요 증거", "table"),
+            ("evidence_table", "판단을 구성한 주요 근거", "table"),
         ],
     },
     {
         "key": "catalysts_execution",
         "id": "catalysts-execution",
         "title": "Catalysts & Execution",
-        "display_title": "주요 이벤트",
+        "display_title": "주요 사건과 판단 영향",
         "items": [
-            ("section_analysis", "성장 촉매와 실적 연결 여부", "text"),
+            ("section_analysis", "사업 사건과 실행 가능성", "text"),
         ],
     },
     {
@@ -64,16 +64,16 @@ REPORT_SECTIONS: list[dict[str, Any]] = [
         "title": "Risk & Monitoring Matrix",
         "display_title": "리스크 점검",
         "items": [
-            ("risk_monitoring_table", "현재 위험과 향후 확인사항", "table"),
+            ("risk_monitoring_table", "현재 위험과 투자 판단에 미치는 영향", "table"),
         ],
     },
     {
         "key": "data_limits",
         "id": "data-limits",
         "title": "Data Limits",
-        "display_title": "데이터 한계",
+        "display_title": "데이터 기준과 한계",
         "items": [
-            ("section_analysis", "해석 시 유의사항", "text"),
+            ("section_analysis", "자료 시점과 해석 범위", "text"),
         ],
     },
 ]
@@ -96,13 +96,20 @@ LABEL_FREE_KEY_EVIDENCE_DISPLAY_COLUMNS = (
 RISK_DISPLAY_COLUMNS = (
     "리스크 요인",
     "현재 확인된 내용",
-    "향후 점검사항",
+    "투자 판단에 미치는 영향",
 )
 
 
 TABLE_ITEM_KEYS = {
     "evidence_table",
     "risk_monitoring_table",
+}
+
+TEXT_PARAGRAPH_LIMITS = {
+    "investment_call_thesis": 2,
+    "business_market_context": 3,
+    "catalysts_execution": 2,
+    "data_limits": 2,
 }
 
 

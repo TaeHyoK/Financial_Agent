@@ -6,7 +6,7 @@ import json
 import math
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +31,7 @@ DEFAULT_DART_JSON: Path | None = None
 DEFAULT_NEWS_JSON: Path | None = None
 DEFAULT_REPORT_MD = DEFAULT_OUTPUT_DIR / "yfinance_analyst_report.md"
 DEFAULT_REPORT_JSON = DEFAULT_OUTPUT_DIR / "yfinance_analyst_report.json"
-DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
+DEFAULT_OPENAI_MODEL = "gpt-5.4"
 SECONDARY_FINANCIAL_METRICS = (
     "revenue",
     "revenue_growth",
@@ -107,7 +107,7 @@ def generate_analyst_report(
                 "시장 판단과 문맥은 YFinance 전용 데이터만 사용합니다."
                 if primary_data_only
                 else (
-                    "시장 판단은 YFinance 근거만 사용하고, 뉴스 날짜별 요약과 DART 자료는 "
+                    "시장 판단은 YFinance 근거만 사용하고, 뉴스 주간 요약과 DART 자료는 "
                     "표현 강도와 한계 점검용 보조 문맥으로만 사용합니다."
                 )
             ),
@@ -319,16 +319,22 @@ def build_market_primary_evidence_catalog(
 def build_daily_market_evidence_catalog(
     frame: pd.DataFrame,
     *,
-    max_rows: int = 30,
+    max_rows: int | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """Build dated market observations for matching News summaries to trading days."""
+    """Build market observations across the full requested analysis window.
+
+    The market dataset is already clipped to the same configured date range as
+    News collection. ``max_rows`` remains an explicit compatibility override,
+    but the agent no longer drops the earlier part of a 90-day window by default.
+    """
 
     data = frame.sort_values("date").copy()
     stock_price_column = _stock_analysis_price_column(data)
     data["_stock_daily_return"] = data[stock_price_column].pct_change(fill_method=None)
     data["_kospi_daily_return"] = data["kospi_close"].pct_change(fill_method=None)
     data["_fx_daily_return"] = data["fx_close"].pct_change(fill_method=None)
-    data = data.tail(max(max_rows, 1))
+    if max_rows is not None:
+        data = data.tail(max(int(max_rows), 1))
     catalog: dict[str, dict[str, Any]] = {}
     for _, row in data.iterrows():
         source_date = _date_str(row["date"])
@@ -417,25 +423,26 @@ def build_news_secondary_context(
     *,
     source_path: Path,
 ) -> dict[str, Any]:
-    """Load the date-indexed News summaries directly, without News Agent claims."""
+    """Load weekly News summaries directly, without News Agent claims."""
 
     del source_path  # Kept in the public signature for CLI compatibility.
     periods = _news_period_summary_items(payload)[:30]
     catalog: dict[str, dict[str, Any]] = {}
     for period in periods:
-        source_date = str(period.get("period") or "")[:10]
+        period_key = str(period.get("period") or "").strip()
+        source_date = _weekly_period_start(period_key)
         period_summary = str(period.get("period_summary") or "").strip()
-        if not source_date or not period_summary:
+        if not period_key or not period_summary:
             continue
-        evidence_id = canonical_evidence_id("news", f"daily_{source_date}")
+        evidence_id = canonical_evidence_id("news", f"weekly_{period_key}")
         catalog[evidence_id] = {
             "evidence_id": evidence_id,
             "domain": "news",
             "origin_type": "model_summarized",
-            "source_ref": f"news_periods.{source_date.replace('-', '_')}",
+            "source_ref": f"news_periods.{period_key.replace('-', '_')}",
             "source_date": source_date,
-            "period": source_date,
-            "metric": "daily_news_context",
+            "period": period_key,
+            "metric": "weekly_news_context",
             "text": period_summary,
             "issues": [
                 {
@@ -455,10 +462,22 @@ def build_news_secondary_context(
     validate_evidence_catalog(catalog, allowed_domains={"news"})
     return {
         "status": "available" if catalog else "unavailable",
-        "input_type": "daily_news_summaries",
+        "input_type": "weekly_news_summaries",
         "period_count": len(catalog),
         "evidence_catalog": catalog,
     }
+
+
+def _weekly_period_start(period: str) -> str:
+    try:
+        return date.fromisoformat(period[:10]).isoformat()
+    except ValueError:
+        pass
+    try:
+        year_text, week_text = period.split("-W", 1)
+        return date.fromisocalendar(int(year_text), int(week_text), 1).isoformat()
+    except (TypeError, ValueError):
+        return ""
 
 
 def _news_period_summary_items(payload: dict[str, Any]) -> list[dict[str, Any]]:

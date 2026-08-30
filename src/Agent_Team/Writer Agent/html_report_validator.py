@@ -14,6 +14,7 @@ from html_report_spec import (
     REPORT_DISCLAIMER,
     REPORT_SECTIONS,
     RISK_DISPLAY_COLUMNS,
+    TEXT_PARAGRAPH_LIMITS,
     SUPPORTED_INVESTMENT_HORIZONS,
     investment_horizon_heading,
 )
@@ -22,7 +23,7 @@ from html_report_writer import (
     _qualify_partial_product_scope_v2,
     _strategy_role_label,
 )
-from writer_handoff import EDITORIAL_PACKET_VERSION
+from writer_handoff import EDITORIAL_PACKET_VERSION, EDITORIAL_PACKET_VERSION_V3
 
 
 REQUIRED_TABLE_SECTION_IDS = {
@@ -70,6 +71,9 @@ def validate_html_report(
         "required_limitation_coverage": _validate_required_limitation_coverage(
             report_payload, writer_handoff, notes
         ),
+        "chart_selection_grounding": _validate_chart_selection_grounding(
+            report_payload, writer_handoff, notes
+        ),
         "internal_metadata_hidden": _validate_internal_metadata_hidden(
             report_payload, html_content, writer_handoff, notes
         ),
@@ -80,7 +84,9 @@ def validate_html_report(
     advisory_notes: list[str] = []
     advisory_checks = {
         "section_h1_count": _pass_fail(
-            len(re.findall(r"<h1[>\s]", html_content)) == len(REPORT_SECTIONS)
+            len(re.findall(r"<h1[>\s]", html_content))
+            == len(REPORT_SECTIONS)
+            + (1 if report_payload.get("report_charts") else 0)
         ),
         "table_of_contents_removed": _validate_no_table_of_contents(
             html_content, advisory_notes
@@ -95,7 +101,7 @@ def validate_html_report(
             report_payload, writer_handoff, advisory_notes
         ),
         "compact_text_sections": _validate_compact_text_sections(
-            report_payload, advisory_notes
+            report_payload, writer_handoff, advisory_notes
         ),
     }
     advisory_statuses = {
@@ -125,6 +131,59 @@ def _validate_required_section_ids(html_content: str, notes: list[str]) -> str:
     if missing:
         notes.append(f"Missing required section id(s): {missing}")
     return _pass_fail(not missing)
+
+
+def _validate_chart_selection_grounding(
+    report_payload: dict[str, Any],
+    writer_handoff: dict[str, Any],
+    notes: list[str],
+) -> str:
+    """Check chart-to-evidence links without judging which chart should be chosen."""
+
+    if writer_handoff.get("packet_version") not in {
+        EDITORIAL_PACKET_VERSION,
+        EDITORIAL_PACKET_VERSION_V3,
+    }:
+        return "pass"
+    requested = [
+        str(value).strip()
+        for value in report_payload.get("requested_chart_keys") or []
+        if str(value).strip()
+    ]
+    details = report_payload.get("chart_selection_details")
+    if not requested and details in (None, []):
+        return "pass"
+    if not isinstance(details, list):
+        notes.append("Chart selection details are missing.")
+        return "fail"
+    detail_keys = [
+        str(item.get("chart_key") or "").strip()
+        for item in details
+        if isinstance(item, dict)
+    ]
+    allowed_cards = set((writer_handoff.get("cards") or {}).keys())
+    links_valid = len(details) == len(detail_keys) and all(
+        bool(item.get("basis_card_keys"))
+        and set(str(key) for key in item.get("basis_card_keys") or []).issubset(
+            allowed_cards
+        )
+        and bool(str(item.get("selection_reason") or "").strip())
+        and bool(str(item.get("chart_observation") or "").strip())
+        and bool(str(item.get("investment_interpretation") or "").strip())
+        and (
+            len(str(item.get("chart_observation") or "").strip())
+            + len(str(item.get("investment_interpretation") or "").strip())
+            <= 220
+        )
+        for item in details
+        if isinstance(item, dict)
+    )
+    passed = detail_keys == requested and links_valid
+    if not passed:
+        notes.append(
+            "Chart selection details must match requested chart keys and reference Writer cards."
+        )
+    return _pass_fail(passed)
 
 
 def _validate_no_table_of_contents(html_content: str, notes: list[str]) -> str:
@@ -176,15 +235,15 @@ def _validate_a4_print_layout(html_content: str, notes: list[str]) -> str:
         term in html_content
         for term in ("height: 297mm", "max-height: 297mm")
     )
-    complete_two_page_layout = all(
+    complete_flow_layout = all(
         term in html_content
-        for term in ("height: 594mm", "max-height: none", "break-before: page")
+        for term in ("min-height: 297mm", "max-height: none")
     )
     if missing:
         notes.append(f"Missing A4 print layout term(s): {missing}")
-    if not single_page_layout and not complete_two_page_layout:
+    if not single_page_layout and not complete_flow_layout:
         notes.append("Missing a supported complete A4 pagination layout.")
-    return _pass_fail(not missing and (single_page_layout or complete_two_page_layout))
+    return _pass_fail(not missing and (single_page_layout or complete_flow_layout))
 
 
 def _validate_recommendation(report_payload: dict[str, Any], writer_handoff: dict[str, Any], notes: list[str]) -> str:
@@ -203,7 +262,7 @@ def _validate_reader_recommendation_labels(html_content: str, notes: list[str]) 
         {
             match.group(0)
             for match in re.finditer(
-                r"(?<![A-Za-z])(?:buy|hold|sell)(?![A-Za-z])",
+                r"(?<![A-Za-z가-힣])(?:buy|hold|sell|매수|매도|보유)(?![A-Za-z가-힣])",
                 visible_text,
                 flags=re.IGNORECASE,
             )
@@ -478,6 +537,10 @@ def _validate_strategy_presentation_preservation(
         errors.append("risk_monitoring_matrix display columns changed")
     risk_factors = [risk for risk in _list(writer_handoff.get("risk_factors")) if isinstance(risk, dict)]
     for index, (row, risk) in enumerate(zip(risk_rows, risk_factors)):
+        if label_free:
+            expected_title = str(risk.get("display_title") or "").strip()
+            if str(row.get("리스크 요인") or "").strip() != expected_title:
+                errors.append(f"risk row {index} Strategy risk title changed")
         expected_summary = str(risk.get("risk_summary") or "").strip()
         reader_summary = str(risk.get("reader_summary") or expected_summary).strip()
         qualifier = str(risk.get("scope_qualifier") or "").strip()
@@ -491,6 +554,11 @@ def _validate_strategy_presentation_preservation(
         expected_visible_summary = _plain_korean_text(expected_visible_summary)
         if str(row.get("현재 확인된 내용") or "").strip() != expected_visible_summary:
             errors.append(f"risk row {index} visible Strategy summary was paraphrased")
+        expected_impact = _plain_korean_text(
+            str(risk.get("current_implication") or risk.get("monitoring_point") or "").strip()
+        )
+        if str(row.get("투자 판단에 미치는 영향") or "").strip() != expected_impact:
+            errors.append(f"risk row {index} investment impact was paraphrased")
 
     horizon = str(_dict(writer_handoff.get("decision")).get("investment_horizon") or "").strip()
     thesis_text = str(_dict(_dict(sections.get("investment_call_thesis")).get("section_analysis")))
@@ -723,7 +791,11 @@ def _validate_required_evidence_coverage(
     return _pass_fail(not missing)
 
 
-def _validate_compact_text_sections(report_payload: dict[str, Any], notes: list[str]) -> str:
+def _validate_compact_text_sections(
+    report_payload: dict[str, Any],
+    writer_handoff: dict[str, Any],
+    notes: list[str],
+) -> str:
     errors: list[str] = []
     total_chars = 0
     sections = _dict(report_payload.get("sections"))
@@ -736,12 +808,22 @@ def _validate_compact_text_sections(report_payload: dict[str, Any], notes: list[
             paragraphs = [str(value).strip() for value in _list(item.get("paragraphs")) if str(value).strip()]
             bullets = [str(value).strip() for value in _list(item.get("bullets")) if str(value).strip()]
             total_chars += sum(len(re.sub(r"<[^>]+>", "", paragraph)) for paragraph in paragraphs)
-            if not 1 <= len(paragraphs) <= 2:
-                errors.append(f"{section['key']}.{item_key} must contain 1-2 paragraphs")
+            max_paragraphs = TEXT_PARAGRAPH_LIMITS.get(section["key"], 2)
+            if not 1 <= len(paragraphs) <= max_paragraphs:
+                errors.append(
+                    f"{section['key']}.{item_key} must contain 1-{max_paragraphs} paragraphs"
+                )
             if bullets:
                 errors.append(f"{section['key']}.{item_key} bullets must be empty")
-    if total_chars > 3_200:
-        errors.append(f"text section character budget exceeded: {total_chars} > 3200")
+    character_budget = (
+        4_200
+        if _dict(writer_handoff).get("packet_version") == EDITORIAL_PACKET_VERSION_V3
+        else 3_200
+    )
+    if total_chars > character_budget:
+        errors.append(
+            f"text section character budget exceeded: {total_chars} > {character_budget}"
+        )
     if errors:
         notes.extend(errors)
     return _pass_fail(not errors)
@@ -900,13 +982,19 @@ def _text_list(value: Any) -> list[str]:
 
 
 def _is_v2_writer_packet(value: Any) -> bool:
-    return isinstance(value, dict) and value.get("packet_version") == EDITORIAL_PACKET_VERSION
+    return isinstance(value, dict) and value.get("packet_version") in {
+        EDITORIAL_PACKET_VERSION,
+        EDITORIAL_PACKET_VERSION_V3,
+    }
 
 
 def _is_label_free_writer_packet(value: Any) -> bool:
     return (
         _is_v2_writer_packet(value)
-        and value.get("strategy_contract_version") == "strategy_decision_output_v4"
+        and value.get("strategy_contract_version") in {
+            "strategy_decision_output_v4",
+            "strategy_decision_output_v5",
+        }
     )
 
 

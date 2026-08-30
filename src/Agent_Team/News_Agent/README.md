@@ -1,6 +1,6 @@
 # News Agent
 
-통합 레포 기준 News 하위 에이전트입니다. News Agent는 `buy/sell/hold`를 판단하지 않고, 상위 레이어가 사용할 수 있는 뉴스 분석 handoff와 SY 검증 결과를 생성합니다.
+통합 레포 기준 News 하위 에이전트입니다. News Agent는 `buy/sell/hold`를 판단하지 않고, 상위 레이어가 사용할 뉴스 분석 handoff를 생성합니다.
 
 ## 위치
 
@@ -13,7 +13,7 @@ src/Agent_Team/News_Agent
 `--phase`를 생략하면 전체가 실행됩니다.
 
 ```text
-collect -> export -> llm -> analysis -> sy
+collect -> export -> llm -> analysis
 ```
 
 ```bash
@@ -25,8 +25,7 @@ PYTHONPATH=src python -m Agent_Team.News_Agent.cli \
   --company-name SK바이오팜 \
   --ticker 326030.KS \
   --corp-code 00878696 \
-  --granularity month \
-  --split-by-period
+  --granularity week
 ```
 
 설치 후에는 아래 스크립트도 사용할 수 있습니다.
@@ -34,7 +33,6 @@ PYTHONPATH=src python -m Agent_Team.News_Agent.cli \
 ```bash
 news-workflow ...
 news-analysis-agent ...
-news-sy-agent ...
 ```
 
 ## 단계별 실행
@@ -44,14 +42,13 @@ PYTHONPATH=src python -m Agent_Team.News_Agent.cli --phase collect ...
 PYTHONPATH=src python -m Agent_Team.News_Agent.cli --phase export ...
 PYTHONPATH=src python -m Agent_Team.News_Agent.cli --phase llm ...
 PYTHONPATH=src python -m Agent_Team.News_Agent.cli --phase analysis ...
-PYTHONPATH=src python -m Agent_Team.News_Agent.cli --phase sy ...
 ```
 
 터미널에는 `tqdm` 기반 진행 상황이 표시됩니다.
 
-일 단위 1개월 실행에서 News Agent에는 두 종류의 뉴스 입력을 순서대로 제공합니다. `날짜별 요약`은 수집된 전체 사건을 날짜별로 정리한 30개 항목이며, `기업 관련 뉴스 top-10`은 공시 사업 내용과의 관련도 순위 상위 10개 사건입니다. 날짜별 요약은 기간 흐름을 파악하는 문맥으로만 사용하고, 분석 문장의 직접 근거는 top-10 사건의 `NEWS_RAW` 식별자로 제한합니다.
+기준일 직전 90일을 7일 단위로 조회한 뒤 URL 중복을 제거하고, 같은 달력 주간에 보도된 유사 기사를 하나의 사건으로 묶습니다. 사건과 기업보고서의 문장 표현 유사도를 기준으로 주별 15건을 후보로 남기고 교차 인코더로 재정렬하여 주별 최대 5건을 확정합니다. 이 사건들로 주간 요약을 한 번에 생성하고, 주별 확정 사건의 합집합에서 전체 상위 20건을 다시 선정합니다. 여러 날짜의 기사가 한 사건으로 묶이면 날짜별로 기업보고서와 가장 관련성이 높은 제목 한 건을 시간순 진행 내역으로 함께 제공합니다. 언어모델에는 제목과 스니펫을 제공하며 기사 전체 본문은 수집하지 않습니다.
 
-같은 전처리 산출물은 다른 하위 에이전트의 보조자료로 직접 전달합니다. YFinance Agent에는 날짜별 요약 30개를, Financial Agent에는 기업 관련 뉴스 top-10의 날짜·제목·본문 일부를 제공합니다. 다른 뉴스 에이전트의 주장은 전달하지 않으며 URL은 보조자료에서 제외합니다.
+News Agent에는 `3개월 주간 요약`과 `기업 관련 뉴스 상위 20건`을 이 순서로 제공합니다. 주간 요약은 기간 흐름을 파악하는 문맥으로 사용하고, 분석 문장의 직접 근거는 상위 20건의 `NEWS_RAW` 식별자로 제한합니다. Financial Agent와 YFinance Agent에는 주간 요약만 보조자료로 전달하며, 뉴스 에이전트의 주장과 URL은 전달하지 않습니다.
 
 ## Output 경로
 
@@ -76,21 +73,10 @@ news_agent_handoff.json
 news_agent_evidence_map.json
 ```
 
-News SY Agent output:
-
-```text
-sy_agent/sy_claim_validations.json
-sy_agent/sy_audit_trace.json
-sy_agent/news_agent_verified_handoff.json
-```
-
-News SY는 날짜·수치·evidence catalog 정합성을 코드로 검사한 뒤, 모든 적격 claim을 한 번의 semantic batch로 평가합니다. 결과는 `strong`, `context_only`, `exclude` 근거 사용 계약으로 저장하며 원 News handoff 문장은 재작성하지 않습니다.
-
 상위 레이어가 기본으로 읽을 파일:
 
 ```text
-Output_total/News/{run_key}/output/sy_agent/news_agent_verified_handoff.json
-Output_total/News/{run_key}/output/sy_agent/sy_claim_validations.json
+Output_total/News/{run_key}/final_report.json
 ```
 
 ## Cross-Domain 입력
@@ -120,21 +106,7 @@ PYTHONPATH=src python -m Agent_Team.News_Agent.cli \
 - `output.secondary_context_assessment`
 - `output.evidence_map_path`
 
-`sy_claim_validations.json`:
-
-- `summary`
-- `claim_validations`
-- `llm_usage`
-
-primary News claim 판정값:
-
-```text
-strong
-context_only
-exclude
-```
-
 Financial/Market 보조 문맥은 `framing_and_limitation_only`로 유지되며 News 사건의 직접 증거나 인과 근거로 사용되지 않습니다.
 재무자료의 대상 기간이 뉴스 발생일보다 앞서는 경우에는 해당 자료를 후행 사건의 효과를 확인하거나 반박하는 근거로 사용하지 않고, 사건 발생 전의 재무 상태를 설명하는 문맥으로만 사용합니다.
 
-News/SY Agent는 최종 투자 판단을 생성하지 않습니다.
+News Agent는 최종 투자 판단을 생성하지 않습니다.

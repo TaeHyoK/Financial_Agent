@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://local.sy/financial-analyst-agent/report_schema.json",
+  "$id": "https://local.financial-agent/financial-analyst/report_schema.json",
   "title": "Financial Analyst Agent Report Schema",
   "type": "object",
   "additionalProperties": false,
@@ -19,7 +19,7 @@
     "financial_statement_view",
     "detailed_analysis",
     "secondary_context",
-    "sy_handoff"
+    "strategy_handoff"
   ],
   "properties": {
     "agent_name": {
@@ -199,7 +199,7 @@
         }
       }
     },
-    "sy_handoff": {
+    "strategy_handoff": {
       "type": "object",
       "additionalProperties": false,
       "required": [

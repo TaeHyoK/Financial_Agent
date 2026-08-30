@@ -10,16 +10,16 @@
   "input_paths": {
     "dart_main": "Output_total/Financial/<company>_20251031/dart_main.json",
     "yfinance_market_summary": "Output_total/Y_Finance/<company>_20251031/market_summary.json",
-    "news_company_top10": "Output_total/News/<company>_20251031/context_exports/day/recent_raw_input.json"
+    "news_weekly_summaries": "Output_total/News/<company>_20251031/context_exports/week/llm_period_summaries.json"
   },
   "input_roles": {
     "dart_main": "primary_financial_anchor",
     "yfinance_market_summary": "market_context",
-    "news_company_top10": "company_related_news_secondary_data"
+    "news_weekly_summaries": "weekly_news_secondary_context"
   },
   "output_contract": {
     "format": "json",
-    "mode": "financial_report_with_sy_handoff",
+    "mode": "financial_report_with_strategy_handoff",
     "schema_path": "src/Agent_Team/Financial_Agent/output_schema.json",
     "language": "ko",
     "investment_decision_allowed": false

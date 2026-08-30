@@ -1094,7 +1094,7 @@ def _financial_cards(report: dict[str, Any]) -> list[tuple[dict[str, Any], list[
     previous_period = _dict(comparison.get("previous_period"))
     current_values = _dict(comparison.get("current_values"))
     previous_values = _dict(comparison.get("previous_values"))
-    evidence = [item for item in _list(_dict(report.get("sy_handoff")).get("key_evidence")) if isinstance(item, dict)]
+    evidence = [item for item in _list(_dict(report.get("strategy_handoff")).get("key_evidence")) if isinstance(item, dict)]
 
     def ids_for(*tokens: str) -> list[str]:
         lowered = tuple(token.lower() for token in tokens)
@@ -1150,6 +1150,29 @@ def _financial_cards(report: dict[str, Any]) -> list[tuple[dict[str, Any], list[
         )
     if current_values and previous_values:
         blockers = _period_pair_blockers(current_period, previous_period)
+        change_rates = _period_change_rates(
+            current_values,
+            previous_values,
+            ("revenue", "operating_profit", "net_income", "operating_cash_flow", "eps"),
+        )
+        current_margins = {
+            **_pick(
+                _dict(_path(report, "financial_trends.normalized_metrics.current_values")),
+                "operating_margin",
+                "net_margin",
+                "operating_cash_flow_margin",
+            ),
+            **_pick(current_values, "contribution_margin", "sga_margin"),
+        }
+        previous_margins = {
+            **_pick(
+                _dict(_path(report, "financial_trends.normalized_metrics.previous_values")),
+                "operating_margin",
+                "net_margin",
+                "operating_cash_flow_margin",
+            ),
+            **_pick(previous_values, "contribution_margin", "sga_margin"),
+        }
         cards.append(
             (
                 _card(
@@ -1171,13 +1194,39 @@ def _financial_cards(report: dict[str, Any]) -> list[tuple[dict[str, Any], list[
                     observation={
                         "current_period": _period(current_period),
                         "previous_period": _period(previous_period),
-                        "current_values": _pick(current_values, "revenue", "operating_profit", "net_income", "eps"),
-                        "previous_values": _pick(previous_values, "revenue", "operating_profit", "net_income", "eps"),
+                        "current_values": _pick(
+                            current_values,
+                            "revenue",
+                            "operating_profit",
+                            "net_income",
+                            "operating_cash_flow",
+                            "eps",
+                        ),
+                        "previous_values": _pick(
+                            previous_values,
+                            "revenue",
+                            "operating_profit",
+                            "net_income",
+                            "operating_cash_flow",
+                            "eps",
+                        ),
+                        "change_rates": change_rates,
+                        "current_margins": current_margins,
+                        "previous_margins": previous_margins,
+                        "margin_changes": _margin_changes(current_margins, previous_margins),
                     },
                     eligibility="incomparable" if blockers else "eligible",
                     machine_blockers=blockers,
                 ),
-                ids_for("revenue", "operating profit", "net income", "eps"),
+                ids_for(
+                    "revenue",
+                    "operating profit",
+                    "net income",
+                    "cash flow",
+                    "eps",
+                    "contribution margin",
+                    "sg&a margin",
+                ),
                 ["financial.financial_trends.current_vs_same_period"],
             )
         )
@@ -1244,7 +1293,19 @@ def _financial_cards(report: dict[str, Any]) -> list[tuple[dict[str, Any], list[
                         "current_operating_cash_flow": current_values.get("operating_cash_flow"),
                         "previous_period": _period(previous_period),
                         "previous_operating_cash_flow": previous_values.get("operating_cash_flow"),
-                        "operating_cash_flow_margin": _normalized_metric(report, "operating_cash_flow_margin"),
+                        "operating_cash_flow_change_rate": _change_rate(
+                            current_values.get("operating_cash_flow"),
+                            previous_values.get("operating_cash_flow"),
+                        ),
+                        "current_operating_cash_flow_margin": _normalized_metric(
+                            report,
+                            "operating_cash_flow_margin",
+                        ),
+                        "previous_operating_cash_flow_margin": _normalized_metric(
+                            report,
+                            "operating_cash_flow_margin",
+                            period="previous_values",
+                        ),
                     },
                 ),
                 ids_for("cash flow"),
@@ -1274,7 +1335,7 @@ def _financial_cards(report: dict[str, Any]) -> list[tuple[dict[str, Any], list[
                     },
                 ),
                 ids_for("balance sheet"),
-                ["financial.sy_handoff.key_evidence.balance_sheet"],
+                ["financial.strategy_handoff.key_evidence.balance_sheet"],
             )
         )
     breakdown = _dict(report.get("revenue_breakdown"))
@@ -1703,8 +1764,6 @@ def build_peer_analysis_card(
                 "label": selected_cards[key].get("label"),
                 "company_scope": selected_cards[key].get("company_scope"),
                 "domain": selected_cards[key].get("domain"),
-                "observation": copy.deepcopy(selected_cards[key].get("observation") or {}),
-                "usage_reasons": copy.deepcopy(selected_cards[key].get("usage_reasons") or []),
             }
             for key in sorted(used_keys)
         ],
@@ -1883,9 +1942,17 @@ def _news_component_card(
         "primary_source_present": any(bool(item.get("primary_source_present")) for item in coverage_rows),
         "coverage_quality": "verified" if coverage_rows and all(item.get("coverage_quality") == "verified" for item in coverage_rows) else "partial",
     }
+    # One event can appear in both a signal and an uncertainty block. The
+    # uncertainty usually limits its financial interpretation; it does not
+    # reverse the better-grounded event classification selected above.
     statuses = {
-        key: _combined_metadata(component, key)
-        for key in ("event_status", "company_specificity", "materiality_status", "financial_link_status")
+        key: str(main.get(key) or "")
+        for key in (
+            "event_status",
+            "company_specificity",
+            "materiality_status",
+            "financial_link_status",
+        )
     }
     event_materiality = _news_event_materiality(statuses, coverage)
     source_roles = sorted({str(item["source_key"]) for item in component})
@@ -2236,8 +2303,42 @@ def _period_pair_blockers(current: dict[str, Any], previous: dict[str, Any]) -> 
     return blockers
 
 
-def _normalized_metric(report: dict[str, Any], metric: str) -> Any:
-    return _path(report, f"financial_trends.normalized_metrics.current_values.{metric}")
+def _change_rate(current: Any, previous: Any) -> float | None:
+    if not _finite(current) or not _finite(previous) or float(previous) == 0:
+        return None
+    return (float(current) - float(previous)) / abs(float(previous))
+
+
+def _period_change_rates(
+    current: dict[str, Any],
+    previous: dict[str, Any],
+    metric_keys: Iterable[str],
+) -> dict[str, float]:
+    return {
+        metric_key: rate
+        for metric_key in metric_keys
+        if (rate := _change_rate(current.get(metric_key), previous.get(metric_key))) is not None
+    }
+
+
+def _margin_changes(
+    current: dict[str, Any],
+    previous: dict[str, Any],
+) -> dict[str, float]:
+    return {
+        metric_key: float(current[metric_key]) - float(previous[metric_key])
+        for metric_key in current.keys() & previous.keys()
+        if _finite(current.get(metric_key)) and _finite(previous.get(metric_key))
+    }
+
+
+def _normalized_metric(
+    report: dict[str, Any],
+    metric: str,
+    *,
+    period: str = "current_values",
+) -> Any:
+    return _path(report, f"financial_trends.normalized_metrics.{period}.{metric}")
 
 
 def _market_benchmark_name(report: dict[str, Any]) -> str:
@@ -2311,7 +2412,7 @@ def _canonical_domain(value: str) -> str:
 def _news_candidate_priority(candidate: dict[str, Any]) -> tuple[int, int, int, int]:
     return (
         {"observed": 3, "plausible_unquantified": 2, "mixed": 1, "not_established": 0}.get(candidate.get("materiality_status"), 0),
-        {"direct": 3, "product_direct": 2, "mixed": 1, "industry_context": 0, "insufficient": 0}.get(candidate.get("company_specificity"), 0),
+        {"product_direct": 4, "direct": 3, "mixed": 1, "industry_context": 0, "insufficient": 0}.get(candidate.get("company_specificity"), 0),
         {"occurred": 3, "announced": 2, "reported_expectation": 1, "allegation": 0, "mixed": 0, "insufficient": 0}.get(candidate.get("event_status"), 0),
         candidate.get("evidence_use") == "strong",
     )
@@ -2342,7 +2443,7 @@ def _news_card_priority(card: dict[str, Any]) -> tuple[int, int, int, str]:
     observation = _dict(card.get("primary_observation"))
     critical = int(_is_critical_news_card(card))
     materiality = {"observed": 3, "plausible_unquantified": 2, "mixed": 1, "not_established": 0}.get(observation.get("materiality_status"), 0)
-    directness = {"direct": 3, "product_direct": 2, "mixed": 1, "industry_context": 0, "insufficient": 0}.get(observation.get("company_specificity"), 0)
+    directness = {"product_direct": 4, "direct": 3, "mixed": 1, "industry_context": 0, "insufficient": 0}.get(observation.get("company_specificity"), 0)
     return critical, materiality, directness, str(observation.get("event_date") or "")
 
 
@@ -2391,13 +2492,6 @@ def _preserve_news_counterevidence(
             if replace_index is not None:
                 selected[replace_index] = candidate
         selected_roles = roles(selected)
-
-
-def _combined_metadata(component: list[dict[str, Any]], key: str) -> str:
-    values = {str(item.get(key) or "") for item in component if str(item.get(key) or "")}
-    if len(values) == 1:
-        return next(iter(values))
-    return "mixed"
 
 
 def _metadata(item: dict[str, Any], validation: dict[str, Any], key: str, fallback: str) -> str:

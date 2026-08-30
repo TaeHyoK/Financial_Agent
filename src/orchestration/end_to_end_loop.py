@@ -23,8 +23,8 @@ from .run_state import FAILED, SUCCESS, StepRecord
 
 DEFAULT_KOSPI_TICKER = "^KS11"
 DEFAULT_FX_TICKER = "KRW=X"
-DEFAULT_NEWS_GRANULARITY = "day"
-DEFAULT_NEWS_RAW_PERIOD_COUNT = 1
+DEFAULT_NEWS_GRANULARITY = "week"
+DEFAULT_NEWS_RAW_PERIOD_COUNT = 14
 STEP_FINGERPRINT_VERSION = "1"
 FINGERPRINT_SOURCE_SUFFIXES = {".py", ".md", ".json", ".yaml", ".yml", ".toml"}
 REUSED_DOMAIN_SNAPSHOT_STEPS = frozenset(
@@ -48,12 +48,29 @@ class AgentTeamOrchestrator:
         self.paths.ensure_directories()
         write_run_config_copy(self.paths, self.run_config)
         self.reused_domain_snapshot: dict[str, object] = {}
+        self.reused_snapshot_steps: set[str] = set()
+        if self.args.reuse_domain_data_from and self.args.reuse_dart_data_from:
+            raise ValueError(
+                "--reuse-domain-data-from and --reuse-dart-data-from cannot be used together."
+            )
         if self.args.reuse_domain_data_from:
             self.reused_domain_snapshot = materialize_reused_domain_snapshot(
                 run_config=self.run_config,
                 source_root=self.args.reuse_domain_data_from,
                 destination_paths=self.paths,
+                expected_news_model=(
+                    self.args.news_llm_model or self.common_llm_model()
+                ),
             )
+            self.reused_snapshot_steps = set(REUSED_DOMAIN_SNAPSHOT_STEPS)
+        elif self.args.reuse_dart_data_from:
+            self.reused_domain_snapshot = materialize_reused_dart_snapshot(
+                run_config=self.run_config,
+                source_root=self.args.reuse_dart_data_from,
+                destination_paths=self.paths,
+            )
+            self.reused_snapshot_steps = {"financial_layer_1"}
+        if self.reused_domain_snapshot:
             snapshot_manifest = self.paths.run_dir / "reused_domain_snapshot.json"
             snapshot_manifest.write_text(
                 json.dumps(self.reused_domain_snapshot, ensure_ascii=False, indent=2) + "\n",
@@ -98,9 +115,9 @@ class AgentTeamOrchestrator:
                     self._finish_progress_step(record)
                     continue
 
-                if self.reused_domain_snapshot and spec.name in REUSED_DOMAIN_SNAPSHOT_STEPS:
+                if spec.name in self.reused_snapshot_steps:
                     record.reuse(
-                        "Reused the fixed collected-domain snapshot; no provider or news collection call was made."
+                        "Reused the explicitly selected provider snapshot for this step."
                     )
                     self._post_step(spec.name, record)
                     self._save_step_fingerprint(record)
@@ -156,18 +173,12 @@ class AgentTeamOrchestrator:
             return self._yfinance_layer_1_command()
         if step_name == "financial_layer_1":
             return self._financial_layer_1_command()
-        if step_name == "news_sy" and self.args.no_sy:
-            return self._news_no_sy_command()
         if step_name.startswith("news_"):
             return self._news_phase_command(step_name.removeprefix("news_"))
         if step_name == "financial_analyst":
             return self._financial_analyst_command()
-        if step_name == "financial_sy":
-            return self._financial_no_sy_command() if self.args.no_sy else self._financial_sy_command()
         if step_name == "yfinance_report":
             return self._yfinance_report_command()
-        if step_name == "yfinance_sy":
-            return self._yfinance_no_sy_command() if self.args.no_sy else self._yfinance_sy_command()
         raise KeyError(f"Unknown step: {step_name}")
 
     def common_llm_model(self) -> str:
@@ -175,7 +186,7 @@ class AgentTeamOrchestrator:
             return self.args.llm_model
         if self.run_config.llm_model:
             return self.run_config.llm_model
-        return "gpt-5.4-mini"
+        return "gpt-5.4"
 
     def outputs_for_step(self, step_name: str) -> dict[str, str]:
         if step_name == "yfinance_layer_1":
@@ -196,37 +207,21 @@ class AgentTeamOrchestrator:
                 "llm_summary_request": str(
                     self.paths.news_context_export_dir / self.args.news_granularity / "llm_summary_request.json"
                 ),
-                "company_related_news_top10": str(self.paths.news_company_top10),
+                "company_related_news_top20": str(self.paths.news_company_top20),
             }
         if step_name == "news_llm":
             return {"llm_period_summaries": str(self.paths.news_llm_period_summaries)}
         if step_name == "news_analysis":
             return {"handoff": str(self.paths.news_handoff)}
-        if step_name == "news_sy":
-            return {
-                "sy_validations": str(self.paths.news_sy_validations),
-                "verified_report": str(self.paths.news_verified_report),
-            }
         if step_name == "financial_analyst":
             return {
                 "analyst_report": str(self.paths.financial_analyst_report),
                 "analyst_trace": str(self.paths.financial_analyst_trace),
             }
-        if step_name == "financial_sy":
-            return {
-                "sy_validation": str(self.paths.financial_validation),
-                "sy_validation_trace": str(self.paths.financial_validation_trace),
-                "verified_report": str(self.paths.financial_verified_report),
-            }
         if step_name == "yfinance_report":
             return {
                 "analyst_report": str(self.paths.yfinance_analyst_report),
                 "analyst_report_md": str(self.paths.yfinance_analyst_report_md),
-            }
-        if step_name == "yfinance_sy":
-            return {
-                "verified_report": str(self.paths.yfinance_verified_report),
-                "strategy_verified_report": str(self.paths.yfinance_strategy_verified_report),
             }
         return {}
 
@@ -292,6 +287,17 @@ class AgentTeamOrchestrator:
             return max(1, int(self.args.news_period_count))
         if self.args.news_granularity == "day":
             return self._news_collection_days()
+        if self.args.news_granularity == "week":
+            end = datetime.strptime(
+                self.run_config.information_cutoff_date, "%Y%m%d"
+            ).date()
+            start = end - timedelta(days=self._news_collection_days() - 1)
+            return len(
+                {
+                    (start + timedelta(days=offset)).isocalendar()[:2]
+                    for offset in range((end - start).days + 1)
+                }
+            )
         return max(1, int(self.args.news_period_count or 1))
 
     def _news_phase_command(self, phase: str) -> list[str]:
@@ -353,7 +359,6 @@ class AgentTeamOrchestrator:
             )
         command.extend(["--llm-model", self.args.news_llm_model or self.common_llm_model()])
         command.extend(["--analysis-model", self.args.news_analysis_model or self.common_llm_model()])
-        command.extend(["--sy-model", self.args.news_sy_model or self.common_llm_model()])
         return command
 
     def _financial_analyst_command(self) -> list[str]:
@@ -366,66 +371,10 @@ class AgentTeamOrchestrator:
             str(self.paths.financial_analyst_report),
             "--trace-output",
             str(self.paths.financial_analyst_trace),
-        ]
-        return command
-
-    def _financial_sy_command(self) -> list[str]:
-        command = [
-            sys.executable,
-            str(self.paths.project_root / "src" / "Agent_Team" / "Financial_Agent" / "SY_Agent" / "langgraph_flow.py"),
-            "--input",
-            str(self.paths.financial_analyst_report),
-            "--output",
-            str(self.paths.financial_validation),
-            "--dart-main",
-            str(self.paths.dart_main),
-            "--dart-master",
-            str(self.paths.dart_master),
-            "--trace-output",
-            str(self.paths.financial_validation_trace),
-            "--verified-report-output",
-            str(self.paths.financial_verified_report),
-            "--env-file",
-            str(self.args.env_file),
-            "--llm-provider",
-            self.args.llm_provider,
-            "--llm-model",
+            "--model",
             self.common_llm_model(),
         ]
-        command.append("--use-llm")
         return command
-
-    def _financial_no_sy_command(self) -> list[str]:
-        return [
-            sys.executable,
-            "-m",
-            "orchestration.ablation_adapters",
-            "--domain",
-            "financial",
-            "--input",
-            str(self.paths.financial_analyst_report),
-            "--verified-report",
-            str(self.paths.financial_verified_report),
-            "--validation",
-            str(self.paths.financial_validation),
-            "--trace-output",
-            str(self.paths.financial_validation_trace),
-        ]
-
-    def _news_no_sy_command(self) -> list[str]:
-        return [
-            sys.executable,
-            "-m",
-            "orchestration.ablation_adapters",
-            "--domain",
-            "news",
-            "--input",
-            str(self.paths.news_handoff),
-            "--verified-report",
-            str(self.paths.news_verified_report),
-            "--validation",
-            str(self.paths.news_sy_validations),
-        ]
 
     def _yfinance_report_command(self) -> list[str]:
         command = [
@@ -454,39 +403,6 @@ class AgentTeamOrchestrator:
         if self.args.primary_data_only:
             command.append("--primary-data-only")
         return command
-
-    def _yfinance_sy_command(self) -> list[str]:
-        return [
-            sys.executable,
-            str(self.paths.project_root / "src" / "Agent_Team" / "YFinance_Agent" / "SY_Agent" / "sy_agent.py"),
-            "--input",
-            str(self.paths.yfinance_analyst_report),
-            "--output",
-            str(self.paths.yfinance_verified_report),
-            "--strategy-output",
-            str(self.paths.yfinance_strategy_verified_report),
-            "--env-file",
-            str(self.args.env_file),
-            "--model",
-            self.common_llm_model(),
-        ]
-
-    def _yfinance_no_sy_command(self) -> list[str]:
-        return [
-            sys.executable,
-            "-m",
-            "orchestration.ablation_adapters",
-            "--domain",
-            "yfinance",
-            "--input",
-            str(self.paths.yfinance_analyst_report),
-            "--verified-report",
-            str(self.paths.yfinance_strategy_verified_report),
-            "--validation",
-            str(self.paths.yfinance_verified_report),
-            "--strategy-report",
-            str(self.paths.yfinance_strategy_verified_report),
-        ]
 
     def _run_record(self, record: StepRecord) -> None:
         started = record.start(record.command)
@@ -518,7 +434,6 @@ class AgentTeamOrchestrator:
         env["PYTHONPATH"] = src if not current else src + os.pathsep + current
         env["OPENAI_MODEL"] = self.common_llm_model()
         env["NEWS_AGENT_LLM_MODEL"] = self.common_llm_model()
-        env["NEWS_SY_AGENT_LLM_MODEL"] = self.common_llm_model()
         env["LLM_USAGE_MANIFEST"] = str(self.args.llm_usage_manifest or self.paths.llm_usage_manifest)
         env["LLM_RUN_ID"] = self.args.llm_run_id or self.paths.run_key
         env["LLM_RUN_ROLE"] = self.args.llm_run_role
@@ -615,7 +530,7 @@ class AgentTeamOrchestrator:
                 self.run_config,
                 primary_data_only=self.args.primary_data_only,
             )
-        if step_name == "financial_sy":
+        if step_name == "financial_analyst":
             self._write_financial_pipeline_manifest()
 
     def _failed_dependency(self, dependencies: tuple[str, ...]) -> str | None:
@@ -655,9 +570,8 @@ class AgentTeamOrchestrator:
                 {
                     "financial_analyst_output": str(self.paths.financial_analyst_report),
                     "financial_analyst_trace": str(self.paths.financial_analyst_trace),
-                    "sy_validation_output": str(self.paths.financial_validation),
-                    "sy_validation_trace": str(self.paths.financial_validation_trace),
-                    "verified_financial_report_output": str(self.paths.financial_verified_report),
+                    "final_report_output": str(self.paths.financial_final_report),
+                    "processing_policy": "direct_domain_agent_output",
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -694,6 +608,7 @@ def materialize_reused_domain_snapshot(
     run_config,
     source_root: str | Path,
     destination_paths: RunPaths,
+    expected_news_model: str | None = None,
 ) -> dict[str, object]:
     """Copy only the fixed provider/News-summary inputs needed by downstream agents."""
 
@@ -706,6 +621,16 @@ def materialize_reused_domain_snapshot(
             f"Reused domain snapshot must come from a completed successful run: {source_paths.run_status}"
         )
 
+    summary_source = source_paths.news_llm_period_summaries
+    summary_payload = _load_json_object(summary_source)
+    summary_model = str(summary_payload.get("model") or "").strip()
+    if expected_news_model and summary_model and summary_model != expected_news_model:
+        raise ValueError(
+            "Reused News summary model does not match the requested model: "
+            f"snapshot={summary_model}, requested={expected_news_model}, "
+            f"file={summary_source}"
+        )
+
     file_pairs = [
         (source_paths.yfinance_dir / "market_full_dataset.json", destination_paths.yfinance_dir / "market_full_dataset.json"),
         (source_paths.yfinance_dir / "market_full_dataset.csv", destination_paths.yfinance_dir / "market_full_dataset.csv"),
@@ -716,13 +641,7 @@ def materialize_reused_domain_snapshot(
         (source_paths.dart_master, destination_paths.dart_master),
         (source_paths.dart_lightweight, destination_paths.dart_lightweight),
         (
-            source_paths.output_root
-            / "News"
-            / "artifacts"
-            / "reports"
-            / "packs"
-            / f"{run_config.company_name}_{run_config.information_cutoff_date}"
-            / "report_context.json",
+            _reused_news_report_context_source(source_paths, run_config),
             destination_paths.news_report_context,
         ),
     ]
@@ -752,13 +671,83 @@ def materialize_reused_domain_snapshot(
         raise ValueError(f"Reused domain snapshot is incomplete after materialization: {missing}")
     return {
         "status": "materialized",
+        "snapshot_scope": "all_collected_domain_inputs",
         "source_root": str(source_paths.output_root),
         "destination_root": str(destination_paths.output_root),
         "run_key": destination_paths.run_key,
         "selected_date": destination_paths.selected_date,
+        "news_summary_model": summary_model or "unrecorded",
+        "expected_news_model": expected_news_model or "",
         "reused_steps": sorted(REUSED_DOMAIN_SNAPSHOT_STEPS),
         "files": copied,
     }
+
+
+def materialize_reused_dart_snapshot(
+    *,
+    run_config,
+    source_root: str | Path,
+    destination_paths: RunPaths,
+) -> dict[str, object]:
+    """Copy only point-in-time DART preprocessing outputs from a prior run."""
+
+    source_paths = resolve_run_paths(run_config, source_root)
+    if source_paths.output_root == destination_paths.output_root:
+        raise ValueError("Reused DART snapshot source and destination roots must differ.")
+    pairs = [
+        (source_paths.dart_main, destination_paths.dart_main),
+        (source_paths.dart_master, destination_paths.dart_master),
+        (source_paths.dart_lightweight, destination_paths.dart_lightweight),
+    ]
+    for source, _destination in pairs:
+        payload = _load_json_object(source)
+        context = payload.get("collection_context")
+        if not isinstance(context, dict):
+            raise ValueError(f"Reused DART snapshot has no collection_context: {source}")
+        snapshot_date = str(context.get("selected_date") or "").replace("-", "")
+        if snapshot_date != run_config.selected_date:
+            raise ValueError(
+                f"Reused DART snapshot selected date does not match {run_config.selected_date}: {source}"
+            )
+    copied = [_copy_snapshot_file(source, destination) for source, destination in pairs]
+    return {
+        "status": "materialized",
+        "snapshot_scope": "dart_preprocessing_only",
+        "source_root": str(source_paths.output_root),
+        "destination_root": str(destination_paths.output_root),
+        "run_key": destination_paths.run_key,
+        "selected_date": destination_paths.selected_date,
+        "reused_steps": ["financial_layer_1"],
+        "regenerated_steps": [
+            "yfinance_layer_1",
+            "news_collect",
+            "news_export",
+            "news_llm",
+            "news_analysis",
+            "financial_analyst",
+            "yfinance_report",
+        ],
+        "files": copied,
+    }
+
+
+def _reused_news_report_context_source(
+    source_paths: RunPaths,
+    run_config,
+) -> Path:
+    """Resolve current and legacy News pack directory conventions."""
+
+    current = source_paths.news_report_context
+    legacy = (
+        source_paths.output_root
+        / "News"
+        / "artifacts"
+        / "reports"
+        / "packs"
+        / f"{run_config.company_name}_{run_config.information_cutoff_date}"
+        / "report_context.json"
+    )
+    return current if current.exists() else legacy
 
 
 def destination_paths_for_step(paths: RunPaths, step_name: str) -> dict[str, str]:
@@ -779,7 +768,7 @@ def destination_paths_for_step(paths: RunPaths, step_name: str) -> dict[str, str
         return {"report_context": str(paths.news_report_context)}
     if step_name == "news_export":
         return {
-            "llm_summary_request": str(paths.news_context_export_day_dir / "llm_summary_request.json")
+            "llm_summary_request": str(paths.news_context_export_week_dir / "llm_summary_request.json")
         }
     if step_name == "news_llm":
         return {"llm_period_summaries": str(paths.news_llm_period_summaries)}
@@ -865,11 +854,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-root", default=None, help="Override Output_total root.")
     parser.add_argument("--use-llm", action="store_true", help="Run LLM-dependent Layer 2 phases.")
     parser.add_argument(
-        "--no-sy",
-        action="store_true",
-        help="Replace Financial, News, and YFinance SY steps with unverified passthrough adapters.",
-    )
-    parser.add_argument(
         "--primary-data-only",
         action="store_true",
         help="Remove cross-domain secondary/subdata from each domain-agent request.",
@@ -889,6 +873,16 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Reuse a completed run's DART, market, and News collection/summary snapshot, "
             "then rerun downstream domain analysis and report generation."
+        ),
+    )
+    parser.add_argument(
+        "--reuse-dart-data-from",
+        type=Path,
+        default=None,
+        metavar="OUTPUT_ROOT",
+        help=(
+            "Reuse only DART preprocessing outputs for the same company and selected date; "
+            "market data, News data, summaries, and every LLM analysis are regenerated."
         ),
     )
     parser.add_argument(
@@ -922,17 +916,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help=(
-            "Maximum same-day-deduplicated News events retained after article "
-            "reranking. --news-total-max-results is a compatibility alias."
+            "Final globally ranked News events retained after weekly selection. "
+            "--news-total-max-results is a compatibility alias."
         ),
     )
     parser.add_argument("--news-min-mention-count", type=int, default=1)
-    parser.add_argument("--news-granularity", default=DEFAULT_NEWS_GRANULARITY, choices=["day", "month"])
+    parser.add_argument("--news-granularity", default=DEFAULT_NEWS_GRANULARITY, choices=["day", "week", "month"])
     parser.add_argument("--news-period-count", type=int, default=None)
     parser.add_argument("--news-raw-period-count", type=int, default=DEFAULT_NEWS_RAW_PERIOD_COUNT)
     parser.add_argument("--news-llm-model", default=None)
     parser.add_argument("--news-analysis-model", default=None)
-    parser.add_argument("--news-sy-model", default=None)
     parser.add_argument(
         "--news-split-by-period",
         dest="news_split_by_period",

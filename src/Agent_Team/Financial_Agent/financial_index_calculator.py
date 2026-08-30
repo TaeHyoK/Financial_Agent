@@ -72,6 +72,7 @@ class MetricDefinition:
     source_items: tuple[str, ...] = ()
     source_metric_keys: tuple[str, ...] = ()
     comparison_method: str | None = None
+    value_convention: str | None = None
 
 
 REVENUE_SPEC = ItemLookupSpec(
@@ -154,6 +155,7 @@ METRIC_DEFINITIONS_BY_DISPLAY_NAME = {
         metric_key="cost_of_operations",
         display_name="Cost of Operations",
         source_items=("매출원가", "영업비용", "매출비용"),
+        value_convention="expense_magnitude",
     ),
     "Contribution Profit": MetricDefinition(
         metric_key="contribution_profit",
@@ -171,6 +173,7 @@ METRIC_DEFINITIONS_BY_DISPLAY_NAME = {
         metric_key="sga",
         display_name="SG&A",
         source_items=("판매비와관리비", "판매비와 관리비"),
+        value_convention="expense_magnitude",
     ),
     "SG&A Margin": MetricDefinition(
         metric_key="sga_margin",
@@ -338,6 +341,8 @@ def _agent_metric_payload(definition: MetricDefinition, calculated_metric: dict[
     }
     if definition.comparison_method:
         payload["comparison_method"] = definition.comparison_method
+    if definition.value_convention:
+        payload["value_convention"] = definition.value_convention
 
     source_labels = _source_labels_observed(calculated_metric)
     if source_labels:
@@ -360,29 +365,44 @@ def _calculate_metric(metric_name: str, context: _CalculationContext) -> dict[st
         return _comparison_metric(metric_name, "ratio", revenue, context)
 
     if metric_name == "Cost of Operations":
-        cost = _find_item_series(context.payload, COST_OF_OPERATIONS_SPEC, context.period_keys)
+        cost = _expense_magnitude_series(
+            _find_item_series(context.payload, COST_OF_OPERATIONS_SPEC, context.period_keys),
+            context.period_keys,
+        )
         return _period_value_metric(metric_name, "원", cost, context)
 
     if metric_name == "Contribution Profit":
         revenue = _find_item_series(context.payload, REVENUE_SPEC, context.period_keys)
-        cost = _find_item_series(context.payload, COST_OF_OPERATIONS_SPEC, context.period_keys)
+        cost = _expense_magnitude_series(
+            _find_item_series(context.payload, COST_OF_OPERATIONS_SPEC, context.period_keys),
+            context.period_keys,
+        )
         contribution = _subtract_series(revenue, cost, context.period_keys)
         return _period_value_metric(metric_name, "원", contribution, context)
 
     if metric_name == "Contribution Margin":
         revenue = _find_item_series(context.payload, REVENUE_SPEC, context.period_keys)
-        cost = _find_item_series(context.payload, COST_OF_OPERATIONS_SPEC, context.period_keys)
+        cost = _expense_magnitude_series(
+            _find_item_series(context.payload, COST_OF_OPERATIONS_SPEC, context.period_keys),
+            context.period_keys,
+        )
         contribution = _subtract_series(revenue, cost, context.period_keys)
         margin = _divide_series(contribution, revenue, context.period_keys)
         return _period_value_metric(metric_name, "ratio", margin, context)
 
     if metric_name == "SG&A":
-        sga = _find_item_series(context.payload, SGA_SPEC, context.period_keys)
+        sga = _expense_magnitude_series(
+            _find_item_series(context.payload, SGA_SPEC, context.period_keys),
+            context.period_keys,
+        )
         return _period_value_metric(metric_name, "원", sga, context)
 
     if metric_name == "SG&A Margin":
         revenue = _find_item_series(context.payload, REVENUE_SPEC, context.period_keys)
-        sga = _find_item_series(context.payload, SGA_SPEC, context.period_keys)
+        sga = _expense_magnitude_series(
+            _find_item_series(context.payload, SGA_SPEC, context.period_keys),
+            context.period_keys,
+        )
         margin = _divide_series(sga, revenue, context.period_keys)
         return _period_value_metric(metric_name, "ratio", margin, context)
 
@@ -681,6 +701,29 @@ def _subtract_series(left: MetricSeries, right: MetricSeries, period_keys: Itera
         numeric_by_period[period_key] = left_value - right_value
         source_value_by_period[period_key] = f"{left_value} - {right_value}"
         source_label_by_period[period_key] = "Revenue - Cost of Operations"
+    return MetricSeries(numeric_by_period, source_value_by_period, source_label_by_period)
+
+
+def _expense_magnitude_series(
+    series: MetricSeries,
+    period_keys: Iterable[str],
+) -> MetricSeries:
+    """Normalize presentation signs for accounts classified as expenses.
+
+    Some DART income statements present deductive expense rows in parentheses,
+    which the canonical parser correctly reads as negative. Agent-facing cost
+    metrics use positive expense magnitudes; profit and loss lines retain their
+    original accounting signs.
+    """
+
+    numeric_by_period: dict[str, Number | None] = {}
+    source_value_by_period: dict[str, str | None] = {}
+    source_label_by_period: dict[str, str | None] = {}
+    for period_key in period_keys:
+        value = series.numeric_by_period.get(period_key)
+        numeric_by_period[period_key] = abs(value) if value is not None else None
+        source_value_by_period[period_key] = series.source_value_by_period.get(period_key)
+        source_label_by_period[period_key] = series.source_label_by_period.get(period_key)
     return MetricSeries(numeric_by_period, source_value_by_period, source_label_by_period)
 
 

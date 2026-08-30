@@ -51,6 +51,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Domestic peer run_key to include. Can be repeated. Defaults to same-date Output_total peers.",
     )
     parser.add_argument("--output-root", default=str(OUTPUT_ROOT), help="Output_total root.")
+    parser.add_argument(
+        "--peer-output-root",
+        default="",
+        help="Optional nested root containing peer-company domain outputs.",
+    )
     parser.add_argument("--output-dir", default="", help="Optional output directory override.")
     parser.add_argument("--log-level", default="INFO")
     return parser
@@ -67,6 +72,11 @@ def main(argv: list[str] | None = None) -> int:
         target=target,
         peer_run_keys=args.peer_run_key,
         output_root=Path(args.output_root).expanduser().resolve(),
+        peer_output_root=(
+            Path(args.peer_output_root).expanduser().resolve()
+            if args.peer_output_root
+            else None
+        ),
         output_dir=Path(args.output_dir).expanduser().resolve() if args.output_dir else None,
     )
     logger = logging.getLogger("peer_comparison_agent")

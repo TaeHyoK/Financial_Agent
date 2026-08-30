@@ -9,6 +9,26 @@ from typing import Any
 
 
 NORMAL_RUN_ROLES = ("target", "peer", "final")
+MILLION_TOKENS = 1_000_000
+OPENAI_PRICING_SOURCE = "https://developers.openai.com/api/docs/models/gpt-5.4"
+MODEL_PRICING_USD_PER_MILLION = {
+    "gpt-5.4": {
+        "input": 2.50,
+        "cached_input": 0.25,
+        "output": 15.00,
+        "long_context_threshold": 272_000,
+        "long_context_input_multiplier": 2.0,
+        "long_context_output_multiplier": 1.5,
+    },
+    "gpt-5.4-mini": {
+        "input": 0.75,
+        "cached_input": 0.075,
+        "output": 4.50,
+        "long_context_threshold": 0,
+        "long_context_input_multiplier": 1.0,
+        "long_context_output_multiplier": 1.0,
+    },
+}
 EXPECTED_LOGICAL_CALLS_BY_ROLE = {
     "target": 6,
     "peer": 6,
@@ -138,7 +158,138 @@ def summarize_execution_usage(
         "by_role": by_role,
         "by_step": by_step,
     }
+    summary["estimated_api_cost"] = estimate_api_cost(rows)
     return summary
+
+
+def estimate_api_cost(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Estimate standard OpenAI text-token charges for recorded transports.
+
+    ``input_tokens`` includes cached input, so cached tokens are subtracted
+    before the regular input rate is applied. Reasoning tokens are already a
+    subset of output tokens and are not charged a second time.
+    """
+
+    by_model: dict[str, dict[str, Any]] = {}
+    unknown_models: set[str] = set()
+    priced_usage_present = False
+
+    for row in rows:
+        usage = row.get("usage") if isinstance(row.get("usage"), dict) else {}
+        input_tokens = max(0, _integer(usage.get("input_tokens")))
+        cached_tokens = min(input_tokens, max(0, _integer(usage.get("cached_input_tokens"))))
+        uncached_tokens = input_tokens - cached_tokens
+        output_tokens = max(0, _integer(usage.get("output_tokens")))
+        if input_tokens == 0 and output_tokens == 0:
+            continue
+
+        raw_model = str(row.get("model") or "").strip()
+        billing_model = _billing_model(raw_model)
+        pricing = MODEL_PRICING_USD_PER_MILLION.get(billing_model)
+        if pricing is None:
+            unknown_models.add(raw_model or "unknown")
+            continue
+
+        priced_usage_present = True
+        long_context = (
+            int(pricing["long_context_threshold"]) > 0
+            and input_tokens > int(pricing["long_context_threshold"])
+        )
+        input_multiplier = (
+            float(pricing["long_context_input_multiplier"]) if long_context else 1.0
+        )
+        output_multiplier = (
+            float(pricing["long_context_output_multiplier"]) if long_context else 1.0
+        )
+        uncached_cost = (
+            uncached_tokens
+            * float(pricing["input"])
+            * input_multiplier
+            / MILLION_TOKENS
+        )
+        cached_cost = (
+            cached_tokens
+            * float(pricing["cached_input"])
+            * input_multiplier
+            / MILLION_TOKENS
+        )
+        output_cost = (
+            output_tokens
+            * float(pricing["output"])
+            * output_multiplier
+            / MILLION_TOKENS
+        )
+
+        model_summary = by_model.setdefault(
+            billing_model,
+            {
+                "observed_model_names": [],
+                "uncached_input_tokens": 0,
+                "cached_input_tokens": 0,
+                "output_tokens": 0,
+                "long_context_requests": 0,
+                "pricing_usd_per_million_tokens": {
+                    "input": float(pricing["input"]),
+                    "cached_input": float(pricing["cached_input"]),
+                    "output": float(pricing["output"]),
+                },
+                "uncached_input_cost_usd": 0.0,
+                "cached_input_cost_usd": 0.0,
+                "output_cost_usd": 0.0,
+                "total_cost_usd": 0.0,
+            },
+        )
+        if raw_model and raw_model not in model_summary["observed_model_names"]:
+            model_summary["observed_model_names"].append(raw_model)
+        model_summary["uncached_input_tokens"] += uncached_tokens
+        model_summary["cached_input_tokens"] += cached_tokens
+        model_summary["output_tokens"] += output_tokens
+        model_summary["long_context_requests"] += int(long_context)
+        model_summary["uncached_input_cost_usd"] += uncached_cost
+        model_summary["cached_input_cost_usd"] += cached_cost
+        model_summary["output_cost_usd"] += output_cost
+        model_summary["total_cost_usd"] += uncached_cost + cached_cost + output_cost
+
+    for model_summary in by_model.values():
+        for key in (
+            "uncached_input_cost_usd",
+            "cached_input_cost_usd",
+            "output_cost_usd",
+            "total_cost_usd",
+        ):
+            model_summary[key] = round(float(model_summary[key]), 8)
+
+    total_cost = round(
+        sum(float(item["total_cost_usd"]) for item in by_model.values()),
+        8,
+    )
+    if unknown_models:
+        status = "partial" if priced_usage_present else "unavailable"
+    else:
+        status = "available"
+    return {
+        "status": status,
+        "currency": "USD",
+        "total_cost_usd": total_cost if priced_usage_present or not unknown_models else None,
+        "by_model": by_model,
+        "unknown_models": sorted(unknown_models),
+        "pricing_basis": "OpenAI standard API text-token rates per 1M tokens",
+        "pricing_source": OPENAI_PRICING_SOURCE,
+        "notes": [
+            "Cached input is priced separately from uncached input.",
+            "Reasoning tokens are included in output tokens and are not added twice.",
+            "The estimate excludes tool-call fees and regional-processing uplifts.",
+        ],
+    }
+
+
+def _billing_model(model: str) -> str:
+    normalized = str(model or "").strip().lower()
+    if normalized == "gpt-5.4-mini" or normalized.startswith("gpt-5.4-mini-"):
+        return "gpt-5.4-mini"
+    if normalized == "gpt-5.4" or normalized.startswith("gpt-5.4-202"):
+        return "gpt-5.4"
+    return normalized
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:

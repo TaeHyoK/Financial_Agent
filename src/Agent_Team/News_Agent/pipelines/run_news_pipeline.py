@@ -1,4 +1,4 @@
-"""News pipeline: collect -> rerank -> same-day cluster -> select -> outputs."""
+"""News pipeline: collect -> seven-day event merge -> rerank -> select -> outputs."""
 
 from __future__ import annotations
 
@@ -61,10 +61,48 @@ def _build_article_previews(
     return previews
 
 
+def _build_event_timeline(
+    records: list[RawNewsRecord],
+    *,
+    article_dense_by_id: dict[str, float],
+) -> list[dict[str, str]]:
+    """Keep one report-relevant headline per publication date for an event."""
+
+    records_by_date: dict[str, list[RawNewsRecord]] = {}
+    for record in records:
+        article_date = str(record.article_date or "").strip()
+        if not article_date:
+            continue
+        records_by_date.setdefault(article_date, []).append(record)
+
+    if len(records_by_date) <= 1:
+        return []
+
+    timeline: list[dict[str, str]] = []
+    for article_date in sorted(records_by_date):
+        daily_record = max(
+            records_by_date[article_date],
+            key=lambda record: (
+                float(article_dense_by_id.get(record.article_id, float("-inf"))),
+                bool((record.snippet or "").strip()),
+                len((record.title or "").strip()),
+                record.article_id,
+            ),
+        )
+        timeline.append(
+            {
+                "date": article_date,
+                "title": (daily_record.title or "").strip(),
+            }
+        )
+    return timeline
+
+
 def _build_report_event(
     event: NewsEventRecord,
     *,
     raw_records_by_id: dict[str, RawNewsRecord],
+    article_dense_by_id: dict[str, float],
     relevance_rank: int,
 ) -> dict[str, Any]:
     evidence = []
@@ -111,6 +149,10 @@ def _build_report_event(
             "time": event.representative_article_date,
             "url": event.representative_url,
         },
+        "event_timeline": _build_event_timeline(
+            member_records,
+            article_dense_by_id=article_dense_by_id,
+        ),
         "articles": _build_article_previews(member_records),
         "scores": {
             "rel_dense": event.rel_dense,
@@ -159,15 +201,16 @@ def _reindex_records(records: list[RawNewsRecord]) -> list[RawNewsRecord]:
     return reindexed
 
 
-def _clustering_date_bucket(record: RawNewsRecord, collect_date: date) -> str:
-    """Date key used to prevent cross-day clustering leakage."""
+def _clustering_week_bucket(record: RawNewsRecord, collect_date: date) -> str:
+    """ISO calendar-week key for seven-day semantic duplicate merging."""
+
     if record.article_date:
-        return record.article_date
+        return _iso_week_key(record.article_date, collect_date)
     metadata = record.metadata or {}
-    query_day = metadata.get("query_day")
-    if isinstance(query_day, str) and query_day:
-        return query_day
-    return collect_date.isoformat()
+    query_window_end = metadata.get("query_window_end")
+    if isinstance(query_window_end, str) and query_window_end:
+        return _iso_week_key(query_window_end, collect_date)
+    return _iso_week_key(None, collect_date)
 
 
 def _event_date_ordinal(value: str | None) -> int:
@@ -181,7 +224,7 @@ def _rank_events_after_rerank(
     events: list[NewsEventRecord],
     top_k: int | None,
 ) -> tuple[list[NewsEventRecord], list[NewsEventRecord]]:
-    """Rank same-day events by their representative article reranker score.
+    """Rank deduplicated events by their representative article reranker score.
 
     ``rel_rerank`` still contains the raw cross-encoder score when this helper is
     called.  Dense relevance and recency are deterministic tie breakers only; URL
@@ -206,7 +249,72 @@ def _rank_events_after_rerank(
     return ranked, ranked[: int(top_k)]
 
 
-def _cluster_articles_within_day(
+def _iso_week_key(value: str | None, fallback: date) -> str:
+    """Return an ISO year-week key for stable calendar-week selection."""
+
+    try:
+        parsed = date.fromisoformat(str(value or "")[:10])
+    except ValueError:
+        parsed = fallback
+    iso_year, iso_week, _ = parsed.isocalendar()
+    return f"{iso_year:04d}-W{iso_week:02d}"
+
+
+def _weekly_embedding_candidates(
+    events: list[NewsEventRecord],
+    *,
+    collect_date: date,
+    candidates_per_week: int,
+) -> tuple[dict[str, list[NewsEventRecord]], dict[str, int]]:
+    """Select dense-similarity candidates independently inside each ISO week."""
+
+    if candidates_per_week <= 0:
+        raise ValueError("weekly_embedding_candidates must be >= 1")
+    grouped: dict[str, list[NewsEventRecord]] = {}
+    for event in events:
+        week = _iso_week_key(event.representative_article_date, collect_date)
+        grouped.setdefault(week, []).append(event)
+
+    selected: dict[str, list[NewsEventRecord]] = {}
+    ranks: dict[str, int] = {}
+    for week, week_events in sorted(grouped.items()):
+        ranked = sorted(
+            week_events,
+            key=lambda event: (
+                -float(event.rel_dense),
+                -_event_date_ordinal(event.representative_article_date),
+                str(event.representative_url or ""),
+                str(event.event_id),
+            ),
+        )
+        selected[week] = ranked[:candidates_per_week]
+        for rank, event in enumerate(ranked, start=1):
+            ranks[event.event_id] = rank
+    return selected, ranks
+
+
+def _weekly_rerank_selection(
+    candidates_by_week: dict[str, list[NewsEventRecord]],
+    *,
+    events_by_id: dict[str, NewsEventRecord],
+    events_per_week: int,
+) -> tuple[list[NewsEventRecord], dict[str, int]]:
+    """Retain at most ``events_per_week`` cross-encoder results per week."""
+
+    if events_per_week <= 0:
+        raise ValueError("weekly_rerank_top_k must be >= 1")
+    selected: list[NewsEventRecord] = []
+    ranks: dict[str, int] = {}
+    for week, candidates in sorted(candidates_by_week.items()):
+        scored = [events_by_id[event.event_id] for event in candidates]
+        ranked, week_selected = _rank_events_after_rerank(scored, events_per_week)
+        for rank, event in enumerate(ranked, start=1):
+            ranks[event.event_id] = rank
+        selected.extend(week_selected)
+    return selected, ranks
+
+
+def _cluster_articles_within_week(
     records: list[RawNewsRecord],
     embeddings: np.ndarray,
     *,
@@ -214,8 +322,9 @@ def _cluster_articles_within_day(
     time_window_hours: float,
     min_cluster_size: int,
     min_samples: int,
+    similarity_threshold: float = 0.88,
 ) -> dict[int, list[int]]:
-    """Cluster semantically similar articles without ever crossing a date bucket."""
+    """Merge semantic duplicates across dates, bounded to one ISO week."""
 
     timestamps: list[datetime] = []
     bucket_to_indices: dict[str, list[int]] = {}
@@ -233,7 +342,7 @@ def _cluster_articles_within_day(
                 tzinfo=timezone.utc,
             )
         timestamps.append(article_dt)
-        bucket = _clustering_date_bucket(record, collect_date)
+        bucket = _clustering_week_bucket(record, collect_date)
         bucket_to_indices.setdefault(bucket, []).append(idx)
 
     clusters: dict[int, list[int]] = {}
@@ -249,6 +358,7 @@ def _cluster_articles_within_day(
             time_window_hours=time_window_hours,
             min_cluster_size=min_cluster_size,
             min_samples=min_samples,
+            similarity_threshold=similarity_threshold,
         )
         bucket_labels = bucket_result.labels
         max_label = max(bucket_labels) if bucket_labels else -1
@@ -266,7 +376,7 @@ def _cluster_articles_within_day(
     return clusters
 
 
-def run_daily_news(
+def run_news_window(
     *,
     config: dict[str, Any],
     collect_date: date,
@@ -295,9 +405,21 @@ def run_daily_news(
         raise ValueError("collection_days must be >= 1")
 
     max_results = max_results_override if max_results_override is not None else news_cfg.get("max_results")
-    # ``total_max_results`` is retained as a compatibility alias for existing
-    # orchestration scripts.  Its corrected meaning is the number of same-day
-    # deduplicated events retained *after* article reranking.
+    weekly_embedding_candidate_k = int(
+        news_cfg.get("weekly_embedding_candidates", 15)
+    )
+    weekly_rerank_top_k = int(news_cfg.get("weekly_rerank_top_k", 5))
+    if weekly_embedding_candidate_k <= 0:
+        raise ValueError("weekly_embedding_candidates must be >= 1")
+    if weekly_rerank_top_k <= 0:
+        raise ValueError("weekly_rerank_top_k must be >= 1")
+    if weekly_rerank_top_k > weekly_embedding_candidate_k:
+        raise ValueError(
+            "weekly_rerank_top_k cannot exceed weekly_embedding_candidates"
+        )
+
+    # ``total_max_results`` is retained as a compatibility alias. It now means
+    # the final global News-Agent article/event budget after weekly selection.
     configured_event_top_k = news_cfg.get("event_top_k")
     if configured_event_top_k is None:
         configured_event_top_k = news_cfg.get("total_max_results")
@@ -308,36 +430,55 @@ def run_daily_news(
     )
     if event_top_k is not None and int(event_top_k) <= 0:
         raise ValueError("event_top_k must be >= 1")
+    selection_method = (
+        f"weekly_dense_top{weekly_embedding_candidate_k}_"
+        f"rerank_top{weekly_rerank_top_k}_"
+        f"global_top{int(event_top_k) if event_top_k is not None else 'all'}"
+    )
     dedup_on_url = (
         bool(dedup_on_url_override)
         if dedup_on_url_override is not None
         else bool(news_cfg.get("dedup_on_url", True))
     )
+    collection_chunk_days = max(1, int(news_cfg.get("collection_chunk_days", 7)))
 
-    # Query one day at a time to avoid per-query cap bottlenecks.
+    # Query bounded seven-day windows. This retains coverage across the full
+    # 90-day interval without paying URL-decoding and publisher-fetch costs for
+    # every unranked article. Exact-date semantic merging still happens below.
     raw_records: list[RawNewsRecord] = []
     collection_notes: list[str] = []
-    for offset in range(collection_days):
-        day = collect_date - timedelta(days=offset)
-        day_records, day_meta = collector.collect(
+    remaining_days = collection_days
+    chunk_end = collect_date
+    while remaining_days > 0:
+        chunk_days = min(collection_chunk_days, remaining_days)
+        chunk_start = chunk_end - timedelta(days=chunk_days - 1)
+        chunk_records, chunk_meta = collector.collect(
             query=query,
-            collect_date=day,
-            lookback_days=0,
+            collect_date=chunk_end,
+            lookback_days=chunk_days - 1,
             max_results=max_results,
             dedup_on_url=dedup_on_url,
+            enrich=False,
         )
-        day_notes = [f"{day.isoformat()}::{note}" for note in day_meta.get("collection_notes", [])]
-        collection_notes.extend(day_notes)
-        for record in day_records:
+        chunk_label = f"{chunk_start.isoformat()}..{chunk_end.isoformat()}"
+        chunk_notes = [
+            f"{chunk_label}::{note}"
+            for note in chunk_meta.get("collection_notes", [])
+        ]
+        collection_notes.extend(chunk_notes)
+        for record in chunk_records:
             payload = asdict(record)
             payload["metadata"] = {
                 **(record.metadata or {}),
-                "query_day": day.isoformat(),
+                "query_window_start": chunk_start.isoformat(),
+                "query_window_end": chunk_end.isoformat(),
                 "window_collect_date": collect_date.isoformat(),
                 "window_start_date": (collect_date - timedelta(days=collection_days - 1)).isoformat(),
                 "collection_days": collection_days,
             }
             raw_records.append(RawNewsRecord(**payload))
+        remaining_days -= chunk_days
+        chunk_end = chunk_start - timedelta(days=1)
 
     window_start_date = collect_date - timedelta(days=collection_days - 1)
     window_end_date = collect_date
@@ -365,7 +506,7 @@ def run_daily_news(
                 "collection_notes": collection_notes,
                 "collection_total": collected_unique_count,
                 "collection_unique_total": collected_unique_count,
-                "event_selection_stage": "post_rerank_same_day_cluster",
+                "event_selection_stage": "weekly_dense_then_rerank",
                 "event_selection_top_k": (
                     int(event_top_k) if event_top_k is not None else None
                 ),
@@ -389,6 +530,7 @@ def run_daily_news(
             "article_ranking_path": str(article_ranking_path),
             "news_events_path": "",
             "all_news_events_path": "",
+            "weekly_news_events_path": "",
             "event_ranking_path": "",
             "report_context_path": "",
             "collected_unique_count": 0,
@@ -403,9 +545,12 @@ def run_daily_news(
             "total_max_results": (
                 int(event_top_k) if event_top_k is not None else None
             ),
-            "selection_stage": "post_rerank_same_day_cluster",
-            "selection_method": "top_k_events_by_representative_article_rerank",
-            "cross_date_clustering": False,
+            "weekly_embedding_candidates": weekly_embedding_candidate_k,
+            "weekly_rerank_top_k": weekly_rerank_top_k,
+            "selection_stage": "weekly_dense_then_rerank",
+            "selection_method": selection_method,
+            "semantic_dedup_window_days": 7,
+            "cross_date_clustering": True,
         }
 
     model_cfg = config.get("models", {})
@@ -436,12 +581,6 @@ def run_daily_news(
         section_to_context_indices.setdefault(section, []).append(idx)
     sorted_sections = sorted(section_to_context_indices.keys())
 
-    reranker = Reranker(
-        model_cfg.get("reranker_model_name", "BAAI/bge-reranker-v2-m3"),
-        device=model_cfg.get("device", "cpu"),
-        batch_size=int(model_cfg.get("batch_size", 32)),
-    )
-
     scoring_cfg = config.get("scoring", {})
     alpha = float(scoring_cfg.get("alpha", 0.75))
     beta = float(scoring_cfg.get("beta", 0.15))
@@ -450,9 +589,9 @@ def run_daily_news(
     tau_hours = float(scoring_cfg.get("tau_hours", 48))
     mention_transform = scoring_cfg.get("mention_transform", "log1p")
     impact_topk = max(int(scoring_cfg.get("impact_topk", 3)), 1)
-    rerank_all_chunks = bool(scoring_cfg.get("rerank_all_chunks", False))
 
-    # Score at article level first.
+    # Compute inexpensive embedding similarity for every article first. The
+    # cross-encoder is intentionally deferred until weekly candidates exist.
     article_scores: list[dict[str, Any]] = []
     for idx, record in enumerate(raw_records):
         article_vec = news_embeddings[idx]
@@ -463,11 +602,6 @@ def run_daily_news(
 
         rel_dense = float(rel_dense_scores[top_indices[0]]) if top_indices else 0.0
         impact_raw = float(sum(float(rel_dense_scores[i]) * float(context_importance[i]) for i in top_indices))
-
-        rerank_indices = range(len(context_texts)) if rerank_all_chunks else top_indices
-        pairs = [(record.doc_text, context_texts[i]) for i in rerank_indices]
-        rerank_scores = reranker.score(pairs)
-        rel_rerank_raw = float(max(rerank_scores)) if rerank_scores else 0.0
 
         section_best: dict[str, float] = {}
         for section in sorted_sections:
@@ -482,7 +616,6 @@ def run_daily_news(
                 "top_indices": top_indices,
                 "rel_dense": rel_dense,
                 "impact_raw": impact_raw,
-                "rel_rerank_raw": rel_rerank_raw,
                 "section_best": section_best,
                 "section_raw": 0.0,
             }
@@ -509,21 +642,27 @@ def run_daily_news(
             if normalized_section_values
             else 0.0
         )
+    article_dense_by_id = {
+        raw_records[int(score["article_idx"])].article_id: float(score["rel_dense"])
+        for score in article_scores
+    }
 
-    # Semantic duplicate merging intentionally stays inside an exact publication
-    # date.  Similar coverage on another date may contain a real status update and
-    # must remain a separate event.
+    # Merge repeated coverage across publication dates inside one seven-day ISO
+    # week. Articles never cross a weekly boundary, which keeps later updates in
+    # a separate event while removing short-lived repetition.
     clustering_cfg = config.get("clustering", {})
-    time_window_hours = float(clustering_cfg.get("time_window_hours", 48))
+    time_window_hours = float(clustering_cfg.get("time_window_hours", 168))
     min_cluster_size = int(clustering_cfg.get("min_cluster_size", 3))
     min_samples = int(clustering_cfg.get("min_samples", 1))
-    clusters = _cluster_articles_within_day(
+    similarity_threshold = float(clustering_cfg.get("similarity_threshold", 0.88))
+    clusters = _cluster_articles_within_week(
         raw_records,
         news_embeddings,
         collect_date=collect_date,
         time_window_hours=time_window_hours,
         min_cluster_size=min_cluster_size,
         min_samples=min_samples,
+        similarity_threshold=similarity_threshold,
     )
     article_event_ids: dict[int, str] = {}
     for cluster_id, member_indices in clusters.items():
@@ -541,7 +680,6 @@ def run_daily_news(
         rep_score = max(
             member_scores,
             key=lambda s: (
-                s["rel_rerank_raw"],
                 s["rel_dense"],
                 raw_records[s["article_idx"]].article_date or "",
             ),
@@ -554,7 +692,6 @@ def run_daily_news(
         representative_snippet = (rep_record.snippet or "").strip()
 
         rel_dense = max(float(s["rel_dense"]) for s in member_scores)
-        rel_rerank_raw = max(float(s["rel_rerank_raw"]) for s in member_scores)
         impact_raw = max(float(s["impact_raw"]) for s in member_scores)
 
         mention_cnt = len(member_indices)
@@ -597,7 +734,7 @@ def run_daily_news(
                 representative_source=rep_record.source,
                 representative_article_date=rep_record.article_date,
                 rel_dense=rel_dense,
-                rel_rerank=rel_rerank_raw,
+                rel_rerank=0.0,
                 section_score=section_raw,
                 global_section_score=0.0,
                 impact_score=impact_raw,
@@ -614,29 +751,86 @@ def run_daily_news(
             )
         )
 
-    # Select the event budget only after every candidate article has been
-    # cross-encoder reranked and same-day semantic duplicates have been merged.
-    ranked_raw_events, selected_raw_events = _rank_events_after_rerank(
+    # Keep at most 15 dense-similarity candidates per ISO week. Only those
+    # candidates reach the cross-encoder, which bounds 90-day inference cost.
+    weekly_candidates, weekly_embedding_ranks = _weekly_embedding_candidates(
         event_records,
+        collect_date=collect_date,
+        candidates_per_week=weekly_embedding_candidate_k,
+    )
+    candidate_event_ids = {
+        event.event_id
+        for candidates in weekly_candidates.values()
+        for event in candidates
+    }
+    article_index_by_id = {
+        record.article_id: index for index, record in enumerate(raw_records)
+    }
+    reranker = Reranker(
+        model_cfg.get("reranker_model_name", "BAAI/bge-reranker-v2-m3"),
+        device=model_cfg.get("device", "cpu"),
+        batch_size=int(model_cfg.get("batch_size", 32)),
+    )
+    rerank_all_chunks = bool(scoring_cfg.get("rerank_all_chunks", False))
+    reranked_events: list[NewsEventRecord] = []
+    event_raw_rerank: dict[str, float] = {}
+    for event in event_records:
+        rerank_score = 0.0
+        if event.event_id in candidate_event_ids and event.member_article_ids:
+            representative_id = event.member_article_ids[0]
+            article_idx = article_index_by_id.get(representative_id)
+            if article_idx is not None:
+                top_indices = article_scores[article_idx]["top_indices"]
+                rerank_indices = (
+                    range(len(context_texts)) if rerank_all_chunks else top_indices
+                )
+                pairs = [
+                    (raw_records[article_idx].doc_text, context_texts[index])
+                    for index in rerank_indices
+                ]
+                scores = reranker.score(pairs)
+                rerank_score = float(max(scores)) if scores else 0.0
+        event_raw_rerank[event.event_id] = rerank_score
+        reranked_events.append(
+            NewsEventRecord(**{**asdict(event), "rel_rerank": rerank_score})
+        )
+    event_records = reranked_events
+    raw_events_by_id = {event.event_id: event for event in event_records}
+
+    # Rerank inside each week, keep five, then choose the final global raw-event
+    # list for the News Agent from the union of weekly selections.
+    weekly_selected_raw, weekly_rerank_ranks = _weekly_rerank_selection(
+        weekly_candidates,
+        events_by_id=raw_events_by_id,
+        events_per_week=weekly_rerank_top_k,
+    )
+    ranked_raw_events, selected_raw_events = _rank_events_after_rerank(
+        weekly_selected_raw,
         int(event_top_k) if event_top_k is not None else None,
     )
+    selected_weekly_event_ids = {
+        event.event_id for event in weekly_selected_raw
+    }
     ranked_event_ids = [event.event_id for event in ranked_raw_events]
     selected_event_ids = {event.event_id for event in selected_raw_events}
     event_selection_rank = {
         event_id: rank for rank, event_id in enumerate(ranked_event_ids, start=1)
     }
-    event_raw_rerank = {
-        event.event_id: float(event.rel_rerank) for event in event_records
-    }
 
     # Normalize scores before weighted sum.
-    normalized_rerank = minmax_normalize([event.rel_rerank for event in event_records])
+    ordered_candidate_ids = sorted(candidate_event_ids)
+    candidate_rerank_values = [
+        event_raw_rerank[event_id] for event_id in ordered_candidate_ids
+    ]
+    normalized_candidate_rerank = dict(
+        zip(ordered_candidate_ids, minmax_normalize(candidate_rerank_values))
+    )
     normalized_mention = minmax_normalize(mention_raw_values)
     normalized_impact = minmax_normalize(impact_raw_values)
     normalized_section = minmax_normalize(section_raw_values)
 
     for idx, event in enumerate(event_records):
-        rel_rerank = normalized_rerank[idx] if idx < len(normalized_rerank) else event.rel_rerank
+        rel_rerank = normalized_candidate_rerank.get(event.event_id, 0.0)
         mention_norm = normalized_mention[idx] if idx < len(normalized_mention) else event.mention_score
         impact_norm = normalized_impact[idx] if idx < len(normalized_impact) else event.impact_score
         section_norm = normalized_section[idx] if idx < len(normalized_section) else event.section_score
@@ -656,24 +850,86 @@ def run_daily_news(
         )
 
     normalized_events_by_id = {event.event_id: event for event in event_records}
-    ranked_all_events = [
-        normalized_events_by_id[event_id]
-        for event_id in ranked_event_ids
-        if event_id in normalized_events_by_id
+    ranked_all_events = sorted(
+        event_records,
+        key=lambda event: (
+            event.event_id not in candidate_event_ids,
+            -float(event_raw_rerank.get(event.event_id, 0.0)),
+            -float(event.rel_dense),
+            -_event_date_ordinal(event.representative_article_date),
+            str(event.event_id),
+        ),
+    )
+    weekly_selected_events = [
+        normalized_events_by_id[event.event_id]
+        for event in weekly_selected_raw
+        if event.event_id in normalized_events_by_id
     ]
     selected_events = [
-        event
-        for event in ranked_all_events
-        if event.event_id in selected_event_ids
+        normalized_events_by_id[event_id]
+        for event_id in ranked_event_ids
+        if event_id in selected_event_ids and event_id in normalized_events_by_id
     ]
+
+    # Publisher URL resolution and snippet retrieval are network-expensive.
+    # Apply them only to the final global evidence set after ranking, then
+    # propagate the enriched representative fields to every event view.
+    selected_representative_ids = {
+        event.member_article_ids[0]
+        for event in selected_events
+        if event.member_article_ids
+    }
+    representative_indices = [
+        index
+        for index, record in enumerate(raw_records)
+        if record.article_id in selected_representative_ids
+    ]
+    enrich_records = getattr(collector, "_enrich_records", None)
+    if representative_indices and callable(enrich_records):
+        enriched = enrich_records(
+            [raw_records[index] for index in representative_indices],
+            collection_notes,
+        )
+        for index, record in zip(representative_indices, enriched):
+            raw_records[index] = record
+    raw_records_by_id = {record.article_id: record for record in raw_records}
+
+    def with_enriched_representative(event: NewsEventRecord) -> NewsEventRecord:
+        if not event.member_article_ids:
+            return event
+        representative = raw_records_by_id.get(event.member_article_ids[0])
+        if representative is None:
+            return event
+        return NewsEventRecord(
+            **{
+                **asdict(event),
+                "representative_url": representative.url,
+                "representative_title": representative.title,
+                "representative_snippet": representative.snippet or "",
+                "representative_source": representative.source,
+                "member_urls": [
+                    raw_records_by_id[article_id].url
+                    for article_id in event.member_article_ids
+                    if article_id in raw_records_by_id and raw_records_by_id[article_id].url
+                ],
+            }
+        )
+
+    ranked_all_events = [with_enriched_representative(event) for event in ranked_all_events]
+    weekly_selected_events = [
+        with_enriched_representative(event) for event in weekly_selected_events
+    ]
+    selected_events = [with_enriched_representative(event) for event in selected_events]
 
     # Save the full candidate-event audit trail and the selected event set
     # separately.  Downstream report construction consumes only news_events.parquet.
     events_output_dir = data_root / "news" / "events" / artifact_dir
     all_news_events_path = events_output_dir / "news_events_all.parquet"
+    weekly_news_events_path = events_output_dir / "news_events_weekly.parquet"
     news_events_path = events_output_dir / "news_events.parquet"
     event_ranking_path = events_output_dir / "event_ranking.parquet"
     save_parquet([asdict(record) for record in ranked_all_events], all_news_events_path)
+    save_parquet([asdict(record) for record in weekly_selected_events], weekly_news_events_path)
     save_parquet([asdict(record) for record in selected_events], news_events_path)
     save_parquet(
         [
@@ -687,9 +943,14 @@ def run_daily_news(
                 "rel_rerank_normalized": event.rel_rerank,
                 "rel_dense": event.rel_dense,
                 "final_score": event.final_score,
+                "iso_week": _iso_week_key(event.representative_article_date, collect_date),
+                "weekly_embedding_rank": weekly_embedding_ranks.get(event.event_id),
+                "weekly_candidate": event.event_id in candidate_event_ids,
+                "weekly_rerank_rank": weekly_rerank_ranks.get(event.event_id),
+                "weekly_selected": event.event_id in selected_weekly_event_ids,
                 "selection_rank": event_selection_rank.get(event.event_id),
                 "selected": event.event_id in selected_event_ids,
-                "selection_method": "top_k_events_by_representative_article_rerank",
+                "selection_method": selection_method,
             }
             for event in ranked_all_events
         ],
@@ -714,10 +975,12 @@ def run_daily_news(
                 "title": record.title,
                 "url": record.url,
                 "rel_dense": float(article_scores[idx]["rel_dense"]),
-                "rel_rerank_raw": float(article_scores[idx]["rel_rerank_raw"]),
+                "rel_rerank_raw": event_raw_rerank.get(
+                    article_event_ids.get(idx, "")
+                ),
                 "impact_raw": float(article_scores[idx]["impact_raw"]),
                 "section_raw": float(article_scores[idx]["section_raw"]),
-                "same_day_event_id": article_event_ids.get(idx),
+                "seven_day_event_id": article_event_ids.get(idx),
                 "event_selection_rank": event_selection_rank.get(
                     article_event_ids.get(idx, "")
                 ),
@@ -743,17 +1006,28 @@ def run_daily_news(
         _build_report_event(
             event,
             raw_records_by_id=raw_records_by_id,
+            article_dense_by_id=article_dense_by_id,
             relevance_rank=index,
         )
         for index, event in enumerate(ranked_all_events, start=1)
     ]
-    report_events_by_id = {
-        str(event["event_id"]): event for event in all_report_events
-    }
     news_events_topk = [
-        report_events_by_id[str(event.event_id)]
-        for event in selected_events
-        if str(event.event_id) in report_events_by_id
+        _build_report_event(
+            event,
+            raw_records_by_id=raw_records_by_id,
+            article_dense_by_id=article_dense_by_id,
+            relevance_rank=index,
+        )
+        for index, event in enumerate(selected_events, start=1)
+    ]
+    news_events_weekly = [
+        _build_report_event(
+            event,
+            raw_records_by_id=raw_records_by_id,
+            article_dense_by_id=article_dense_by_id,
+            relevance_rank=index,
+        )
+        for index, event in enumerate(weekly_selected_events, start=1)
     ]
 
     report_pack = {
@@ -770,17 +1044,27 @@ def run_daily_news(
         },
         "news_selection": {
             "candidate_article_count": collected_unique_count,
-            "same_day_event_count_before_top_k": len(ranked_all_events),
+            "seven_day_event_count": len(ranked_all_events),
+            "weekly_candidate_count": len(candidate_event_ids),
+            "weekly_selected_event_count": len(weekly_selected_events),
             "selected_event_count": len(selected_events),
             "selected_source_article_count": len(selected_raw_records),
-            "stage": "post_rerank_same_day_cluster",
+            "stage": "weekly_dense_then_rerank",
             "unit": "event",
-            "metric": "representative_article_rel_rerank_raw",
+            "metric": (
+                f"dense_top{weekly_embedding_candidate_k}_per_week_then_"
+                f"rerank_top{weekly_rerank_top_k}_per_week"
+            ),
+            "weekly_embedding_candidates": weekly_embedding_candidate_k,
+            "weekly_rerank_top_k": weekly_rerank_top_k,
             "top_k": int(event_top_k) if event_top_k is not None else None,
-            "cross_date_clustering": False,
+            "semantic_dedup_window_days": 7,
+            "cross_date_clustering": True,
+            "collection_chunk_days": collection_chunk_days,
         },
         "news_events_all": all_report_events,
-        "news_events_topk": news_events_topk,
+        "news_events_weekly": news_events_weekly,
+        "news_events_final": news_events_topk,
     }
 
     report_dir = data_root / "reports" / "packs" / artifact_dir
@@ -792,6 +1076,7 @@ def run_daily_news(
         "article_ranking_path": str(article_ranking_path),
         "news_events_path": str(news_events_path),
         "all_news_events_path": str(all_news_events_path),
+        "weekly_news_events_path": str(weekly_news_events_path),
         "event_ranking_path": str(event_ranking_path),
         "report_context_path": str(report_context_path),
         "collected_unique_count": collected_unique_count,
@@ -805,7 +1090,12 @@ def run_daily_news(
         "total_max_results": (
             int(event_top_k) if event_top_k is not None else None
         ),
-        "selection_stage": "post_rerank_same_day_cluster",
-        "selection_method": "top_k_events_by_representative_article_rerank",
-        "cross_date_clustering": False,
+        "weekly_embedding_candidates": weekly_embedding_candidate_k,
+        "weekly_rerank_top_k": weekly_rerank_top_k,
+        "weekly_selected_event_count": len(weekly_selected_events),
+        "selection_stage": "weekly_dense_then_rerank",
+        "selection_method": selection_method,
+        "semantic_dedup_window_days": 7,
+        "cross_date_clustering": True,
+        "collection_chunk_days": collection_chunk_days,
     }

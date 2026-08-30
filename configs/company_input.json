@@ -3,8 +3,8 @@
   "company_name": "SK바이오팜",
   "ticker": "326030.KS",
   "report_type": "quarterly report",
-  "date_range": "20250801-20251031",
+  "date_range": "20250802-20251030",
   "selected_date": "20251031",
-  "llm_model": "gpt-5.4-mini",
+  "llm_model": "gpt-5.4",
   "max_retries": 1
 }

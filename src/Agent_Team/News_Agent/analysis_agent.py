@@ -26,13 +26,14 @@ from tqdm.auto import tqdm
 from .io.storage import save_json
 
 
-DEFAULT_MODEL = "gpt-5.4-mini"
-DEFAULT_GRANULARITY = "day"
+DEFAULT_MODEL = "gpt-5.4"
+DEFAULT_GRANULARITY = "week"
 SUMMARY_MONTH_COUNT = 12
 RECENT_RAW_MONTH_COUNT = 3
 SUMMARY_DAY_COUNT = 14
 RECENT_RAW_DAY_COUNT = 1
-COMPANY_NEWS_TOP_K = 10
+SUMMARY_WEEK_COUNT = 14
+COMPANY_NEWS_TOP_K = 20
 DEFAULT_MAX_RAW_EVENTS_PER_PERIOD = COMPANY_NEWS_TOP_K
 SECONDARY_FINANCIAL_METRICS = (
     "revenue",
@@ -175,7 +176,7 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Context export directory that contains the granularity folder.",
     )
-    parser.add_argument("--granularity", default=DEFAULT_GRANULARITY, choices=["day", "month"], help="Input granularity.")
+    parser.add_argument("--granularity", default=DEFAULT_GRANULARITY, choices=["day", "week", "month"], help="Input granularity.")
     parser.add_argument("--company-name", default=None, help="Override company name inferred from context directory.")
     parser.add_argument("--ticker", default=None, help="Ticker used in target_entity.")
     parser.add_argument("--corp-code", default=None, help="DART corp code used in target_entity.")
@@ -183,14 +184,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dart-lightweight", default=None, help="Override DART lightweight JSON path.")
     parser.add_argument("--market-summary", default=None, help="Override YFinance market summary JSON path.")
     parser.add_argument("--output-dir", default=None, help="Override output directory.")
-    parser.add_argument("--model", default=None, help="OpenAI model. Defaults to NEWS_AGENT_LLM_MODEL or gpt-5.4-mini.")
+    parser.add_argument("--model", default=None, help="OpenAI model. Defaults to NEWS_AGENT_LLM_MODEL or gpt-5.4.")
     parser.add_argument("--env-path", default=None, help="Optional .env path loaded after News/.env.")
     parser.add_argument("--timeout-seconds", type=float, default=300.0, help="OpenAI request timeout.")
     parser.add_argument(
         "--max-raw-events-per-period",
         type=int,
         default=DEFAULT_MAX_RAW_EVENTS_PER_PERIOD,
-        help="Compatibility cap for the globally ranked company-news input (maximum 10).",
+        help="Compatibility cap for the globally ranked company-news input (maximum 20).",
     )
     parser.add_argument(
         "--primary-data-only",
@@ -277,7 +278,7 @@ def build_analysis_input_payload(
             "market_summary": str(paths.market_summary_path),
         },
         "news_context": {
-            "daily_summaries": selected_summaries,
+            "weekly_summaries": selected_summaries,
             "company_related_top_news": selected_raw,
         },
         "secondary_context": {
@@ -295,9 +296,9 @@ def build_llm_request(*, input_payload: dict[str, Any], model: str) -> dict[str,
         for evidence_id, evidence in (input_payload.get("evidence_map") or {}).items()
         if evidence.get("domain") == "news"
     }
-    daily_summaries = [
+    weekly_summaries = [
         _compact_period_summary_for_llm(item)
-        for item in (input_payload.get("news_context") or {}).get("daily_summaries", [])
+        for item in (input_payload.get("news_context") or {}).get("weekly_summaries", [])
         if isinstance(item, dict)
     ]
     llm_input = {
@@ -306,8 +307,8 @@ def build_llm_request(*, input_payload: dict[str, Any], model: str) -> dict[str,
             "summary_periods": input_payload["input_policy"].get("summary_periods", []),
             "recent_raw_periods": input_payload["input_policy"].get("recent_raw_periods", []),
         },
-        "날짜별 요약": daily_summaries,
-        "기업 관련 뉴스 top-10": primary_news_catalog,
+        "3개월 주간 요약": weekly_summaries,
+        "기업 관련 뉴스 상위 20건": primary_news_catalog,
         "secondary_context": _compact_secondary_context_for_llm(
             input_payload.get("secondary_context") or {}
         ),
@@ -345,18 +346,19 @@ def build_llm_request(*, input_payload: dict[str, Any], model: str) -> dict[str,
                 "content": json.dumps(
                     {
                         "task": (
-                            f"{len(daily_summaries)}개 날짜별 요약으로 뉴스 흐름을 파악하고 "
-                            "기업 관련 뉴스 top-10에서 직접 확인되는 "
+                            f"{len(weekly_summaries)}개 주간 요약으로 3개월 뉴스 흐름을 파악하고 "
+                            "기업 관련 뉴스 상위 20건에서 직접 확인되는 "
                             "사건, 긍정·부정 신호, 위험, 불확실성을 정리하여 "
                             "각 claim에 원 뉴스 evidence ID를 지정하세요. 보조 재무·시장 문맥은 별도 assessment로만 평가하세요."
                         ),
                         "analysis_rules": [
                             "news_only는 뉴스 데이터만 사용합니다.",
-                            "날짜별 요약은 전체 흐름을 파악하는 탐색 문맥이며 evidence가 아닙니다.",
-                            "news_only claim은 기업 관련 뉴스 top-10의 NEWS_RAW ID로만 뒷받침합니다.",
+                            "주간 요약은 전체 흐름을 파악하는 탐색 문맥이며 evidence가 아닙니다.",
+                            "news_only claim은 기업 관련 뉴스 상위 20건의 NEWS_RAW ID로만 뒷받침합니다.",
                             "뉴스만으로 매출, 이익, EPS 개선을 단정하지 않습니다.",
                             "기사에 없는 계약 금액, 일정, 상업화 성과, 재무 기여를 만들지 않습니다.",
                             "같은 사건을 여러 신호로 중복 작성하지 않습니다.",
+                            "event_timeline이 있으면 날짜별 제목을 시간순 진행 내역으로 읽되, 제목에 없는 변화나 인과관계를 추정하지 않습니다.",
                             "각 claim의 event_status, company_specificity, materiality_status, financial_link_status를 제목과 snippet 범위 안에서 분류합니다.",
                             "기사의 전망이나 기대는 reported_expectation으로 두고 실제 발생 사실로 승격하지 않습니다.",
                             "산업 일반 기사는 company_specificity=industry_context로 두며 회사 직접 위험으로 확대하지 않습니다.",
@@ -384,9 +386,26 @@ def _compact_news_evidence_for_llm(evidence: dict[str, Any]) -> dict[str, Any]:
             "relevance_rank",
             "mention_count",
             "coverage",
+            "event_timeline",
         )
         if evidence.get(key) not in (None, "", [], {})
     }
+
+
+def _compact_event_timeline(event: dict[str, Any]) -> list[dict[str, str]]:
+    timeline = [
+        {
+            "date": str(item.get("date") or "").strip(),
+            "title": str(item.get("title") or "").strip(),
+        }
+        for item in event.get("event_timeline") or []
+        if isinstance(item, dict)
+        and str(item.get("date") or "").strip()
+        and str(item.get("title") or "").strip()
+    ]
+    if len(timeline) <= 1:
+        return []
+    return sorted(timeline, key=lambda item: (item["date"], item["title"]))
 
 
 def _compact_period_summary_for_llm(summary: dict[str, Any]) -> dict[str, Any]:
@@ -903,6 +922,9 @@ def _select_recent_raw_events(
                 "final_score": float(event.get("final_score") or 0.0),
                 "coverage": copy.deepcopy(event.get("coverage") or {}),
             }
+            event_timeline = _compact_event_timeline(event)
+            if event_timeline:
+                compact_event["event_timeline"] = event_timeline
             if event.get("relation_type"):
                 compact_event["relation_type"] = str(event["relation_type"])
             compact_events.append(compact_event)
@@ -926,6 +948,7 @@ def _select_company_top_news(
     """Select one globally ranked company-news list, not a per-day quota."""
 
     allowed_periods = set(periods)
+    granularity = str((payload.get("metadata") or {}).get("granularity") or "day")
     flat_events = [
         event
         for event in payload.get("events", [])
@@ -950,7 +973,7 @@ def _select_company_top_news(
 
     selected: list[dict[str, Any]] = []
     for event in flat_events:
-        event_period = _event_period(event)
+        event_period = _event_period(event, granularity=granularity)
         if not event_period or (allowed_periods and event_period not in allowed_periods):
             continue
         event_id = str(event.get("event_id") or "")
@@ -968,6 +991,9 @@ def _select_company_top_news(
             "final_score": float(event.get("final_score") or 0.0),
             "coverage": copy.deepcopy(event.get("coverage") or {}),
         }
+        event_timeline = _compact_event_timeline(event)
+        if event_timeline:
+            compact_event["event_timeline"] = event_timeline
         if event.get("relation_type"):
             compact_event["relation_type"] = str(event["relation_type"])
         selected.append(
@@ -983,12 +1009,18 @@ def _select_company_top_news(
     return selected
 
 
-def _event_period(event: dict[str, Any]) -> str:
+def _event_period(event: dict[str, Any], *, granularity: str = "day") -> str:
     value = str(event.get("time") or "")
     try:
-        return date.fromisoformat(value[:10]).isoformat()
+        parsed = date.fromisoformat(value[:10])
     except ValueError:
         return ""
+    if granularity == "month":
+        return parsed.strftime("%Y-%m")
+    if granularity == "week":
+        iso_year, iso_week, _ = parsed.isocalendar()
+        return f"{iso_year:04d}-W{iso_week:02d}"
+    return parsed.isoformat()
 
 
 def _compact_financial_context(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1103,6 +1135,7 @@ def _build_evidence_map(
                 "snippet": event.get("snippet"),
                 "source": event.get("source"),
                 "coverage": copy.deepcopy(event.get("coverage") or {}),
+                "event_timeline": copy.deepcopy(event.get("event_timeline") or []),
                 "time": event.get("time"),
             }
 
@@ -1168,6 +1201,16 @@ def _resolve_analysis_periods(
             "Use raw news events for the latest 1 day in the 14-day window.",
         )
 
+    if granularity == "week":
+        period_keys = _week_window(as_of_date, SUMMARY_WEEK_COUNT)
+        return (
+            period_keys,
+            period_keys,
+            period_keys,
+            "Use weekly LLM summaries for the 90-day news window.",
+            "Use the globally ranked raw news events selected from all weeks.",
+        )
+
     period_keys = _month_window(as_of_date, SUMMARY_MONTH_COUNT)
     raw_periods = period_keys[-RECENT_RAW_MONTH_COUNT:]
     summary_periods = period_keys[:-RECENT_RAW_MONTH_COUNT]
@@ -1200,6 +1243,15 @@ def _month_window(as_of_date: date, count: int) -> list[str]:
 def _day_window(as_of_date: date, count: int) -> list[str]:
     start = as_of_date - timedelta(days=max(1, count) - 1)
     return [(start + timedelta(days=offset)).isoformat() for offset in range(max(1, count))]
+
+
+def _week_window(as_of_date: date, count: int) -> list[str]:
+    periods: list[str] = []
+    for offset in range(max(1, count) - 1, -1, -1):
+        current = as_of_date - timedelta(weeks=offset)
+        iso_year, iso_week, _ = current.isocalendar()
+        periods.append(f"{iso_year:04d}-W{iso_week:02d}")
+    return periods
 
 
 def _parse_json_content(content: str) -> tuple[Any, str | None]:

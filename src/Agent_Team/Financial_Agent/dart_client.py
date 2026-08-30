@@ -138,7 +138,7 @@ class DartClient:
         for attempt in range(self.max_retries + 1):
             request = urllib.request.Request(
                 full_url,
-                headers={"User-Agent": "SY-DART-Collector/1.0"},
+                headers={"User-Agent": "Financial-Agent-DART-Collector/1.0"},
             )
             try:
                 with urllib.request.urlopen(request, timeout=self.timeout) as response:  # nosec - OpenDART URL

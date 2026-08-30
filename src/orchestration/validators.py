@@ -13,32 +13,19 @@ def validate_outputs(paths: RunPaths) -> dict[str, Any]:
     financial = {
         "dart_main": file_status(paths.dart_main),
         "dart_lightweight": file_status(paths.dart_lightweight),
-        "verified_report": file_status(paths.financial_verified_report),
+        "analyst_report": file_status(paths.financial_analyst_report),
         "final_report": file_status(paths.financial_final_report),
-        "final_validation": file_status(paths.financial_final_validation),
-        "sy_overall_status": (
-            read_nested_value(paths.financial_agent_pipeline_dir / "pipeline_sy_validation_output.json", ("validation_summary", "overall_status"))
-            or read_nested_value(paths.financial_agent_pipeline_dir / "pipeline_sy_validation_output.json", ("overall_status",))
-        ),
     }
     news = {
         "handoff": file_status(paths.news_handoff),
-        "sy_validations": file_status(paths.news_sy_validations),
-        "verified_report": file_status(paths.news_verified_report),
         "final_report": file_status(paths.news_final_report),
-        "final_validation": file_status(paths.news_final_validation),
-        "sy_summary": read_nested_value(paths.news_sy_validations, ("summary",)),
     }
     yfinance = {
         "market_summary": file_status(paths.market_summary),
         "market_summary_dated": file_status(paths.market_summary_dated),
         "valuation_snapshot": file_status(paths.valuation_snapshot),
         "analyst_report": file_status(paths.yfinance_analyst_report),
-        "verified_report": file_status(paths.yfinance_verified_report),
-        "strategy_verified_report": file_status(paths.yfinance_strategy_verified_report),
         "final_report": file_status(paths.yfinance_final_report),
-        "final_validation": file_status(paths.yfinance_final_validation),
-        "verification_summary": read_nested_value(paths.yfinance_verified_report, ("summary",)),
     }
     global_outputs = {
         "run_manifest": file_status(paths.run_manifest),
@@ -71,10 +58,8 @@ def collect_token_usage(
 
     items = {
         "financial_analyst": _usage_by_field(paths.financial_agent_pipeline_dir / "pipeline_financial_analyst_report_trace.json"),
-        "financial_sy": _usage_by_field(paths.financial_agent_pipeline_dir / "pipeline_sy_validation_trace.json"),
         "news_period_summary": _usage_at_path(paths.news_llm_period_summaries, ("usage", "total")),
         "news_analysis": _usage_at_path(paths.news_handoff, ("usage",)),
-        "news_sy": _usage_at_path(paths.news_sy_validations, ("llm_usage",)),
     }
     total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     for usage in items.values():
@@ -84,11 +69,8 @@ def collect_token_usage(
         "source": "legacy_agent_artifacts",
         "recorded_total": total,
         "by_step": items,
-        "untracked_steps": [
-            "yfinance_analyst_report",
-            "yfinance_sy_validation",
-        ],
-        "note": "YFinance report/SY usage was not persisted by the current YFinance implementation, so recorded_total is a lower bound.",
+        "untracked_steps": ["yfinance_analyst_report"],
+        "note": "YFinance report usage was not persisted by the current implementation, so recorded_total is a lower bound.",
     }
 
 

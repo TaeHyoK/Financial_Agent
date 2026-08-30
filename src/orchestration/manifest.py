@@ -39,7 +39,7 @@ def write_financial_runtime_manifest(
 ) -> None:
     manifest = {
         "agent_name": "Financial Analyst Agent",
-        "agent_version": "3.4",
+        "agent_version": "4.0",
         "target_entity": {
             "company_name": config.company_name,
             "ticker": config.ticker,
@@ -50,17 +50,17 @@ def write_financial_runtime_manifest(
             "dart_main": str(paths.dart_main),
             "dart_master": str(paths.dart_master),
             "yfinance_market_summary": "" if primary_data_only else str(paths.market_summary),
-            "news_company_top10": "" if primary_data_only else str(paths.news_company_top10),
+            "news_weekly_summaries": "" if primary_data_only else str(paths.news_llm_period_summaries),
         },
         "input_roles": {
             "dart_main": "primary_financial_anchor",
             "dart_master": "primary_detailed_statement_evidence",
             "yfinance_market_summary": "market_context",
-            "news_company_top10": "company_related_news_secondary_data",
+            "news_weekly_summaries": "weekly_news_secondary_context",
         },
         "source_notes": {
-            "news_granularity": "day",
-            "news_window": "The ten highest-ranked company-related News events are used as Financial subdata.",
+            "news_granularity": "week",
+            "news_window": "Weekly summaries from the 90-day News window are used as Financial subdata.",
             "market_window": "Derived from config.date_range by default; market_summary is selected_date only.",
             "dart_window": (
                 "Latest regular filing available by selected_date, prior-year same-period filing, "
@@ -70,7 +70,7 @@ def write_financial_runtime_manifest(
         },
         "output_contract": {
             "format": "json",
-            "mode": "financial_report_with_sy_handoff",
+            "mode": "financial_fact_preparation_with_llm_interpretation",
             "language": "ko",
             "investment_decision_allowed": False,
         },
@@ -88,30 +88,23 @@ def build_outputs_manifest(paths: RunPaths) -> dict[str, Any]:
             "dart_main": str(paths.dart_main),
             "dart_master": str(paths.dart_master),
             "dart_lightweight": str(paths.dart_lightweight),
-            "verified_report": str(paths.financial_verified_report),
+            "analyst_report": str(paths.financial_analyst_report),
             "final_report": str(paths.financial_final_report),
-            "final_validation": str(paths.financial_final_validation),
             "agent_pipeline_dir": str(paths.financial_agent_pipeline_dir),
         },
         "news": {
             "context_exports": str(paths.news_context_export_dir),
             "llm_period_summaries": str(paths.news_llm_period_summaries),
-            "company_related_news_top10": str(paths.news_company_top10),
+            "company_related_news_top20": str(paths.news_company_top20),
             "handoff": str(paths.news_handoff),
-            "sy_validations": str(paths.news_sy_validations),
-            "verified_report": str(paths.news_verified_report),
             "final_report": str(paths.news_final_report),
-            "final_validation": str(paths.news_final_validation),
         },
         "yfinance": {
             "market_summary": str(paths.market_summary),
             "market_summary_dated": str(paths.market_summary_dated),
             "valuation_snapshot": str(paths.valuation_snapshot),
             "analyst_report": str(paths.yfinance_analyst_report),
-            "verified_report": str(paths.yfinance_verified_report),
-            "strategy_verified_report": str(paths.yfinance_strategy_verified_report),
             "final_report": str(paths.yfinance_final_report),
-            "final_validation": str(paths.yfinance_final_validation),
         },
     }
 

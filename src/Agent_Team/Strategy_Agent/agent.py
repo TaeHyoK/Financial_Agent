@@ -20,6 +20,7 @@ from shared.llm_clients import (
     is_transient_transport_error,
 )
 from orchestration.ablation import config_from_mapping
+from orchestration.config import agent_output_dir
 
 from . import AGENT_DIR, DEFAULT_TARGET_CONFIG, OUTPUT_ROOT
 from .contracts_v2 import (
@@ -40,7 +41,18 @@ from .contracts_v4 import (
     DECISION_VERSION as DECISION_VERSION_V4,
     STRATEGY_CACHE_VERSION as STRATEGY_CACHE_VERSION_V4,
     build_strategy_context_package_v4,
+    finalize_strategy_decision_v4,
     strategy_decision_response_format_v4,
+    validate_strategy_decision_v4,
+)
+from .contracts_v5 import (
+    CONTEXT_VERSION as CONTEXT_VERSION_V5,
+    DECISION_VERSION as DECISION_VERSION_V5,
+    STRATEGY_CACHE_VERSION as STRATEGY_CACHE_VERSION_V5,
+    align_strategy_decision_v5_evidence_plan,
+    build_strategy_context_package_v5,
+    strategy_decision_response_format_v5,
+    validate_strategy_decision_v5,
 )
 
 
@@ -73,17 +85,18 @@ DECISION_HORIZON_PROFILES = {
     "short_term": {
         "horizon": "1개월",
         "policy": (
-            "- 향후 1개월 단기 관점에서 판단한다. 최근 가격·거래량·KOSPI 상대성과, 현재 밸류에이션과 "
-            "기간 안에 확인 가능한 촉매·위험을 우선한다. 장기 사업 가능성과 재무 기여가 확인되지 않은 "
-            "뉴스는 보조 문맥으로만 사용한다.\n"
+            "- 향후 1개월 단기 관점에서 판단한다. 기준일까지 확인된 최근 가격·거래량·시장 기준지표 "
+            "상대성과, 현재 가치평가, 보도된 사업 사건의 단기 의미를 비교한다. 재무 기여가 수치로 "
+            "확인되지 않은 뉴스도 심리·수급·운영 위험에 직접 관련되면 판단에 사용할 수 있지만, "
+            "확인된 실적 기여로 바꾸어 쓰지 않는다.\n"
             "- `decision.horizon`은 정확히 `1개월`로 반환한다."
         ),
     },
     "medium_term": {
         "horizon": "3개월",
         "policy": (
-            "- 향후 3개월 중기 관점에서 판단한다. 최근 시장 흐름과 밸류에이션을 보되 다음 실적 확인과 "
-            "구체화 가능한 촉매·위험, 실적 및 현금흐름의 지속 가능성을 함께 평가한다. 재무 기여가 "
+            "- 향후 3개월 중기 관점에서 판단한다. 기준일까지 확인된 시장 흐름과 가치평가, 촉매·위험, "
+            "실적 및 현금흐름의 지속 가능성을 함께 평가한다. 재무 기여가 "
             "확인되지 않은 기대는 결정적 근거로 승격하지 않는다.\n"
             "- `decision.horizon`은 정확히 `3개월`로 반환한다."
         ),
@@ -159,9 +172,26 @@ def run_strategy_agent(
 ) -> dict[str, Any]:
     """Run one Strategy contract without mixing downstream artifacts."""
 
-    version = (packet_version or os.getenv("STRATEGY_PACKET_VERSION") or "v4").strip().lower()
-    if version not in {"v1", "v2", "v3", "v4"}:
-        raise ValueError("packet_version must be v1, v2, v3, or v4.")
+    version = (packet_version or os.getenv("STRATEGY_PACKET_VERSION") or "v5").strip().lower()
+    if version not in {"v1", "v2", "v3", "v4", "v5"}:
+        raise ValueError("packet_version must be v1, v2, v3, v4, or v5.")
+    if version == "v5":
+        return _run_strategy_agent_v5(
+            target_company_name=target_company_name,
+            target_run_key=target_run_key,
+            target_financial_path=target_financial_path,
+            target_news_path=target_news_path,
+            target_yfinance_path=target_yfinance_path,
+            output_dir=output_dir,
+            peer_comparison_path=peer_comparison_path,
+            peer_analysis_path=peer_analysis_path,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            llm_timeout=llm_timeout,
+            env_file=env_file,
+            ablation_config=ablation_config,
+            decision_horizon_profile=decision_horizon_profile,
+        )
     if version == "v4":
         return _run_strategy_agent_v4(
             target_company_name=target_company_name,
@@ -215,7 +245,7 @@ def run_strategy_agent(
         )
     if decision_horizon_profile != DEFAULT_DECISION_HORIZON_PROFILE:
         raise ValueError(
-            "decision_horizon_profile is supported only by packet_version=v2, v3, or v4."
+            "decision_horizon_profile is supported only by packet_version=v2, v3, v4, or v5."
         )
     report = _run_strategy_agent_v1(
         target_company_name=target_company_name,
@@ -754,6 +784,11 @@ def _run_strategy_agent_v4(
         required_horizon=str(profile["horizon"]),
         brief_key="strategy_brief",
     )
+    validate_strategy_decision_v4(
+        decision_output,
+        context=context,
+        required_horizon=str(profile["horizon"]),
+    )
     if failure_report_path.exists():
         failure_report_path.unlink()
     strategy_report = build_strategy_report_projection_v4(
@@ -785,6 +820,168 @@ def _run_strategy_agent_v4(
     _remove_deprecated_v1_strategy_artifacts(output_dir)
     _remove_strategy_v2_decision_artifacts(output_dir)
     _remove_strategy_v3_artifacts(output_dir)
+    _remove_strategy_v5_artifacts(output_dir)
+    return strategy_report
+
+
+def _run_strategy_agent_v5(
+    *,
+    target_company_name: str,
+    target_run_key: str,
+    target_financial_path: Path,
+    target_news_path: Path,
+    target_yfinance_path: Path,
+    output_dir: Path,
+    peer_comparison_path: Path | None,
+    peer_analysis_path: Path | None,
+    llm_provider: str,
+    llm_model: str,
+    llm_timeout: int,
+    env_file: Path | None,
+    ablation_config: dict[str, Any] | None,
+    decision_horizon_profile: str,
+) -> dict[str, Any]:
+    """Run Strategy v5 with separate decision and report-context evidence."""
+
+    if env_file:
+        load_env_file(env_file)
+    profile = resolve_decision_horizon_profile(decision_horizon_profile)
+    output_dir = output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    input_bundle = build_strategy_input_bundle(
+        target_company_name=target_company_name,
+        target_run_key=target_run_key,
+        target_financial_path=target_financial_path,
+        target_news_path=target_news_path,
+        target_yfinance_path=target_yfinance_path,
+        peer_comparison_path=peer_comparison_path,
+        peer_analysis_path=peer_analysis_path,
+        ablation_config=ablation_config,
+    )
+    validate_input_bundle(input_bundle)
+    save_json(output_dir / "strategy_input_bundle.json", input_bundle)
+    resolved_model = resolve_llm_model(resolve_llm_provider(llm_provider), llm_model)
+    packet, provenance, packet_telemetry, _input_contract = build_compact_strategy_packet_v2(
+        input_bundle,
+        model=resolved_model,
+    )
+    context = build_strategy_context_package_v5(packet, input_bundle=input_bundle)
+    strategy_context_mode = str(
+        (input_bundle.get("ablation") or {}).get("strategy_context_mode")
+        or "compact_cards"
+    )
+    generation_payload = build_strategy_generation_payload_v5(
+        input_bundle=input_bundle,
+        context=context,
+        context_mode=strategy_context_mode,
+    )
+    generation_prompt = decision_generation_prompt_v5(
+        decision_horizon_profile,
+        context_mode=strategy_context_mode,
+    )
+    save_json(output_dir / "strategy_compact_packet_v2.json", packet)
+    save_json(output_dir / "strategy_packet_provenance_v2.json", provenance)
+    save_json(output_dir / "strategy_context_package_v5.json", context)
+    save_json(output_dir / "strategy_generation_context_v5.json", generation_payload)
+    context_telemetry = {
+        "context_version": CONTEXT_VERSION_V5,
+        "decision_contract": DECISION_VERSION_V5,
+        "strategy_context_mode": strategy_context_mode,
+        "available_card_count": len(context.get("evidence_cards") or {}),
+        "serialized_bytes": len(compact_json(context).encode("utf-8")),
+        "estimated_input_tokens": estimate_text_tokens(
+            compact_json(context),
+            model=resolved_model,
+        ),
+        "source_packet_telemetry": packet_telemetry,
+    }
+    save_json(output_dir / "strategy_context_telemetry_v5.json", context_telemetry)
+
+    decision_path = output_dir / "strategy_decision_output_v5.json"
+    cache_path = output_dir / "strategy_decision_cache_v5.json"
+    fingerprint = strategy_v5_fingerprint(
+        context,
+        llm_provider=llm_provider,
+        llm_model=llm_model,
+        decision_horizon_profile=decision_horizon_profile,
+        generation_payload=generation_payload,
+        generation_prompt=generation_prompt,
+    )
+    decision_output = load_cached_llm_output(decision_path, cache_path, fingerprint)
+    failure_report_path = output_dir / "strategy_failure_report_v5.json"
+    if decision_output is None:
+        try:
+            decision_output = run_decision_agent_v5(
+                context,
+                llm_provider=llm_provider,
+                llm_model=llm_model,
+                llm_timeout=llm_timeout,
+                decision_horizon_profile=decision_horizon_profile,
+                generation_payload=generation_payload,
+                generation_prompt=generation_prompt,
+            )
+        except Exception as exc:
+            save_json(
+                failure_report_path,
+                {
+                    "status": "fail",
+                    "stage": "decision_generation",
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                    "fingerprint": fingerprint,
+                    "decision_horizon_profile": decision_horizon_profile,
+                    "required_horizon": profile["horizon"],
+                },
+            )
+            raise
+    decision_output = align_strategy_decision_v5_evidence_plan(
+        decision_output,
+        context=context,
+    )
+    _require_runtime_decision_contract(
+        decision_output,
+        expected_version=DECISION_VERSION_V5,
+        required_horizon=str(profile["horizon"]),
+        brief_key="strategy_brief",
+    )
+    validation = validate_strategy_decision_v5(
+        decision_output,
+        context=context,
+        required_horizon=str(profile["horizon"]),
+    )
+    if failure_report_path.exists():
+        failure_report_path.unlink()
+    strategy_report = build_strategy_report_projection_v5(
+        decision_output,
+        input_bundle=input_bundle,
+        context=context,
+    )
+    save_json(decision_path, decision_output)
+    save_json(
+        cache_path,
+        {"fingerprint": fingerprint, "contract_version": DECISION_VERSION_V5},
+    )
+    save_json(
+        output_dir / "strategy_decision_profile_v5.json",
+        {
+            "profile": decision_horizon_profile,
+            "required_horizon": profile["horizon"],
+            "prompt_sha256": hashlib.sha256(
+                decision_prompt_v5(decision_horizon_profile).encode("utf-8")
+            ).hexdigest(),
+            "integrity_validation": validation,
+        },
+    )
+    _remove_runtime_validation_artifacts(output_dir)
+    save_json(output_dir / "strategy_report.json", strategy_report)
+    save_text(
+        output_dir / "strategy_report.md",
+        render_strategy_projection_markdown_v5(strategy_report),
+    )
+    _remove_deprecated_v1_strategy_artifacts(output_dir)
+    _remove_strategy_v2_decision_artifacts(output_dir)
+    _remove_strategy_v3_artifacts(output_dir)
+    _remove_strategy_v4_artifacts(output_dir)
     return strategy_report
 
 
@@ -883,6 +1080,22 @@ def _remove_strategy_v4_artifacts(output_dir: Path) -> None:
         "strategy_semantic_validation_v4.json",
         "strategy_failure_report_v4.json",
         "strategy_decision_output_v4.failed.json",
+    ):
+        path = output_dir / filename
+        if path.exists():
+            path.unlink()
+
+
+def _remove_strategy_v5_artifacts(output_dir: Path) -> None:
+    for filename in (
+        "strategy_context_package_v5.json",
+        "strategy_generation_context_v5.json",
+        "strategy_context_telemetry_v5.json",
+        "strategy_decision_output_v5.json",
+        "strategy_decision_cache_v5.json",
+        "strategy_decision_profile_v5.json",
+        "strategy_failure_report_v5.json",
+        "strategy_decision_output_v5.failed.json",
     ):
         path = output_dir / filename
         if path.exists():
@@ -1182,6 +1395,9 @@ def build_strategy_report_projection_v4(
         "strategy_brief": deepcopy(decision_output.get("strategy_brief") or {}),
         "rationale": deepcopy(decision_output.get("rationale") or []),
         "basis_cards": selected_basis,
+        "target_peer_context": deepcopy(
+            decision_output.get("target_peer_context") or []
+        ),
         "key_risks": deepcopy(decision_output.get("key_risks") or []),
         "coverage_summary": deepcopy(context.get("coverage_summary") or {}),
     }
@@ -1209,6 +1425,15 @@ def render_strategy_projection_markdown_v4(report: dict[str, Any]) -> str:
     for item in report.get("rationale") or []:
         if isinstance(item, dict):
             lines.append(f"- {item.get('point')}")
+    peer_context = [
+        item
+        for item in report.get("target_peer_context") or []
+        if isinstance(item, dict)
+    ]
+    if peer_context:
+        lines.extend(["", "## 대상기업 판단의 비교 문맥"])
+        for item in peer_context:
+            lines.append(f"- {item.get('target_implication')}")
     lines.extend(
         [
             f"- 현재 가격: {brief.get('price_context')}",
@@ -1240,6 +1465,115 @@ def render_strategy_projection_markdown_v4(report: dict[str, Any]) -> str:
         ]
     )
     return "\n".join(lines).rstrip() + "\n"
+
+
+def build_strategy_report_projection_v5(
+    decision_output: dict[str, Any],
+    *,
+    input_bundle: dict[str, Any],
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    """Project the v5 decision and both evidence tiers for downstream Writer use."""
+
+    target = require_dict(input_bundle.get("target_company"), "target_company")
+    cards = require_dict(context.get("evidence_cards"), "evidence_cards")
+    plan = require_dict(decision_output.get("evidence_plan"), "evidence_plan")
+
+    def enrich(items: Any) -> list[dict[str, Any]]:
+        result = []
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            card_key = str(item.get("card_key") or "")
+            card = cards.get(card_key) if isinstance(cards.get(card_key), dict) else {}
+            result.append(
+                {
+                    **deepcopy(item),
+                    "label": card.get("label"),
+                    "domain": card.get("domain"),
+                }
+            )
+        return result
+
+    return {
+        "agent_name": "Strategy Agent",
+        "output_version": "9.0",
+        "contract_version": DECISION_VERSION_V5,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "target_company_name": target.get("company_name"),
+        "target_run_key": target.get("run_key"),
+        "strategy_brief": deepcopy(decision_output.get("strategy_brief") or {}),
+        "evidence_plan": {
+            "decision_basis_cards": enrich(plan.get("decision_basis_cards")),
+            "report_context_cards": enrich(plan.get("report_context_cards")),
+            "coverage_assessment": deepcopy(plan.get("coverage_assessment") or {}),
+        },
+        "report_insights": deepcopy(decision_output.get("report_insights") or []),
+        "key_risks": deepcopy(decision_output.get("key_risks") or []),
+        "limitation_requirements": deepcopy(
+            context.get("limitation_requirements") or []
+        ),
+        "data_limitations": deepcopy(context.get("data_limitations") or []),
+        "coverage_summary": deepcopy(context.get("coverage_summary") or {}),
+    }
+
+
+def render_strategy_projection_markdown_v5(report: dict[str, Any]) -> str:
+    """Render the v5 Strategy output without internal evidence identifiers."""
+
+    brief = require_dict(report.get("strategy_brief"), "strategy_brief")
+    level_names = {"high": "높음", "medium": "보통", "low": "낮음"}
+
+    def linked_text(key: str) -> str:
+        return str(require_dict(brief.get(key), f"strategy_brief.{key}").get("text") or "")
+
+    lines = [
+        f"# {report.get('target_company_name')} 전략 판단",
+        "",
+        f"판단 기간: {brief.get('horizon')}",
+        "",
+        "## 결론",
+        linked_text("thesis"),
+        "",
+        "## 현재 대응",
+        f"- 기존 편입자: {linked_text('existing_position_response')}",
+        f"- 신규 접근자: {linked_text('new_entry_response')}",
+        f"- 가격 판단: {linked_text('price_assessment')}",
+        "",
+        "## 핵심 분석",
+    ]
+    insights = [item for item in report.get("report_insights") or [] if isinstance(item, dict)]
+    if insights:
+        for item in insights:
+            lines.append(f"- {item.get('text')}")
+    else:
+        lines.append("- 별도의 설명용 분석을 추가하지 않았다.")
+    lines.extend(["", "## 반대 논리", linked_text("counterview"), "", "## 주요 위험"])
+    risks = [item for item in report.get("key_risks") or [] if isinstance(item, dict)]
+    if risks:
+        for item in risks:
+            lines.append(
+                f"- {item.get('risk_title')}: {item.get('risk')} — {item.get('current_implication')}"
+            )
+    else:
+        lines.append("- 이번 판단에서 별도의 주요 위험을 제시하지 않았다.")
+    lines.extend(
+        [
+            "",
+            "## 판단 한계",
+            linked_text("decision_limitation"),
+            "",
+            (
+                "자료 충실도: "
+                f"{level_names.get(str(brief.get('evidence_sufficiency')), brief.get('evidence_sufficiency'))} · "
+                "판단 확신도: "
+                f"{level_names.get(str(brief.get('decision_confidence')), brief.get('decision_confidence'))}"
+            ),
+        ]
+    )
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def strategy_v2_fingerprint(
     packet: dict[str, Any],
     *,
@@ -1326,6 +1660,36 @@ def strategy_v4_fingerprint(
     return hashlib.sha256(compact_json(payload, sort_keys=True).encode("utf-8")).hexdigest()
 
 
+def strategy_v5_fingerprint(
+    context: dict[str, Any],
+    *,
+    llm_provider: str,
+    llm_model: str,
+    decision_horizon_profile: str = DEFAULT_DECISION_HORIZON_PROFILE,
+    generation_payload: dict[str, Any] | None = None,
+    generation_prompt: str | None = None,
+) -> str:
+    """Fingerprint the v5 context, prompt, schema, provider, and model."""
+
+    profile = resolve_decision_horizon_profile(decision_horizon_profile)
+    payload = {
+        "cache_version": STRATEGY_CACHE_VERSION_V5,
+        "contract_version": DECISION_VERSION_V5,
+        "context": context,
+        "generation_payload": generation_payload
+        or {"strategy_context_package_v5": context},
+        "decision_horizon_profile": decision_horizon_profile,
+        "prompt": generation_prompt or decision_prompt_v5(decision_horizon_profile),
+        "response_format": strategy_decision_response_format_v5(
+            context,
+            required_horizon=str(profile["horizon"]),
+        ),
+        "provider": llm_provider,
+        "model": llm_model,
+    }
+    return hashlib.sha256(compact_json(payload, sort_keys=True).encode("utf-8")).hexdigest()
+
+
 def generate_strategy_report(
     *,
     run_key: str | None = None,
@@ -1355,11 +1719,17 @@ def generate_strategy_report(
         raise ValueError("target_run_key is required.")
     target_company_name = identity.get("company_name") or company_from_run_key(target_run_key)
     paths = {
-        "financial": financial_report or output_root / "Financial" / target_run_key / "final_report.json",
-        "news": news_report or output_root / "News" / target_run_key / "final_report.json",
-        "yfinance": yfinance_report or output_root / "Y_Finance" / target_run_key / "final_report.json",
+        "financial": financial_report or agent_output_dir(output_root, target_run_key, "Financial") / "final_report.json",
+        "news": news_report or agent_output_dir(output_root, target_run_key, "News") / "final_report.json",
+        "yfinance": yfinance_report or agent_output_dir(output_root, target_run_key, "Y_Finance") / "final_report.json",
     }
-    output_dir = (output_json.parent if output_json else output_md.parent if output_md else output_root / "Strategy" / target_run_key)
+    output_dir = (
+        output_json.parent
+        if output_json
+        else output_md.parent
+        if output_md
+        else agent_output_dir(output_root, target_run_key, "Strategy")
+    )
     report = run_strategy_agent(
         target_company_name=target_company_name,
         target_run_key=target_run_key,
@@ -1408,10 +1778,6 @@ def build_strategy_input_bundle(
     target_financial_path = target_financial_path.expanduser().resolve()
     target_news_path = target_news_path.expanduser().resolve()
     target_yfinance_path = target_yfinance_path.expanduser().resolve()
-    target_financial_path = resolve_preferred_report_path(target_financial_path, "financial")
-    target_news_path = resolve_preferred_report_path(target_news_path, "news")
-    target_yfinance_path = resolve_preferred_report_path(target_yfinance_path, "yfinance")
-
     ablation = config_from_mapping(ablation_config)
     raw_financial = load_required_json(target_financial_path, "Target Financial")
     raw_news = load_required_json(target_news_path, "Target News")
@@ -1424,21 +1790,9 @@ def build_strategy_input_bundle(
     financial = all_reports["financial"] if "financial" in ablation.included_domains else {}
     news = all_reports["news"] if "news" in ablation.included_domains else {}
     yfinance = all_reports["yfinance"] if "yfinance" in ablation.included_domains else {}
-    financial_validation = (
-        load_optional_validation_evidence(target_financial_path, "financial")
-        if "financial" in ablation.included_domains
-        else {"source_path": "", "summary": {}, "claims": []}
-    )
-    news_validation = (
-        load_optional_validation_evidence(target_news_path, "news")
-        if "news" in ablation.included_domains
-        else {"source_path": "", "summary": {}, "claims": []}
-    )
-    yfinance_validation = (
-        load_optional_validation_evidence(target_yfinance_path, "yfinance")
-        if "yfinance" in ablation.included_domains
-        else {"source_path": "", "summary": {}, "claims": []}
-    )
+    financial_validation = {"source_path": "", "summary": {}, "claims": []}
+    news_validation = {"source_path": "", "summary": {}, "claims": []}
+    yfinance_validation = {"source_path": "", "summary": {}, "claims": []}
     target_company = infer_target_company(
         target_company_name=target_company_name,
         target_run_key=target_run_key,
@@ -2028,7 +2382,7 @@ def load_financial_evidence_catalog(report: dict[str, Any]) -> dict[str, Any]:
 
     catalog: dict[str, Any] = {}
     source_date = str(report.get("as_of_date") or "")
-    handoff = report.get("sy_handoff") or {}
+    handoff = report.get("strategy_handoff") or {}
     for item in handoff.get("key_evidence") or []:
         if not isinstance(item, dict) or str(item.get("source") or "").upper() != "DART":
             continue
@@ -2225,10 +2579,50 @@ def run_decision_agent_v4(
         llm_model=llm_model,
         llm_timeout=llm_timeout,
         system_message=(
-            "You are the lead financial Strategy Agent. Select evidence, make the "
-            "investment judgment, and return one grounded JSON object."
+            "You are the lead financial Strategy Agent. Derive the current response "
+            "from the supplied evidence without a default investment direction. "
+            "Return one grounded JSON object."
         ),
         response_format=strategy_decision_response_format_v4(
+            context,
+            required_horizon=str(profile["horizon"]),
+        ),
+    )
+    output = finalize_strategy_decision_v4(output)
+    brief = output.get("strategy_brief") if isinstance(output, dict) else None
+    actual_horizon = str(brief.get("horizon") if isinstance(brief, dict) else "")
+    if actual_horizon != profile["horizon"]:
+        raise ValueError(
+            f"Strategy decision horizon mismatch: expected={profile['horizon']}, "
+            f"actual={actual_horizon}"
+        )
+    return output
+
+
+def run_decision_agent_v5(
+    context: dict[str, Any],
+    *,
+    llm_provider: str,
+    llm_model: str,
+    llm_timeout: int,
+    decision_horizon_profile: str = DEFAULT_DECISION_HORIZON_PROFILE,
+    generation_payload: dict[str, Any] | None = None,
+    generation_prompt: str | None = None,
+) -> dict[str, Any]:
+    """Call the v5 Strategy LLM; semantic judgment remains model-authored."""
+
+    profile = resolve_decision_horizon_profile(decision_horizon_profile)
+    output = call_llm_json(
+        prompt=generation_prompt or decision_prompt_v5(decision_horizon_profile),
+        payload=generation_payload or {"strategy_context_package_v5": context},
+        llm_provider=llm_provider,
+        llm_model=llm_model,
+        llm_timeout=llm_timeout,
+        system_message=(
+            "You are the lead financial Strategy Agent. Select decision evidence and "
+            "report context separately, then return one grounded Korean JSON object."
+        ),
+        response_format=strategy_decision_response_format_v5(
             context,
             required_horizon=str(profile["horizon"]),
         ),
@@ -2361,6 +2755,55 @@ def decision_generation_prompt_v4(
         + "\n\n## 전체 문맥 제외 실험\n"
         + "이번 실험에서는 하위 에이전트 보고서와 검증 자료 전체도 추가로 제공된다. 근거 연결은 "
         + "strategy_context_package_v4.evidence_cards 안의 카드로 한정하고, 추가 문맥에만 존재하는 "
+        + "사실이나 수치를 보고서에 새로 쓰지 않는다."
+    )
+
+
+def build_strategy_generation_payload_v5(
+    *,
+    input_bundle: dict[str, Any],
+    context: dict[str, Any],
+    context_mode: str,
+) -> dict[str, Any]:
+    """Build the v5 generation payload for production and ablation runs."""
+
+    payload = {"strategy_context_package_v5": context}
+    if context_mode == "compact_cards":
+        return payload
+    if context_mode != "full_reports":
+        raise ValueError(f"Unknown Strategy context mode: {context_mode}")
+    payload["full_context_ablation"] = {
+        "target_company": deepcopy(input_bundle.get("target_company") or {}),
+        "target_reports": deepcopy(input_bundle.get("target_reports") or {}),
+        "target_validation_evidence": deepcopy(
+            input_bundle.get("target_validation_evidence") or {}
+        ),
+        "peer_comparison": deepcopy(input_bundle.get("peer_comparison") or {}),
+        "peer_comparison_analysis": deepcopy(
+            input_bundle.get("peer_comparison_analysis") or {}
+        ),
+        "decision_constraints": deepcopy(input_bundle.get("decision_constraints") or []),
+    }
+    return payload
+
+
+def decision_generation_prompt_v5(
+    decision_horizon_profile: str,
+    *,
+    context_mode: str,
+) -> str:
+    """Render the v5 prompt and optional full-context ablation instruction."""
+
+    prompt = decision_prompt_v5(decision_horizon_profile)
+    if context_mode == "compact_cards":
+        return prompt
+    if context_mode != "full_reports":
+        raise ValueError(f"Unknown Strategy context mode: {context_mode}")
+    return (
+        prompt
+        + "\n\n## 전체 문맥 제외 실험\n"
+        + "이번 실험에서는 하위 에이전트 보고서와 검증 자료 전체도 추가로 제공된다. 근거 연결은 "
+        + "strategy_context_package_v5.evidence_cards 안의 카드로 한정하고, 추가 문맥에만 존재하는 "
         + "사실이나 수치를 보고서에 새로 쓰지 않는다."
     )
 
@@ -3123,101 +3566,8 @@ def normalize_observed_risks(value: Any) -> dict[str, list[dict[str, str]]]:
     return {"observed_risks": items}
 
 
-def resolve_preferred_report_path(report_path: Path, domain: str) -> Path:
-    """Prefer latest verified handoff/report artifacts over stale top-level aliases."""
-
-    path = report_path.expanduser().resolve()
-    candidates = preferred_report_candidates(path, domain)
-    return newest_existing_artifact(path, candidates)
-
-
-def preferred_report_candidates(report_path: Path, domain: str) -> list[Path]:
-    """Return source-of-truth report candidates for a domain."""
-
-    if domain == "news":
-        if report_path.name == "news_agent_verified_handoff.json":
-            return [report_path]
-        return [
-            report_path.parent / "output" / "sy_agent" / "news_agent_verified_handoff.json",
-            report_path,
-        ]
-    if domain == "financial":
-        if report_path.name == "pipeline_verified_financial_report_output.json":
-            return [report_path]
-        return [
-            report_path.parent / "agent_pipeline" / "pipeline_verified_financial_report_output.json",
-            report_path,
-        ]
-    if domain == "yfinance":
-        if report_path.name == "yfinance_verified_report.json":
-            return [report_path]
-        return [
-            report_path.parent / "yfinance_verified_report.json",
-            report_path,
-        ]
-    return [report_path]
-
-
-def newest_existing_artifact(default_path: Path, candidates: list[Path]) -> Path:
-    """Choose the newest existing candidate, falling back to the requested path."""
-
-    existing = [path.expanduser().resolve() for path in candidates if path.expanduser().resolve().exists()]
-    if not existing:
-        return default_path.expanduser().resolve()
-    return max(existing, key=lambda path: path.stat().st_mtime)
-
-
-def load_optional_validation_evidence(report_path: Path, domain: str) -> dict[str, Any]:
-    """Load adjacent final_validation.json as compact claim evidence if present."""
-
-    validation_path = resolve_preferred_validation_path(report_path, domain)
-    if not validation_path.exists():
-        return {"source_path": "", "summary": {}, "claims": []}
-    payload = load_required_json(validation_path, f"Target {domain} validation")
-    return compact_validation_evidence(payload, domain=domain, source_path=validation_path)
-
-
-def resolve_preferred_validation_path(report_path: Path, domain: str) -> Path:
-    """Prefer latest SY validation artifacts over stale top-level aliases."""
-
-    path = report_path.expanduser().resolve()
-    candidates = preferred_validation_candidates(path, domain)
-    return newest_existing_artifact(path.parent / "final_validation.json", candidates)
-
-
-def preferred_validation_candidates(report_path: Path, domain: str) -> list[Path]:
-    """Return source-of-truth validation candidates for a domain."""
-
-    if domain == "news":
-        if report_path.parent.name == "sy_agent":
-            return [
-                report_path.parent / "sy_claim_validations.json",
-                report_path.parent.parent.parent / "final_validation.json",
-            ]
-        return [
-            report_path.parent / "output" / "sy_agent" / "sy_claim_validations.json",
-            report_path.parent / "final_validation.json",
-        ]
-    if domain == "financial":
-        if report_path.parent.name == "agent_pipeline":
-            return [
-                report_path.parent / "pipeline_sy_validation_output.json",
-                report_path.parent.parent / "final_validation.json",
-            ]
-        return [
-            report_path.parent / "agent_pipeline" / "pipeline_sy_validation_output.json",
-            report_path.parent / "final_validation.json",
-        ]
-    if domain == "yfinance":
-        return [
-            report_path.parent / "final_validation.json",
-            report_path.parent / "sy_verified_yfinance_report.json",
-        ]
-    return [report_path.parent / "final_validation.json"]
-
-
 def sanitize_strategy_input_report(report: dict[str, Any], domain: str) -> dict[str, Any]:
-    """Keep decision evidence while removing upstream validation operations."""
+    """Keep only the bounded domain-agent evidence used by Strategy."""
 
     cleaned = strip_operational_validation_content(deepcopy(report))
     return compact_strategy_input_report(cleaned, domain)
@@ -3237,7 +3587,7 @@ def compact_strategy_input_report(report: dict[str, Any], domain: str) -> dict[s
             "main_view",
             "financial_statement_view",
             "detailed_analysis",
-            "sy_handoff",
+            "strategy_handoff",
             "secondary_context",
             "secondary_context_assessment",
         ):
@@ -3269,11 +3619,10 @@ def compact_strategy_input_report(report: dict[str, Any], domain: str) -> dict[s
 
 
 def strip_operational_validation_content(value: Any) -> Any:
-    """Recursively remove SY/rewrite mechanics from reader-facing evidence."""
+    """Recursively remove obsolete workflow metadata from report evidence."""
 
     operational_keys = {
         "report_status",
-        "sy_validation",
         "verification_summary",
         "revision_brief",
         "rewrite_history",
@@ -3292,118 +3641,8 @@ def strip_operational_validation_content(value: Any) -> Any:
     return value
 
 
-def compact_validation_evidence(payload: dict[str, Any], *, domain: str, source_path: Path) -> dict[str, Any]:
-    """Keep only Strategy-useful validation evidence from large SY outputs."""
-
-    claims = validation_claims(payload, domain)
-    compact_claims = [
-        compact_validation_claim(claim, domain=domain)
-        for claim in claims
-        if isinstance(claim, dict) and first_non_empty(claim.get("claim_id"), claim.get("section"), claim.get("claim"))
-    ]
-    evidence_use_counts = {
-        status: sum(1 for claim in compact_claims if claim.get("evidence_use") == status)
-        for status in ("strong", "context_only", "exclude")
-    }
-    return {
-        "source_path": str(source_path.expanduser().resolve()),
-        "summary": {
-            "claim_count": len(compact_claims),
-            "evidence_use_counts": evidence_use_counts,
-        },
-        "claims": compact_claims,
-    }
-
-
-def validation_claims(payload: dict[str, Any], domain: str) -> list[dict[str, Any]]:
-    """Return validation claims across the different agent validation schemas."""
-
-    if isinstance(payload.get("claim_validations"), list):
-        return payload["claim_validations"]
-    if isinstance(payload.get("claim_validation"), list):
-        return payload["claim_validation"]
-    if domain == "yfinance":
-        claims: list[dict[str, Any]] = []
-        for key in (
-            "verified_claims",
-            "context_only_claims",
-            "revised_claims",
-            "weakened_claims",
-            "excluded_claims",
-            "hallucination_candidates",
-            "removed_claims",
-        ):
-            claims.extend(item for item in ensure_list(payload.get(key)) if isinstance(item, dict))
-        return claims
-    return []
-
-
-def compact_validation_claim(claim: dict[str, Any], *, domain: str) -> dict[str, Any]:
-    """Normalize one validation claim into a small evidence ledger row."""
-
-    raw_decision = clean_text(claim.get("decision"))
-    support_level = clean_text(claim.get("support_level"))
-    result = {
-        "claim_id": first_non_empty(claim.get("claim_id"), claim.get("section")),
-        "section": first_non_empty(claim.get("section"), claim.get("section_path")),
-        "claim": first_non_empty(claim.get("claim_ko"), claim.get("claim")),
-        "evidence_ids": validation_evidence_ids(claim, domain),
-        "claim_kind": clean_text(claim.get("claim_kind")),
-        "limitations": text_items(claim.get("limitations")),
-        "evidence_use": validation_evidence_use(
-            raw_decision,
-            support_level,
-            explicit=clean_text(claim.get("evidence_use")),
-        ),
-    }
-    if domain == "news":
-        for key in (
-            "event_status",
-            "company_specificity",
-            "materiality_status",
-            "financial_link_status",
-        ):
-            value = clean_text(claim.get(key))
-            if value:
-                result[key] = value
-    return result
-
-
-def validation_evidence_use(decision: str, support_level: str, *, explicit: str = "") -> str:
-    """Map upstream workflow states to a reader-neutral evidence-use contract."""
-
-    explicit_value = clean_text(explicit).lower()
-    if explicit_value in {"strong", "context_only", "exclude"}:
-        return explicit_value
-    decision_value = clean_text(decision).lower()
-    support_value = clean_text(support_level).lower()
-    if decision_value in {"remove", "delete", "hallucination_candidate"} or support_value == "unsupported":
-        return "exclude"
-    if decision_value in {"keep", "verified"} and support_value in {"", "supported", "verified"}:
-        return "strong"
-    if not decision_value and support_value in {"supported", "verified"}:
-        return "strong"
-    return "context_only"
-
-
-def validation_evidence_ids(claim: dict[str, Any], domain: str) -> list[str]:
-    """Extract evidence identifiers from validation claim variants."""
-
-    del domain
-    evidence: list[str] = []
-    for key in (
-        "evidence_ids",
-        "evidence_refs",
-        "evidence_ids_used",
-        "declared_evidence_ids",
-        "evidence_used",
-    ):
-        evidence.extend(text_items(claim.get(key)))
-    return dedupe(evidence, 16)
-
-
 def truncate_text(text: str, limit: int) -> str:
-    """Limit validation excerpts to keep Strategy prompts bounded."""
+    """Limit excerpts to keep Strategy prompts bounded."""
 
     value = clean_text(text)
     if len(value) <= limit:
@@ -4291,7 +4530,7 @@ def extract_decision_constraints(financial: dict[str, Any], news: dict[str, Any]
 
     constraints: list[str] = []
     constraints.extend(text_items(get_path(financial, ["main_view", "main_cautions"])))
-    flags = get_path(financial, ["sy_handoff", "reconciliation_flags"]) or []
+    flags = get_path(financial, ["strategy_handoff", "reconciliation_flags"]) or []
     for flag in ensure_list(flags):
         if isinstance(flag, dict):
             constraints.append(clean_text(flag.get("flag_ko")))
@@ -4710,6 +4949,21 @@ def decision_prompt_v4(
     if template.count(placeholder) != 1:
         raise ValueError(
             "decision_agent_v4.md must contain exactly one horizon-policy placeholder."
+        )
+    return template.replace(placeholder, str(resolved["policy"]))
+
+
+def decision_prompt_v5(
+    profile: str = DEFAULT_DECISION_HORIZON_PROFILE,
+) -> str:
+    """Render the Strategy v5 prompt with one horizon policy."""
+
+    resolved = resolve_decision_horizon_profile(profile)
+    template = read_prompt("decision_agent_v5.md")
+    placeholder = "{{DECISION_HORIZON_POLICY}}"
+    if template.count(placeholder) != 1:
+        raise ValueError(
+            "decision_agent_v5.md must contain exactly one horizon-policy placeholder."
         )
     return template.replace(placeholder, str(resolved["policy"]))
 

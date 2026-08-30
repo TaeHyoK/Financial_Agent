@@ -5,7 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from .config import OUTPUT_ROOT, PROJECT_ROOT, RunConfig
+from .config import (
+    OUTPUT_ROOT,
+    PROJECT_ROOT,
+    RunConfig,
+    agent_output_dir,
+    company_output_dir,
+    run_output_dir,
+    safe_label,
+)
 
 
 @dataclass(frozen=True)
@@ -15,11 +23,16 @@ class RunPaths:
     project_root: Path
     output_root: Path
     run_key: str
+    company_name: str
     selected_date: str
 
     @property
+    def company_dir(self) -> Path:
+        return company_output_dir(self.output_root, self.company_name)
+
+    @property
     def financial_dir(self) -> Path:
-        return self.output_root / "Financial" / self.run_key
+        return agent_output_dir(self.output_root, self.run_key, "Financial")
 
     @property
     def financial_agent_pipeline_dir(self) -> Path:
@@ -27,23 +40,26 @@ class RunPaths:
 
     @property
     def news_dir(self) -> Path:
-        return self.output_root / "News" / self.run_key
+        return agent_output_dir(self.output_root, self.run_key, "News")
 
     @property
     def news_context_export_dir(self) -> Path:
         return self.news_dir / "context_exports"
 
     @property
-    def news_context_export_month_dir(self) -> Path:
-        return self.news_context_export_dir / "month"
-
-    @property
-    def news_context_export_day_dir(self) -> Path:
-        return self.news_context_export_dir / "day"
+    def news_context_export_week_dir(self) -> Path:
+        return self.news_context_export_dir / "week"
 
     @property
     def news_report_context(self) -> Path:
-        return self.output_root / "News" / "artifacts" / "reports" / "packs" / self.run_key / "report_context.json"
+        return (
+            self.news_dir
+            / "artifacts"
+            / "reports"
+            / "packs"
+            / f"{safe_label(self.company_name)}_{self._information_cutoff_date}"
+            / "report_context.json"
+        )
 
     @property
     def news_analysis_output_dir(self) -> Path:
@@ -51,11 +67,18 @@ class RunPaths:
 
     @property
     def yfinance_dir(self) -> Path:
-        return self.output_root / "Y_Finance" / self.run_key
+        return agent_output_dir(self.output_root, self.run_key, "Y_Finance")
 
     @property
     def run_dir(self) -> Path:
-        return self.output_root / "runs" / self.run_key
+        return run_output_dir(self.output_root, self.run_key)
+
+    @property
+    def _information_cutoff_date(self) -> str:
+        from datetime import datetime, timedelta
+
+        selected = datetime.strptime(self.selected_date, "%Y%m%d").date()
+        return (selected - timedelta(days=1)).strftime("%Y%m%d")
 
     @property
     def run_config_copy(self) -> Path:
@@ -102,24 +125,12 @@ class RunPaths:
         return self.financial_dir / "dart_lightweight.json"
 
     @property
-    def financial_verified_report(self) -> Path:
-        return self.financial_agent_pipeline_dir / "pipeline_verified_financial_report_output.json"
-
-    @property
     def financial_analyst_report(self) -> Path:
         return self.financial_agent_pipeline_dir / "pipeline_financial_analyst_report_output.json"
 
     @property
     def financial_analyst_trace(self) -> Path:
         return self.financial_agent_pipeline_dir / "pipeline_financial_analyst_report_trace.json"
-
-    @property
-    def financial_validation(self) -> Path:
-        return self.financial_agent_pipeline_dir / "pipeline_sy_validation_output.json"
-
-    @property
-    def financial_validation_trace(self) -> Path:
-        return self.financial_agent_pipeline_dir / "pipeline_sy_validation_trace.json"
 
     @property
     def financial_pipeline_manifest(self) -> Path:
@@ -130,16 +141,12 @@ class RunPaths:
         return self.financial_dir / "final_report.json"
 
     @property
-    def financial_final_validation(self) -> Path:
-        return self.financial_dir / "final_validation.json"
-
-    @property
     def news_llm_period_summaries(self) -> Path:
-        return self.news_context_export_day_dir / "llm_period_summaries.json"
+        return self.news_context_export_week_dir / "llm_period_summaries.json"
 
     @property
-    def news_company_top10(self) -> Path:
-        return self.news_context_export_day_dir / "recent_raw_input.json"
+    def news_company_top20(self) -> Path:
+        return self.news_context_export_week_dir / "recent_raw_input.json"
 
     @property
     def news_handoff(self) -> Path:
@@ -150,20 +157,8 @@ class RunPaths:
         return self.news_analysis_output_dir / "news_agent_evidence_map.json"
 
     @property
-    def news_sy_validations(self) -> Path:
-        return self.news_analysis_output_dir / "sy_agent" / "sy_claim_validations.json"
-
-    @property
-    def news_verified_report(self) -> Path:
-        return self.news_analysis_output_dir / "sy_agent" / "news_agent_verified_handoff.json"
-
-    @property
     def news_final_report(self) -> Path:
         return self.news_dir / "final_report.json"
-
-    @property
-    def news_final_validation(self) -> Path:
-        return self.news_dir / "final_validation.json"
 
     @property
     def market_summary_dated(self) -> Path:
@@ -186,34 +181,19 @@ class RunPaths:
         return self.yfinance_dir / "yfinance_analyst_report.md"
 
     @property
-    def yfinance_verified_report(self) -> Path:
-        return self.yfinance_dir / "sy_verified_yfinance_report.json"
-
-    @property
-    def yfinance_strategy_verified_report(self) -> Path:
-        return self.yfinance_dir / "yfinance_verified_report.json"
-
-    @property
     def yfinance_final_report(self) -> Path:
         return self.yfinance_dir / "final_report.json"
-
-    @property
-    def yfinance_final_validation(self) -> Path:
-        return self.yfinance_dir / "final_validation.json"
 
     def final_alias_sources(self) -> dict[str, dict[str, Path]]:
         return {
             "financial": {
-                "final_report": self.financial_verified_report,
-                "final_validation": self.financial_validation,
+                "final_report": self.financial_analyst_report,
             },
             "news": {
-                "final_report": self.news_verified_report,
-                "final_validation": self.news_sy_validations,
+                "final_report": self.news_handoff,
             },
             "yfinance": {
-                "final_report": self.yfinance_strategy_verified_report,
-                "final_validation": self.yfinance_verified_report,
+                "final_report": self.yfinance_analyst_report,
             },
         }
 
@@ -221,15 +201,12 @@ class RunPaths:
         return {
             "financial": {
                 "final_report": self.financial_final_report,
-                "final_validation": self.financial_final_validation,
             },
             "news": {
                 "final_report": self.news_final_report,
-                "final_validation": self.news_final_validation,
             },
             "yfinance": {
                 "final_report": self.yfinance_final_report,
-                "final_validation": self.yfinance_final_validation,
             },
         }
 
@@ -250,5 +227,6 @@ def resolve_run_paths(run_config: RunConfig, output_root: str | Path | None = No
         project_root=PROJECT_ROOT,
         output_root=root,
         run_key=run_config.run_key,
+        company_name=run_config.company_name,
         selected_date=run_config.selected_date,
     )

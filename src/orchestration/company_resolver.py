@@ -102,6 +102,13 @@ def parse_dart_company_directory(payload: bytes) -> list[dict[str, str]]:
     except ElementTree.ParseError as exc:
         raise CompanyResolutionError(f"Invalid OpenDART corpCode XML: {exc}") from exc
 
+    status = _element_text(root, "status")
+    if status and status != "000":
+        message = _element_text(root, "message") or "provider returned an unspecified error"
+        raise CompanyResolutionError(
+            f"OpenDART corpCode request failed (status {status}): {message}"
+        )
+
     companies: list[dict[str, str]] = []
     for item in root.findall(".//list"):
         corp_code = _element_text(item, "corp_code")
@@ -269,8 +276,8 @@ def build_resolved_company_config(
     identity: CompanyIdentity,
     *,
     selected_date: str | date,
-    news_window: str = "1m",
-    llm_model: str = "gpt-5.4-mini",
+    news_window: str = "3m",
+    llm_model: str = "gpt-5.4",
     max_retries: int = 1,
 ) -> dict[str, Any]:
     """Build the existing per-company config contract from a resolved identity."""

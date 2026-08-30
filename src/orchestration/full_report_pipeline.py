@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -37,16 +38,24 @@ from .config import (
     DEFAULT_NEWS_CONFIG_PATH,
     OUTPUT_ROOT,
     PROJECT_ROOT,
+    agent_output_dir,
     build_run_key,
+    company_output_dir,
     load_project_env,
     normalize_date,
+    peer_output_root,
+    published_report_path,
+    run_output_dir,
+    safe_label,
 )
 from .usage_summary import summarize_execution_usage
 
 
 logger = logging.getLogger(__name__)
 
-FINAL_STAGE_NAMES = frozenset({"peer_comparison_analysis", "strategy", "writer"})
+FINAL_STAGE_NAMES = frozenset(
+    {"peer_comparison_analysis", "strategy", "writer_generation"}
+)
 DEFAULT_FINAL_STAGE_TIMEOUT_SECONDS = 900
 STAGE_LOG_TAIL_CHARACTERS = 4000
 
@@ -68,11 +77,21 @@ class FullPipelinePaths:
 
     output_root: Path
     run_key: str
+    company_name: str
+    selected_date: str
     execution_id: str
 
     @property
+    def company_dir(self) -> Path:
+        return company_output_dir(self.output_root, self.company_name)
+
+    @property
+    def peer_output_root(self) -> Path:
+        return peer_output_root(self.output_root, self.company_name)
+
+    @property
     def run_dir(self) -> Path:
-        return self.output_root / "runs" / self.run_key
+        return run_output_dir(self.output_root, self.run_key)
 
     @property
     def resolved_inputs_dir(self) -> Path:
@@ -88,7 +107,11 @@ class FullPipelinePaths:
 
     @property
     def news_config(self) -> Path:
-        return self.resolved_inputs_dir / "news_config.yaml"
+        return self.resolved_inputs_dir / "target_news_config.yaml"
+
+    @property
+    def peer_news_config(self) -> Path:
+        return self.resolved_inputs_dir / "peer_news_config.yaml"
 
     @property
     def ablation_config(self) -> Path:
@@ -100,7 +123,7 @@ class FullPipelinePaths:
 
     @property
     def competitor_dir(self) -> Path:
-        return self.output_root / "Competitor" / self.run_key
+        return agent_output_dir(self.output_root, self.run_key, "Competitor")
 
     @property
     def peer_resolution(self) -> Path:
@@ -116,11 +139,19 @@ class FullPipelinePaths:
 
     @property
     def strategy_dir(self) -> Path:
-        return self.output_root / "Strategy" / self.run_key
+        return agent_output_dir(self.output_root, self.run_key, "Strategy")
 
     @property
     def writer_dir(self) -> Path:
-        return self.output_root / "Writer" / self.run_key
+        return agent_output_dir(self.output_root, self.run_key, "Writer")
+
+    @property
+    def visualization_dir(self) -> Path:
+        return agent_output_dir(self.output_root, self.run_key, "Visualization")
+
+    @property
+    def published_report(self) -> Path:
+        return published_report_path(self.output_root, self.company_name)
 
     @property
     def execution_dir(self) -> Path:
@@ -151,6 +182,7 @@ class FullPipelinePaths:
             self.resolved_inputs_dir,
             self.competitor_dir,
             self.strategy_dir,
+            self.visualization_dir,
             self.writer_dir,
             self.execution_dir,
         ):
@@ -163,7 +195,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--company-name", required=True, help="Exact listed company name, e.g. SK바이오팜.")
     parser.add_argument("--selected-date", required=True, help="YYYYMMDD report date, interpreted before market open.")
-    parser.add_argument("--news-window", default="1m", choices=["2w", "1m", "3m"])
+    parser.add_argument("--news-window", default="3m", choices=["2w", "1m", "3m"])
     parser.add_argument(
         "--target-news-query",
         default="",
@@ -179,8 +211,8 @@ def build_parser() -> argparse.ArgumentParser:
         type=_positive_int,
         default=None,
         help=(
-            "Maximum same-day-deduplicated News events retained after article "
-            "reranking. --news-total-max-results is a compatibility alias."
+            "Final globally ranked News events retained after weekly selection. "
+            "--news-total-max-results is a compatibility alias."
         ),
     )
     parser.add_argument(
@@ -202,6 +234,15 @@ def build_parser() -> argparse.ArgumentParser:
             "The original FG000 selection method and provenance are preserved."
         ),
     )
+    parser.add_argument(
+        "--identity-resolution-from",
+        type=Path,
+        default=None,
+        help=(
+            "Reuse the target and peer identities from a prior successful full-pipeline manifest. "
+            "Only identity resolution is reused; domain data and all agent outputs are regenerated."
+        ),
+    )
     parser.add_argument("--peer-timeout", type=int, default=20)
     parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
     parser.add_argument(
@@ -214,8 +255,18 @@ def build_parser() -> argparse.ArgumentParser:
             "while rerunning downstream domain analysis, Strategy, and Writer."
         ),
     )
+    parser.add_argument(
+        "--reuse-dart-data-from",
+        type=Path,
+        default=None,
+        metavar="OUTPUT_ROOT",
+        help=(
+            "Reuse only same-date DART preprocessing outputs; regenerate market data, News data, "
+            "domain analyses, Strategy, charts, and Writer outputs."
+        ),
+    )
     parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV_FILE)
-    parser.add_argument("--llm-model", default="gpt-5.4-mini")
+    parser.add_argument("--llm-model", default="gpt-5.4")
     parser.add_argument("--llm-timeout", type=int, default=300)
     parser.add_argument("--max-retries", type=int, default=1)
     parser.add_argument(
@@ -226,11 +277,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Wall-clock timeout applied independently to Strategy and Writer only.",
     )
     parser.add_argument("--execution-id", default="", help="Optional execution ID; generated automatically by default.")
-    parser.add_argument(
-        "--no-sy",
-        action="store_true",
-        help="Bypass all domain SY agents and expose the unverified domain-agent outputs through a schema adapter.",
-    )
     parser.add_argument(
         "--exclude-domain",
         action="append",
@@ -292,7 +338,13 @@ def run_full_pipeline(args: argparse.Namespace) -> dict[str, Any]:
     env_file = Path(args.env_file).expanduser().resolve()
     execution_id = args.execution_id.strip() or _new_execution_id()
     provisional_run_key = build_run_key(args.company_name, selected_date)
-    paths = FullPipelinePaths(output_root, provisional_run_key, execution_id)
+    paths = FullPipelinePaths(
+        output_root=output_root,
+        run_key=provisional_run_key,
+        company_name=args.company_name,
+        selected_date=selected_date,
+        execution_id=execution_id,
+    )
     paths.ensure_directories()
     steps: list[dict[str, Any]] = []
     manifest = _base_manifest(
@@ -307,24 +359,51 @@ def run_full_pipeline(args: argparse.Namespace) -> dict[str, Any]:
 
     try:
         env_status = load_project_env(env_file)
-        dart_api_key = os.getenv("DART_API_KEY", "").strip()
-        if not dart_api_key:
-            raise CompanyResolutionError(
-                f"DART_API_KEY is required; checked environment and {env_status['env_file']}."
+        directory: list[dict[str, str]] = []
+        frozen_peer: CompanyIdentity | None = None
+        frozen_peer_resolution: dict[str, Any] | None = None
+        if args.identity_resolution_from is not None:
+            target, frozen_peer, frozen_peer_resolution = _load_identity_resolution_snapshot(
+                args.identity_resolution_from,
+                company_name=args.company_name,
+                selected_date=selected_date,
+                include_competitor=ablation.include_competitor,
             )
-        directory = fetch_dart_company_directory(dart_api_key)
-        target = resolve_company_identity(
-            args.company_name,
-            selected_date=selected_date,
-            directory=directory,
-        )
+        else:
+            dart_api_key = os.getenv("DART_API_KEY", "").strip()
+            if not dart_api_key:
+                raise CompanyResolutionError(
+                    f"DART_API_KEY is required; checked environment and {env_status['env_file']}."
+                )
+            directory = fetch_dart_company_directory(dart_api_key)
+            target = resolve_company_identity(
+                args.company_name,
+                selected_date=selected_date,
+                directory=directory,
+            )
         canonical_run_key = build_run_key(target.company_name, selected_date)
         if canonical_run_key != paths.run_key:
-            paths = FullPipelinePaths(output_root, canonical_run_key, execution_id)
+            paths = FullPipelinePaths(
+                output_root=output_root,
+                run_key=canonical_run_key,
+                company_name=target.company_name,
+                selected_date=selected_date,
+                execution_id=execution_id,
+            )
             paths.ensure_directories()
         peer: CompanyIdentity | None = None
         if ablation.include_competitor:
-            if args.peer_resolution_from is not None:
+            if frozen_peer is not None and frozen_peer_resolution is not None:
+                peer = frozen_peer
+                peer_resolution = frozen_peer_resolution
+                override = "".join(
+                    character for character in str(args.peer_stock_code or "") if character.isdigit()
+                )
+                if override and override.zfill(6) != peer.stock_code:
+                    raise CompanyResolutionError(
+                        "Peer stock-code override conflicts with the frozen identity snapshot."
+                    )
+            elif args.peer_resolution_from is not None:
                 peer_resolution = _load_peer_resolution_snapshot(
                     args.peer_resolution_from,
                     target=target,
@@ -355,11 +434,12 @@ def run_full_pipeline(args: argparse.Namespace) -> dict[str, Any]:
                 _write_full_manifest(paths, manifest)
                 reason = peer_resolution.get("reason") or "selected peer stock code is missing"
                 raise CompanyResolutionError(f"Naver peer resolution failed: {reason}.")
-            peer = resolve_company_identity_by_stock_code(
-                peer_stock_code,
-                selected_date=selected_date,
-                directory=directory,
-            )
+            if peer is None:
+                peer = resolve_company_identity_by_stock_code(
+                    peer_stock_code,
+                    selected_date=selected_date,
+                    directory=directory,
+                )
             if peer.stock_code == target.stock_code:
                 raise CompanyResolutionError("Resolved peer must differ from the target company.")
         else:
@@ -490,8 +570,36 @@ def run_full_pipeline(args: argparse.Namespace) -> dict[str, Any]:
                     common_env,
                 ),
                 (
-                    "writer",
-                    build_writer_command(
+                    "visualization_catalog",
+                    build_visualization_catalog_command(
+                        paths=paths,
+                        target=target,
+                        peer_run_key=peer_run_key,
+                    ),
+                    common_env,
+                ),
+                (
+                    "writer_generation",
+                    build_writer_generation_command(
+                        paths=paths,
+                        args=args,
+                        ablation=ablation,
+                        env_file=env_file,
+                    ),
+                    common_env,
+                ),
+                (
+                    "visualization",
+                    build_visualization_command(
+                        paths=paths,
+                        target=target,
+                        peer_run_key=peer_run_key,
+                    ),
+                    common_env,
+                ),
+                (
+                    "writer_render",
+                    build_writer_render_command(
                         paths=paths,
                         args=args,
                         ablation=ablation,
@@ -547,6 +655,7 @@ def run_full_pipeline(args: argparse.Namespace) -> dict[str, Any]:
             _write_full_manifest(paths, manifest)
             return manifest
 
+        _publish_final_report(paths)
         validation = validate_full_pipeline_outputs(
             paths=paths,
             target_run_key=paths.run_key,
@@ -599,6 +708,9 @@ def build_domain_pipeline_command(
     ablation: AblationConfig,
     env_file: Path,
 ) -> list[str]:
+    domain_output_root = (
+        paths.output_root if run_role == "target" else paths.peer_output_root
+    )
     command = [
         sys.executable,
         "-m",
@@ -608,7 +720,7 @@ def build_domain_pipeline_command(
         "--env-file",
         str(env_file),
         "--output-root",
-        str(paths.output_root),
+        str(domain_output_root),
         "--use-llm",
         "--llm-model",
         args.llm_model,
@@ -623,17 +735,28 @@ def build_domain_pipeline_command(
         "--llm-execution-id",
         paths.execution_id,
         "--news-config",
-        str(paths.news_config),
+        str(paths.news_config if run_role == "target" else paths.peer_news_config),
     ]
-    if not ablation.use_sy:
-        command.append("--no-sy")
     if ablation.primary_data_only:
         command.append("--primary-data-only")
     if args.reuse_domain_data_from:
+        reuse_root = Path(args.reuse_domain_data_from).expanduser().resolve()
+        if run_role == "peer":
+            reuse_root = peer_output_root(reuse_root, paths.company_name)
         command.extend(
             [
                 "--reuse-domain-data-from",
-                str(Path(args.reuse_domain_data_from).expanduser().resolve()),
+                str(reuse_root),
+            ]
+        )
+    if args.reuse_dart_data_from:
+        reuse_root = Path(args.reuse_dart_data_from).expanduser().resolve()
+        if run_role == "peer":
+            reuse_root = peer_output_root(reuse_root, paths.company_name)
+        command.extend(
+            [
+                "--reuse-dart-data-from",
+                str(reuse_root),
             ]
         )
     if args.news_total_max_results is not None:
@@ -672,6 +795,8 @@ def build_peer_comparison_command(
         peer_run_key,
         "--output-root",
         str(paths.output_root),
+        "--peer-output-root",
+        str(paths.peer_output_root),
         "--output-dir",
         str(paths.competitor_dir),
     ]
@@ -696,17 +821,17 @@ def build_peer_analysis_command(
         "--peer-company-name",
         peer.company_name,
         "--target-financial",
-        str(paths.output_root / "Financial" / paths.run_key / "final_report.json"),
+        str(agent_output_dir(paths.output_root, paths.run_key, "Financial") / "final_report.json"),
         "--target-news",
-        str(paths.output_root / "News" / paths.run_key / "final_report.json"),
+        str(agent_output_dir(paths.output_root, paths.run_key, "News") / "final_report.json"),
         "--target-yfinance",
-        str(paths.output_root / "Y_Finance" / paths.run_key / "final_report.json"),
+        str(agent_output_dir(paths.output_root, paths.run_key, "Y_Finance") / "final_report.json"),
         "--peer-financial",
-        str(paths.output_root / "Financial" / peer_run_key / "final_report.json"),
+        str(agent_output_dir(paths.peer_output_root, peer_run_key, "Financial") / "final_report.json"),
         "--peer-news",
-        str(paths.output_root / "News" / peer_run_key / "final_report.json"),
+        str(agent_output_dir(paths.peer_output_root, peer_run_key, "News") / "final_report.json"),
         "--peer-yfinance",
-        str(paths.output_root / "Y_Finance" / peer_run_key / "final_report.json"),
+        str(agent_output_dir(paths.peer_output_root, peer_run_key, "Y_Finance") / "final_report.json"),
         "--pairwise-dataset",
         str(paths.peer_comparison),
         "--output-dir",
@@ -742,15 +867,15 @@ def build_strategy_command(
         "--target-run-key",
         paths.run_key,
         "--target-financial",
-        str(paths.output_root / "Financial" / paths.run_key / "final_report.json"),
+        str(agent_output_dir(paths.output_root, paths.run_key, "Financial") / "final_report.json"),
         "--target-news",
-        str(paths.output_root / "News" / paths.run_key / "final_report.json"),
+        str(agent_output_dir(paths.output_root, paths.run_key, "News") / "final_report.json"),
         "--target-yfinance",
-        str(paths.output_root / "Y_Finance" / paths.run_key / "final_report.json"),
+        str(agent_output_dir(paths.output_root, paths.run_key, "Y_Finance") / "final_report.json"),
         "--output-dir",
         str(paths.strategy_dir),
         "--packet-version",
-        "v4",
+        "v5",
         "--llm-model",
         args.llm_model,
         "--llm-timeout",
@@ -765,8 +890,6 @@ def build_strategy_command(
         command.extend(["--peer-analysis", str(paths.peer_analysis)])
     for domain in ablation.included_domains:
         command.extend(["--include-domain", domain])
-    if not ablation.use_sy:
-        command.append("--no-sy")
     if ablation.primary_data_only:
         command.append("--primary-data-only")
     if not ablation.include_competitor:
@@ -777,7 +900,72 @@ def build_strategy_command(
     return command
 
 
-def build_writer_command(
+def build_visualization_catalog_command(
+    *,
+    paths: FullPipelinePaths,
+    target: CompanyIdentity,
+    peer_run_key: str,
+) -> list[str]:
+    return _build_visualization_command(
+        phase="catalog",
+        paths=paths,
+        target=target,
+        peer_run_key=peer_run_key,
+    )
+
+
+def build_visualization_command(
+    *,
+    paths: FullPipelinePaths,
+    target: CompanyIdentity,
+    peer_run_key: str,
+) -> list[str]:
+    command = _build_visualization_command(
+        phase="generate",
+        paths=paths,
+        target=target,
+        peer_run_key=peer_run_key,
+    )
+    command.extend(
+        ["--selection-file", str(paths.writer_dir / "writer_report_payload.json")]
+    )
+    return command
+
+
+def _build_visualization_command(
+    *,
+    phase: str,
+    paths: FullPipelinePaths,
+    target: CompanyIdentity,
+    peer_run_key: str,
+) -> list[str]:
+    command = [
+        sys.executable,
+        str(
+            PROJECT_ROOT
+            / "src"
+            / "Agent_Team"
+            / "Visualization Agent"
+            / "report_chart_cli.py"
+        ),
+        phase,
+        "--output-root",
+        str(paths.output_root),
+        "--peer-output-root",
+        str(paths.peer_output_root),
+        "--run-key",
+        paths.run_key,
+        "--company-name",
+        target.company_name,
+        "--output-dir",
+        str(paths.visualization_dir),
+    ]
+    if peer_run_key:
+        command.extend(["--peer-run-key", peer_run_key])
+    return command
+
+
+def build_writer_generation_command(
     *,
     paths: FullPipelinePaths,
     args: argparse.Namespace,
@@ -787,6 +975,8 @@ def build_writer_command(
     command = [
         sys.executable,
         str(PROJECT_ROOT / "src" / "Agent_Team" / "Writer Agent" / "writer_agent.py"),
+        "--phase",
+        "generate",
         "--run-key",
         paths.run_key,
         "--strategy-packet",
@@ -794,24 +984,45 @@ def build_writer_command(
         "--strategy-provenance",
         str(paths.strategy_dir / "strategy_packet_provenance_v2.json"),
         "--strategy-decision",
-        str(paths.strategy_dir / "strategy_decision_output_v4.json"),
+        str(paths.strategy_dir / "strategy_decision_output_v5.json"),
         "--output-dir",
         str(paths.writer_dir),
         "--env-file",
         str(env_file),
         "--llm-model",
         args.llm_model,
+        "--chart-catalog",
+        str(paths.visualization_dir / "chart_catalog.json"),
     ]
-    chart_dir = paths.output_root / "Y_Finance" / paths.run_key / "charts"
-    for chart_path in (
-        chart_dir / "full_period_technical.png",
-        chart_dir / "full_period_kospi_fx.png",
-        chart_dir / f"summary_{paths.run_key.rsplit('_', 1)[-1]}.png",
-    ):
-        command.extend(["--market-chart", str(chart_path)])
     if ablation.writer_mode == "free_form":
         command.append("--free-form")
     return command
+
+
+def build_writer_render_command(
+    *,
+    paths: FullPipelinePaths,
+    args: argparse.Namespace,
+    ablation: AblationConfig,
+    env_file: Path,
+) -> list[str]:
+    del ablation
+    return [
+        sys.executable,
+        str(PROJECT_ROOT / "src" / "Agent_Team" / "Writer Agent" / "writer_agent.py"),
+        "--phase",
+        "render",
+        "--run-key",
+        paths.run_key,
+        "--output-dir",
+        str(paths.writer_dir),
+        "--env-file",
+        str(env_file),
+        "--llm-model",
+        args.llm_model,
+        "--chart-manifest",
+        str(paths.visualization_dir / "chart_manifest.json"),
+    ]
 
 
 def validate_full_pipeline_outputs(
@@ -821,22 +1032,73 @@ def validate_full_pipeline_outputs(
     peer_run_key: str,
     include_competitor: bool = True,
 ) -> dict[str, Any]:
-    target_manifest = _load_json(paths.output_root / "runs" / target_run_key / "run_manifest.json")
+    target_manifest = _load_json(run_output_dir(paths.output_root, target_run_key) / "run_manifest.json")
     peer_manifest = (
-        _load_json(paths.output_root / "runs" / peer_run_key / "run_manifest.json")
+        _load_json(run_output_dir(paths.peer_output_root, peer_run_key) / "run_manifest.json")
         if include_competitor
         else {}
     )
-    strategy_path = paths.strategy_dir / "strategy_decision_output_v4.json"
+    strategy_path = paths.strategy_dir / "strategy_decision_output_v5.json"
     strategy = _load_json(strategy_path)
+    chart_catalog_path = paths.visualization_dir / "chart_catalog.json"
+    chart_manifest_path = paths.visualization_dir / "chart_manifest.json"
+    writer_payload_path = paths.writer_dir / "writer_report_payload.json"
+    chart_catalog = _load_json(chart_catalog_path)
+    chart_manifest = _load_json(chart_manifest_path)
+    writer_payload = _load_json(writer_payload_path)
     writer_status = _load_json(paths.writer_dir / "writer_run_status.json")
-    report_path = paths.writer_dir / "report.html"
+    writer_report_path = paths.writer_dir / "report.html"
+    report_path = paths.published_report
+    requested_chart_keys = [
+        str(value) for value in writer_payload.get("requested_chart_keys") or []
+    ]
+    chart_selection_details = [
+        item
+        for item in writer_payload.get("chart_selection_details") or []
+        if isinstance(item, dict)
+    ]
+    generated_chart_keys = [
+        str(item.get("chart_key") or "")
+        for item in chart_manifest.get("charts") or []
+        if isinstance(item, dict)
+    ]
+    available_chart_keys = {
+        str(item.get("chart_key") or "")
+        for item in chart_catalog.get("available_charts") or []
+        if isinstance(item, dict)
+    }
+    chart_pngs_exist = all(
+        Path(str(item.get("asset_abs_path_png") or "")).is_file()
+        for item in chart_manifest.get("charts") or []
+        if isinstance(item, dict)
+    )
     checks = {
         "target_domain_pipeline": target_manifest.get("status") == "success",
         "strategy_output": strategy_path.is_file() and bool(strategy),
-        "label_free_strategy_contract": strategy.get("decision_version") == "strategy_decision_output_v4",
+        "label_free_strategy_contract": strategy.get("decision_version") == "strategy_decision_output_v5",
+        "visualization_catalog": chart_catalog_path.is_file(),
+        "writer_chart_selection": (
+            len(requested_chart_keys) <= 2
+            and len(requested_chart_keys) == len(set(requested_chart_keys))
+            and set(requested_chart_keys).issubset(available_chart_keys)
+        ),
+        "writer_chart_grounding": (
+            [str(item.get("chart_key") or "") for item in chart_selection_details]
+            == requested_chart_keys
+            and all(
+                bool(item.get("basis_card_keys"))
+                and bool(str(item.get("selection_reason") or "").strip())
+                and bool(str(item.get("chart_observation") or "").strip())
+                and bool(str(item.get("investment_interpretation") or "").strip())
+                for item in chart_selection_details
+            )
+        ),
+        "visualization_selected_charts": (
+            requested_chart_keys == generated_chart_keys and chart_pngs_exist
+        ),
         "writer_run": writer_status.get("status") == "success",
-        "writer_html": report_path.is_file() and report_path.stat().st_size > 0,
+        "writer_html": writer_report_path.is_file() and writer_report_path.stat().st_size > 0,
+        "published_report": report_path.is_file() and report_path.stat().st_size > 0,
     }
     if include_competitor:
         checks["peer_domain_pipeline"] = peer_manifest.get("status") == "success"
@@ -849,6 +1111,10 @@ def validate_full_pipeline_outputs(
         "status": "pass",
         "checks": checks,
         "strategy_output": str(strategy_path),
+        "chart_catalog": str(chart_catalog_path),
+        "chart_manifest": str(chart_manifest_path),
+        "requested_chart_keys": requested_chart_keys,
+        "chart_selection_details": chart_selection_details,
         "writer_report": str(report_path),
     }
 
@@ -904,6 +1170,101 @@ def _load_peer_resolution_snapshot(
         "policy": "automatic FG000 selection executed once, then frozen across paired replicates",
     }
     return frozen
+
+
+def _load_identity_resolution_snapshot(
+    path: Path,
+    *,
+    company_name: str,
+    selected_date: str,
+    include_competitor: bool,
+) -> tuple[CompanyIdentity, CompanyIdentity | None, dict[str, Any] | None]:
+    """Load immutable company identities without reusing any domain evidence."""
+
+    snapshot_path = Path(path).expanduser().resolve()
+    payload = _load_json(snapshot_path)
+    if payload.get("status") != "success":
+        raise CompanyResolutionError(
+            f"Identity snapshot must be a successful full-pipeline manifest: {snapshot_path}"
+        )
+    request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
+    snapshot_date = str(request.get("selected_date") or "")
+    if snapshot_date and normalize_date(snapshot_date) != selected_date:
+        raise CompanyResolutionError(
+            "Identity snapshot selected date does not match the requested selected date."
+        )
+
+    target = _company_identity_from_snapshot(payload.get("target"), snapshot_path=snapshot_path)
+    requested_name = "".join(str(company_name or "").split()).lower()
+    frozen_name = "".join(target.company_name.split()).lower()
+    if requested_name != frozen_name:
+        raise CompanyResolutionError(
+            "Identity snapshot target company does not match the requested company."
+        )
+
+    peer: CompanyIdentity | None = None
+    peer_resolution: dict[str, Any] | None = None
+    if include_competitor:
+        peer = _company_identity_from_snapshot(payload.get("peer"), snapshot_path=snapshot_path)
+        if peer.stock_code == target.stock_code:
+            raise CompanyResolutionError("Frozen peer identity must differ from the target company.")
+        peer_resolution = {
+            "status": "selected",
+            "target": {
+                "company_name": target.company_name,
+                "stock_code": target.stock_code,
+            },
+            "selected_peer": {
+                "company_name": peer.company_name,
+                "stock_code": peer.stock_code,
+            },
+            "selection_basis": {"method": "frozen_successful_pipeline_identity"},
+            "source": {"provider": "prior full-pipeline manifest"},
+            "usage_policy": {
+                "purpose": "identity_only",
+                "point_in_time_financial_evidence": False,
+            },
+            "identity_snapshot_freeze": {
+                "status": "reused",
+                "source_artifact": str(snapshot_path),
+                "source_sha256": hashlib.sha256(snapshot_path.read_bytes()).hexdigest(),
+                "domain_data_reused": False,
+            },
+        }
+    return target, peer, peer_resolution
+
+
+def _company_identity_from_snapshot(
+    payload: Any,
+    *,
+    snapshot_path: Path,
+) -> CompanyIdentity:
+    if not isinstance(payload, dict):
+        raise CompanyResolutionError(f"Identity snapshot has no company identity: {snapshot_path}")
+    required = ("company_name", "corp_code", "stock_code", "market", "ticker")
+    values = {key: str(payload.get(key) or "").strip() for key in required}
+    missing = [key for key, value in values.items() if not value]
+    if missing:
+        raise CompanyResolutionError(
+            f"Identity snapshot company is missing required fields {missing}: {snapshot_path}"
+        )
+    market = values["market"].upper()
+    expected_suffix = {"KOSPI": ".KS", "KOSDAQ": ".KQ"}.get(market)
+    if expected_suffix is None or values["ticker"] != values["stock_code"] + expected_suffix:
+        raise CompanyResolutionError(f"Identity snapshot has inconsistent market/ticker data: {snapshot_path}")
+    source = payload.get("source") if isinstance(payload.get("source"), dict) else {}
+    return CompanyIdentity(
+        company_name=values["company_name"],
+        corp_code=values["corp_code"],
+        stock_code=values["stock_code"],
+        market=market,
+        ticker=values["ticker"],
+        source={
+            **source,
+            "identity_snapshot": str(snapshot_path),
+            "domain_data_reused": False,
+        },
+    )
 
 
 def _write_resolved_inputs(
@@ -973,12 +1334,21 @@ def _write_resolved_inputs(
     _write_json(paths.identity_resolution, identity_payload)
     _write_json(paths.peer_resolution, peer_resolution)
     _write_json(paths.ablation_config, ablation.as_dict())
-    _write_ablation_news_config(paths)
+    _write_news_config(
+        paths.news_config,
+        agent_output_dir(paths.output_root, paths.run_key, "News"),
+    )
+    if peer is not None:
+        peer_run_key = build_run_key(peer.company_name, selected_date)
+        _write_news_config(
+            paths.peer_news_config,
+            agent_output_dir(paths.peer_output_root, peer_run_key, "News"),
+        )
     return target_config, peer_config
 
 
-def _write_ablation_news_config(paths: FullPipelinePaths) -> None:
-    """Point News collection at the execution's isolated output root."""
+def _write_news_config(config_path: Path, news_dir: Path) -> None:
+    """Point News collection at one company's dated output directory."""
 
     try:
         import yaml
@@ -986,10 +1356,10 @@ def _write_ablation_news_config(paths: FullPipelinePaths) -> None:
         payload = yaml.safe_load(DEFAULT_NEWS_CONFIG_PATH.read_text(encoding="utf-8")) or {}
     except Exception as exc:
         raise FullPipelineError(f"Unable to load News config: {DEFAULT_NEWS_CONFIG_PATH}: {exc}") from exc
-    payload["data_root"] = str(paths.output_root / "News" / "artifacts")
-    payload["inputs_root"] = str(paths.output_root / "News" / "inputs")
+    payload["data_root"] = str(news_dir / "artifacts")
+    payload["inputs_root"] = str(news_dir / "inputs")
     # JSON is valid YAML and keeps this generated runtime file deterministic.
-    _write_json(paths.news_config, payload)
+    _write_json(config_path, payload)
 
 
 def _new_stage_record(
@@ -1163,31 +1533,56 @@ def _base_manifest(
                 if args.reuse_domain_data_from
                 else ""
             ),
+            "reuse_dart_data_from": (
+                str(Path(args.reuse_dart_data_from).expanduser().resolve())
+                if args.reuse_dart_data_from
+                else ""
+            ),
             "peer_resolution_from": (
                 str(Path(args.peer_resolution_from).expanduser().resolve())
                 if args.peer_resolution_from
                 else ""
             ),
+            "identity_resolution_from": (
+                str(Path(args.identity_resolution_from).expanduser().resolve())
+                if args.identity_resolution_from
+                else ""
+            ),
         },
         "ablation": ablation.as_dict(),
         "target": target.as_dict() if target else {},
-        "peer": {**(peer.as_dict() if peer else {}), "run_key": peer_run_key} if peer else {},
+        "peer": {
+            **(peer.as_dict() if peer else {}),
+            "run_key": peer_run_key,
+            "output_dir": str(company_output_dir(paths.peer_output_root, peer.company_name)),
+        } if peer else {},
         "outputs": {
             "target_config": str(paths.target_config),
             "peer_config": str(paths.peer_config),
             "ablation_config": str(paths.ablation_config),
             "news_config": str(paths.news_config),
+            "peer_news_config": str(paths.peer_news_config) if peer else "",
+            "peer_company_dir": (
+                str(company_output_dir(paths.peer_output_root, peer.company_name))
+                if peer
+                else ""
+            ),
             "peer_resolution": str(paths.peer_resolution),
             "peer_comparison": str(paths.peer_comparison),
             "peer_analysis": str(paths.peer_analysis),
             "strategy_report": str(paths.strategy_dir / "strategy_report.json"),
             "strategy_compact_packet_v2": str(paths.strategy_dir / "strategy_compact_packet_v2.json"),
             "strategy_packet_provenance_v2": str(paths.strategy_dir / "strategy_packet_provenance_v2.json"),
-            "strategy_decision_output_v4": str(paths.strategy_dir / "strategy_decision_output_v4.json"),
-            "writer_editorial_packet_v2": str(paths.writer_dir / "writer_editorial_packet_v2.json"),
-            "writer_packet_provenance_v2": str(paths.writer_dir / "writer_packet_provenance_v2.json"),
+            "strategy_decision_output_v5": str(paths.strategy_dir / "strategy_decision_output_v5.json"),
+            "visualization_chart_catalog": str(paths.visualization_dir / "chart_catalog.json"),
+            "visualization_chart_manifest": str(paths.visualization_dir / "chart_manifest.json"),
+            "visualization_chart_selection": str(paths.visualization_dir / "chart_selection.json"),
+            "writer_editorial_packet_v3": str(paths.writer_dir / "writer_editorial_packet_v3.json"),
+            "writer_packet_provenance_v3": str(paths.writer_dir / "writer_packet_provenance_v3.json"),
+            "writer_report_payload": str(paths.writer_dir / "writer_report_payload.json"),
             "writer_run_status": str(paths.writer_dir / "writer_run_status.json"),
-            "writer_report": str(paths.writer_dir / "report.html"),
+            "writer_internal_report": str(paths.writer_dir / "report.html"),
+            "writer_report": str(paths.published_report),
             "llm_usage_manifest": str(paths.usage_manifest),
             "llm_usage_summary": str(paths.usage_summary),
         },
@@ -1196,7 +1591,7 @@ def _base_manifest(
 
 
 def _expected_calls(ablation: AblationConfig, *, reused_domain_snapshot: bool = False) -> dict[str, int]:
-    domain_calls = 3 if not ablation.use_sy else 6
+    domain_calls = 4
     if reused_domain_snapshot:
         domain_calls -= 1  # News collection summary LLM output is part of the fixed snapshot.
     return {
@@ -1235,6 +1630,30 @@ def _write_json(path: Path, payload: Any) -> None:
             temporary_path.unlink()
 
 
+def _publish_final_report(paths: FullPipelinePaths) -> Path:
+    """Copy the self-contained Writer HTML to the company directory."""
+
+    source = paths.writer_dir / "report.html"
+    if not source.is_file() or source.stat().st_size == 0:
+        raise FullPipelineError(f"Writer report is missing or empty: {source}")
+    destination = paths.published_report
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=f".{destination.name}.",
+        suffix=".tmp",
+        dir=destination.parent,
+    )
+    os.close(descriptor)
+    temporary_path = Path(temporary)
+    try:
+        shutil.copy2(source, temporary_path)
+        os.replace(temporary_path, destination)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
+    return destination
+
+
 def _load_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise FullPipelineError(f"Required output does not exist: {path}")
@@ -1270,7 +1689,47 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("%s", exc)
         return 1
     logger.info("Full pipeline %s: %s", manifest["status"], manifest["outputs"]["writer_report"])
+    _log_final_usage(manifest.get("llm_usage"))
     return 0
+
+
+def _log_final_usage(value: Any) -> None:
+    usage_summary = value if isinstance(value, dict) else {}
+    usage = usage_summary.get("usage") if isinstance(usage_summary.get("usage"), dict) else {}
+    input_tokens = int(usage.get("input_tokens") or 0)
+    cached_tokens = int(usage.get("cached_input_tokens") or 0)
+    output_tokens = int(usage.get("output_tokens") or 0)
+    total_tokens = int(usage.get("total_tokens") or input_tokens + output_tokens)
+    logger.info(
+        "Total LLM tokens: %s (input %s, cached input %s, output %s)",
+        f"{total_tokens:,}",
+        f"{input_tokens:,}",
+        f"{cached_tokens:,}",
+        f"{output_tokens:,}",
+    )
+
+    cost = (
+        usage_summary.get("estimated_api_cost")
+        if isinstance(usage_summary.get("estimated_api_cost"), dict)
+        else {}
+    )
+    status = str(cost.get("status") or "unavailable")
+    total_cost = cost.get("total_cost_usd")
+    if status == "available" and isinstance(total_cost, (int, float)):
+        logger.info("Estimated OpenAI API cost: $%.6f USD", float(total_cost))
+    elif status == "partial" and isinstance(total_cost, (int, float)):
+        unknown = ", ".join(str(item) for item in cost.get("unknown_models") or [])
+        logger.info(
+            "Estimated OpenAI API cost: $%.6f USD (partial; unpriced models: %s)",
+            float(total_cost),
+            unknown or "unknown",
+        )
+    else:
+        unknown = ", ".join(str(item) for item in cost.get("unknown_models") or [])
+        logger.info(
+            "Estimated OpenAI API cost: unavailable%s",
+            f" (unpriced models: {unknown})" if unknown else "",
+        )
 
 
 if __name__ == "__main__":

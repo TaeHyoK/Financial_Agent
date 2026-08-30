@@ -10,7 +10,7 @@ from typing import Any
 from .dart.collect import fetch_latest_periodic_xml, save_xml
 from .io.storage import save_json
 from .pipelines.build_corporate_context_db import build_context_db
-from .pipelines.run_news_pipeline import run_daily_news
+from .pipelines.run_news_pipeline import run_news_window
 from .pipelines.utils import load_config
 
 
@@ -56,6 +56,7 @@ class WorkflowArtifacts:
     article_ranking_path: str
     news_events_path: str
     all_news_events_path: str
+    weekly_news_events_path: str
     event_ranking_path: str
     report_context_path: str
     manifest_path: str
@@ -164,6 +165,12 @@ class LatestPeriodicReportCollector:
             corp_code=request.company_id,
             bgn_de=bgn_de,
             end_de=end_de,
+            list_timeout=int(dart_cfg.get("list_timeout_seconds", 20)),
+            doc_timeout=int(dart_cfg.get("document_timeout_seconds", 30)),
+            document_max_retries=int(dart_cfg.get("document_max_retries", 2)),
+            document_retry_delay_seconds=float(
+                dart_cfg.get("document_retry_delay_seconds", 0.5)
+            ),
         )
         report_key = self._build_report_key(result["report_dt"], result["rcept_no"])
         xml_path = self.layout.dart_report_xml_path(request.company_id, request.company_name, report_key)
@@ -233,7 +240,7 @@ class DailyNewsPipelineService:
         self.layout = layout
 
     def run(self, request: WorkflowRequest, report_key: str) -> dict[str, Any]:
-        result = run_daily_news(
+        result = run_news_window(
             config=self.config,
             collect_date=request.collect_date,
             company_id=request.company_id,
@@ -310,6 +317,7 @@ class NewsWorkflow:
                 news_result.get("all_news_events_path")
                 or self.layout.all_news_events_path(request.collect_date, request.company_name)
             ),
+            weekly_news_events_path=str(news_result.get("weekly_news_events_path") or ""),
             event_ranking_path=str(
                 news_result.get("event_ranking_path")
                 or self.layout.event_ranking_path(request.collect_date, request.company_name)
@@ -354,8 +362,18 @@ class NewsWorkflow:
                     ),
                     "news_event_count": news_result.get("news_event_count"),
                     "event_top_k": news_result.get("event_top_k"),
+                    "weekly_embedding_candidates": news_result.get(
+                        "weekly_embedding_candidates"
+                    ),
+                    "weekly_rerank_top_k": news_result.get("weekly_rerank_top_k"),
+                    "weekly_selected_event_count": news_result.get(
+                        "weekly_selected_event_count"
+                    ),
                     "selection_stage": news_result.get("selection_stage"),
                     "selection_method": news_result.get("selection_method"),
+                    "semantic_dedup_window_days": news_result.get(
+                        "semantic_dedup_window_days"
+                    ),
                     "cross_date_clustering": news_result.get("cross_date_clustering"),
                     # Deprecated fields kept for backward-compatible manifests.
                     "raw_news_count": news_result.get("raw_news_count"),

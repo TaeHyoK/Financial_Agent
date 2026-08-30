@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from . import OUTPUT_ROOT
+from orchestration.config import agent_output_dir
 
 
 @dataclass(frozen=True)
@@ -34,26 +35,27 @@ def discover_competitor_identities(
 
     output_root = output_root.expanduser().resolve()
     suffix = normalize_date(selected_date or target.selected_date) if (selected_date or target.selected_date) else None
-    financial_root = output_root / "Financial"
-    if not financial_root.exists():
-        return []
     identities: list[RunIdentity] = []
-    for child in sorted(financial_root.iterdir()):
-        if not child.is_dir() or child.name == target.run_key:
+    for company_dir in sorted(output_root.iterdir()) if output_root.exists() else []:
+        if not company_dir.is_dir():
             continue
-        if suffix and not child.name.endswith(f"_{suffix}"):
+        run_key = f"{company_dir.name}_{suffix}" if suffix else ""
+        if not run_key or run_key == target.run_key:
             continue
-        company_name = company_from_run_key(child.name)
+        financial_dir = agent_output_dir(output_root, run_key, "Financial")
+        if not financial_dir.is_dir():
+            continue
+        company_name = company_from_run_key(run_key)
         if safe_label(company_name) == safe_label(target.company_name):
             continue
         has_required = (
-            (child / "final_report.json").exists()
-            and (output_root / "Y_Finance" / child.name / "market_full_dataset.csv").exists()
+            (financial_dir / "final_report.json").exists()
+            and (agent_output_dir(output_root, run_key, "Y_Finance") / "market_full_dataset.csv").exists()
         )
         if include_partial or has_required:
             identities.append(
                 RunIdentity(
-                    run_key=child.name,
+                    run_key=run_key,
                     company_name=company_name,
                     selected_date=suffix,
                 )

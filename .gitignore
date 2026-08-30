@@ -27,6 +27,9 @@ logs/
 *.log
 Output_total*/
 
+# Local change notes
+뉴스_에이전트_수정_이후_변경사항.md
+
 # OS/editor files
 .DS_Store
 Thumbs.db

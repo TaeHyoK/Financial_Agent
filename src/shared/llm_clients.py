@@ -63,7 +63,10 @@ def estimate_text_tokens(text: str, *, model: str = "") -> int:
             encoding = tiktoken.encoding_for_model(model)
         except KeyError:
             encoding = tiktoken.get_encoding("o200k_base")
-        return len(encoding.encode(text))
+        # External filings and news can contain literal strings that resemble
+        # tokenizer control tokens. They are ordinary source text here, not
+        # instructions to the tokenizer.
+        return len(encoding.encode(text, disallowed_special=()))
     except (ImportError, ModuleNotFoundError):
         ascii_chars = sum(1 for char in text if ord(char) < 128)
         non_ascii_chars = len(text) - ascii_chars

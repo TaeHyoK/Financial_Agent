@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run YFinance data collection, analyst report, and SY validation in one command."""
+"""Run YFinance data collection and analyst report generation in one command."""
 
 from __future__ import annotations
 
@@ -79,7 +79,6 @@ def main() -> None:
     parser.add_argument("--kospi-ticker", default=DEFAULT_KOSPI_TICKER)
     parser.add_argument("--skip-collect", action="store_true", help="Skip yfinance download and reuse existing market files.")
     parser.add_argument("--skip-report", action="store_true", help="Skip analyst report generation.")
-    parser.add_argument("--skip-sy", action="store_true", help="Skip SY validation.")
     args = parser.parse_args()
 
     input_path = Path(args.input).expanduser().resolve()
@@ -98,8 +97,7 @@ def main() -> None:
     valuation_json = output_dir / "valuation_snapshot.json"
     report_md = output_dir / "yfinance_analyst_report.md"
     report_json = output_dir / "yfinance_analyst_report.json"
-    sy_output = output_dir / "sy_verified_yfinance_report.json"
-    strategy_verified_report = output_dir / "yfinance_verified_report.json"
+    final_report = output_dir / "final_report.json"
     manifest_path = output_dir / "pipeline_manifest.json"
 
     dart_json = (
@@ -110,7 +108,7 @@ def main() -> None:
     news_json = (
         Path(args.news_json).expanduser().resolve()
         if args.news_json
-        else PROJECT_ROOT / "Output_total" / "News" / run_key / "context_exports" / "day" / "llm_period_summaries.json"
+        else PROJECT_ROOT / "Output_total" / "News" / run_key / "context_exports" / "week" / "llm_period_summaries.json"
     )
 
     if not args.skip_collect:
@@ -163,23 +161,8 @@ def main() -> None:
         if args.model:
             report_cmd.extend(["--model", args.model])
         run_command(report_cmd, cwd=YFINANCE_DIR)
-
-    if not args.skip_sy:
-        run_command(
-            [
-                sys.executable,
-                str(YFINANCE_DIR / "SY_Agent" / "sy_agent.py"),
-                "--input",
-                str(report_json),
-                "--output",
-                str(sy_output),
-                "--strategy-output",
-                str(strategy_verified_report),
-                "--env-file",
-                str(Path(args.env_file).expanduser().resolve()),
-            ],
-            cwd=YFINANCE_DIR,
-        )
+    if report_json.is_file():
+        shutil.copyfile(report_json, final_report)
 
     manifest = {
         "run_key": run_key,
@@ -194,8 +177,7 @@ def main() -> None:
         "news_json": str(news_json),
         "yfinance_analyst_report_md": str(report_md),
         "yfinance_analyst_report_json": str(report_json),
-        "sy_verified_yfinance_report": str(sy_output),
-        "yfinance_verified_report": str(strategy_verified_report),
+        "final_report": str(final_report),
     }
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(manifest_path)

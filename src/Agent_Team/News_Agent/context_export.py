@@ -18,8 +18,8 @@ from shared.llm_clients import execute_with_telemetry
 from .io.storage import save_json
 
 
-Granularity = Literal["day", "month"]
-NEWS_AGENT_TOP_K = 10
+Granularity = Literal["day", "week", "month"]
+NEWS_AGENT_TOP_K = 20
 
 
 DESCRIPTION = {
@@ -28,12 +28,13 @@ DESCRIPTION = {
     "title": "이벤트를 대표하는 기사 제목입니다.",
     "snippet": "대표 기사에서 추출한 요약 또는 본문 일부입니다. 원문 접근 제한 등으로 비어 있을 수 있습니다.",
     "time": "대표 기사 발행일입니다.",
+    "event_timeline": "여러 날짜에 걸쳐 보도된 사건의 진행 내역입니다. 날짜별로 기업보고서와 가장 관련성이 높은 기사 제목 1건만 포함합니다.",
     "final_score": "DART 관련성, 섹션 관련성, 언급량, 최신성, 중요도 점수를 조합한 최종 랭킹 점수입니다.",
     "coverage": "기사 수, 고유 매체 수, 근접 복제 제거 후 기사 수와 1차 출처 포함 여부입니다.",
 }
 
 SUMMARY_OUTPUT_DESCRIPTION = {
-    "period": "요약 대상 기간입니다. 테스트에서는 일 단위, 운영에서는 월 단위입니다.",
+    "period": "요약 대상 기간입니다. 운영 기본값은 ISO 주 단위입니다.",
     "period_summary": "해당 기간의 뉴스 흐름을 2~4문장으로 요약한 내용입니다.",
     "issues": "해당 기간의 핵심 이슈 목록입니다.",
     "issue": "핵심 이슈명입니다.",
@@ -59,6 +60,9 @@ def _period_key(value: str | None, granularity: Granularity) -> str | None:
         return None
     if granularity == "month":
         return parsed.strftime("%Y-%m")
+    if granularity == "week":
+        iso_year, iso_week, _ = parsed.isocalendar()
+        return f"{iso_year:04d}-W{iso_week:02d}"
     return parsed.isoformat()
 
 
@@ -69,7 +73,7 @@ def _compact_event(event: dict[str, Any]) -> dict[str, Any] | None:
     time = representative.get("time")
     if not event_id or not time:
         return None
-    return {
+    compact = {
         "event_id": str(event_id),
         "relevance_rank": int(event.get("relevance_rank") or 0),
         "mention_count": int(event.get("mention_count") or 0),
@@ -80,6 +84,22 @@ def _compact_event(event: dict[str, Any]) -> dict[str, Any] | None:
         "final_score": float(scores.get("final_score") or 0.0),
         "coverage": _event_coverage(event),
     }
+    event_timeline = [
+        {
+            "date": str(item.get("date") or ""),
+            "title": str(item.get("title") or ""),
+        }
+        for item in event.get("event_timeline") or []
+        if isinstance(item, dict)
+        and str(item.get("date") or "").strip()
+        and str(item.get("title") or "").strip()
+    ]
+    if len(event_timeline) > 1:
+        compact["event_timeline"] = sorted(
+            event_timeline,
+            key=lambda item: (item["date"], item["title"]),
+        )
+    return compact
 
 
 def _event_coverage(event: dict[str, Any]) -> dict[str, Any]:
@@ -178,18 +198,25 @@ def _select_summary_periods(
     granularity: Granularity,
     period_count: int,
 ) -> list[str]:
-    """Return the requested calendar-day window, including no-news dates."""
+    """Return the requested calendar window, including periods without news."""
 
-    if granularity != "day" or period_count <= 0:
+    if granularity not in {"day", "week"} or period_count <= 0:
         return _select_periods(grouped, period_count)
     try:
         end_date = date.fromisoformat(collect_date[:10])
     except ValueError:
         return _select_periods(grouped, period_count)
-    return [
-        (end_date - timedelta(days=offset)).isoformat()
-        for offset in range(period_count)
-    ]
+    if granularity == "day":
+        return [
+            (end_date - timedelta(days=offset)).isoformat()
+            for offset in range(period_count)
+        ]
+    periods: list[str] = []
+    for offset in range(period_count):
+        current = end_date - timedelta(weeks=offset)
+        iso_year, iso_week, _ = current.isocalendar()
+        periods.append(f"{iso_year:04d}-W{iso_week:02d}")
+    return periods
 
 
 def _period_payload(period: str, events: list[dict[str, Any]]) -> dict[str, Any]:
@@ -246,7 +273,7 @@ def _build_llm_summary_request(summary_prompt_input: dict[str, Any], llm_model: 
         "granularity": summary_prompt_input.get("metadata", {}).get("granularity", ""),
         "periods": [
             {
-                "period": "YYYY-MM-DD 또는 YYYY-MM",
+                "period": "YYYY-Www",
                 "period_summary": "string",
                 "issues": [
                     {
@@ -295,6 +322,7 @@ def _build_llm_summary_request(summary_prompt_input: dict[str, Any], llm_model: 
                             "period별로 2~4문장의 period_summary를 작성합니다.",
                             "events가 비어 있는 period도 생략하지 말고 period_summary에 수집된 뉴스가 없다고 기록하며 issues는 빈 배열로 둡니다.",
                             "제목과 snippet이 같은 사건을 다루면 하나의 issue로 병합합니다.",
+                            "event_timeline이 있으면 날짜별 제목을 시간순 사건 진행으로 반영하되, 제목에 없는 변화나 인과관계를 추가하지 않습니다.",
                             "issue별 mention_count는 병합된 원본 이벤트들의 mention_count 합계로 계산합니다.",
                             "각 period의 issues는 최대 5개만 남깁니다.",
                             "importance는 final_score, mention_count, company_profile과의 사업 관련성을 함께 고려해 high/medium/low 중 하나로 지정합니다.",
@@ -643,11 +671,11 @@ def build_context_exports(
     *,
     report_context_path: str | Path,
     output_dir: str | Path | None = None,
-    granularity: Granularity = "day",
-    period_count: int = 12,
-    raw_period_count: int = 3,
-    min_mention_count: int = 3,
-    llm_model: str = "gpt-5.4-mini",
+    granularity: Granularity = "week",
+    period_count: int = 14,
+    raw_period_count: int = 14,
+    min_mention_count: int = 1,
+    llm_model: str = "gpt-5.4",
     run_llm: bool = False,
     split_by_period: bool = False,
     api_key_env: str = "OPENAI_API_KEY",
@@ -659,14 +687,20 @@ def build_context_exports(
     collect_date = str(report.get("collect_date") or "unknown")
     company_profile = _load_company_profile(report, report_path)
 
-    all_event_rows = list(
-        report.get("news_events_all") or report.get("news_events_topk") or []
+    summary_event_rows = list(
+        report.get("news_events_weekly")
+        or report.get("news_events_all")
+        or report.get("news_events_final")
+        or report.get("news_events_topk")
+        or []
     )
-    selected_event_rows = list(report.get("news_events_topk") or [])[
+    selected_event_rows = list(
+        report.get("news_events_final") or report.get("news_events_topk") or []
+    )[
         :NEWS_AGENT_TOP_K
     ]
     grouped = _group_events(
-        all_event_rows,
+        summary_event_rows,
         granularity=granularity,
         min_mention_count=min_mention_count,
     )
@@ -738,9 +772,9 @@ def build_context_exports(
         "company_profile": company_profile,
         "metadata": {
             **base_metadata,
-            "usage": "뉴스 에이전트에 제공할 기업 관련 뉴스 top-10 입력입니다.",
+            "usage": "뉴스 에이전트에 제공할 기업 관련 뉴스 상위 20건 입력입니다.",
         },
-        "selection": "기업 관련 뉴스 top-10",
+        "selection": "기업 관련 뉴스 상위 20건",
         "top_k": NEWS_AGENT_TOP_K,
         "events": top_news_events,
         "periods": [
@@ -760,13 +794,13 @@ def build_context_exports(
 
     manifest = {
         "description": {
-            "summary_prompt_input_path": "요청한 기간의 LLM 날짜별 또는 월별 요약을 만들기 위한 입력 파일입니다.",
+            "summary_prompt_input_path": "요청한 기간의 LLM 주간 요약을 만들기 위한 입력 파일입니다.",
             "llm_summary_request_path": "summary_prompt_input.json을 기반으로 만든 LLM 호출 직전 messages payload입니다.",
             "llm_period_summaries_path": "LLM 실행 결과입니다. --run-llm을 지정한 경우에만 생성됩니다.",
             "period_requests_dir": "--split-by-period 지정 시 period별 LLM request 파일이 저장되는 디렉터리입니다.",
-            "recent_raw_input_path": "뉴스 에이전트에 제공할 기업 관련 뉴스 top-10 입력 파일입니다.",
-            "summary_periods_for_news_agent": "뉴스 에이전트에 제공할 전체 날짜별 요약 기간입니다.",
-            "raw_periods_for_news_agent": "기업 관련 뉴스 top-10이 포함된 기간입니다.",
+            "recent_raw_input_path": "뉴스 에이전트에 제공할 기업 관련 뉴스 상위 20건 입력 파일입니다.",
+            "summary_periods_for_news_agent": "뉴스 에이전트에 제공할 주간 요약 기간입니다.",
+            "raw_periods_for_news_agent": "기업 관련 뉴스 상위 20건이 포함된 기간입니다.",
         },
         "metadata": base_metadata,
         "selected_periods": selected_periods,
@@ -831,11 +865,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--llm-request", default=None, help="Run an existing llm_summary_request.json without rebuilding exports")
     parser.add_argument("--llm-output", default=None, help="Output path for --llm-request. Defaults to llm_period_summaries.json")
     parser.add_argument("--output-dir", default=None, help="Output directory. Defaults to data/artifacts/context_exports/...")
-    parser.add_argument("--granularity", choices=["day", "month"], default="day")
-    parser.add_argument("--period-count", type=int, default=12)
-    parser.add_argument("--raw-period-count", type=int, default=3)
-    parser.add_argument("--min-mention-count", type=int, default=3)
-    parser.add_argument("--llm-model", default="gpt-5.4-mini", help="LLM model for --run-llm")
+    parser.add_argument("--granularity", choices=["day", "week", "month"], default="week")
+    parser.add_argument("--period-count", type=int, default=14)
+    parser.add_argument("--raw-period-count", type=int, default=14)
+    parser.add_argument("--min-mention-count", type=int, default=1)
+    parser.add_argument("--llm-model", default="gpt-5.4", help="LLM model for --run-llm")
     parser.add_argument("--run-llm", action="store_true", help="Call OpenAI and save llm_period_summaries.json")
     parser.add_argument(
         "--split-by-period",

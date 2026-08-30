@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 
 from orchestration.ablation import AblationConfig, DOMAIN_ORDER, normalize_domain
+from orchestration.config import agent_output_dir
 
 from . import DEFAULT_TARGET_CONFIG, OUTPUT_ROOT
 from .agent import (
@@ -56,8 +57,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--packet-version",
         default=None,
-        choices=["v1", "v2", "v3", "v4"],
-        help="Strategy packet/decision contract. Defaults to STRATEGY_PACKET_VERSION or v4.",
+        choices=["v1", "v2", "v3", "v4", "v5"],
+        help="Strategy packet/decision contract. Defaults to STRATEGY_PACKET_VERSION or v5.",
     )
     parser.add_argument("--env-file", default=None, help="Optional .env path. Defaults to configs/.env in agent.py.")
     parser.add_argument(
@@ -66,7 +67,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Source domain exposed to Strategy: financial, news, or yfinance. Repeatable.",
     )
-    parser.add_argument("--no-sy", action="store_true", help="Mark inputs as no-SY passthrough artifacts.")
     parser.add_argument("--primary-data-only", action="store_true", help="Mark inputs as primary-data-only artifacts.")
     parser.add_argument("--no-competitor", action="store_true", help="Disable peer cards even if a peer path is supplied.")
     parser.add_argument(
@@ -101,7 +101,6 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("At least one --include-domain value is required.")
     ablation = AblationConfig(
         included_domains=included_domains,
-        use_sy=not args.no_sy,
         primary_data_only=args.primary_data_only,
         include_competitor=not args.no_competitor,
         strategy_context_mode="full_reports" if args.full_context else "compact_cards",
@@ -112,7 +111,11 @@ def main(argv: list[str] | None = None) -> int:
     if explicit_target_paths:
         target_run_key = args.target_run_key or Path(args.target_financial).expanduser().parent.name
         target_company_name = args.target_company_name or target_run_key.rsplit("_", 1)[0]
-        output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else Path(args.output_root).expanduser().resolve() / "Strategy" / target_run_key
+        output_dir = (
+            Path(args.output_dir).expanduser().resolve()
+            if args.output_dir
+            else agent_output_dir(args.output_root, target_run_key, "Strategy")
+        )
         report = run_strategy_agent(
             target_company_name=target_company_name,
             target_run_key=target_run_key,

@@ -3,20 +3,30 @@ inputs_root: "Output_total/News/inputs"
 
 news:
   collector: "google_news_rss"
-  collection_days: 14
+  collection_days: 90
+  # Search in seven-day ranges, then merge semantic duplicates within each ISO
+  # calendar week.
+  collection_chunk_days: 7
   query_language: "ko"
   max_results: 200
-  # Select at most this many same-day-deduplicated events after every candidate
-  # article has been embedded and cross-encoder reranked. Daily summaries still
-  # use the full event set before this selection.
-  event_top_k: 10
-  # Deprecated compatibility key; event_top_k takes precedence.
+  # After seven-day semantic duplicate merging, keep 15 embedding candidates per
+  # ISO week, rerank them, retain 5 per week for summarization, and expose the
+  # global top 20 events as raw News-Agent evidence.
+  weekly_embedding_candidates: 15
+  weekly_rerank_top_k: 5
+  event_top_k: 20
+  # Deprecated compatibility key; event_top_k takes precedence as the final
+  # global News-Agent event budget.
   total_max_results: null
   dedup_on_url: true
 
 dart:
   api_key_env: "DART_API_KEY"
   fetch_lookback_days: 550
+  list_timeout_seconds: 20
+  document_timeout_seconds: 30
+  document_max_retries: 2
+  document_retry_delay_seconds: 0.5
   parser_py_path: null
   sections_to_extract:
     - "사업의 개요"
@@ -46,9 +56,10 @@ models:
   batch_size: 32
 
 clustering:
-  method: "hdbscan"
-  time_window_hours: 48
-  min_cluster_size: 3
+  method: "cosine_connected_components"
+  time_window_hours: 168
+  similarity_threshold: 0.88
+  min_cluster_size: 2
   min_samples: 1
 
 scoring:

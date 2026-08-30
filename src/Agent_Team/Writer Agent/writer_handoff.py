@@ -17,9 +17,12 @@ from shared.evidence_cards import (
 
 HANDOFF_VERSION = "1.0"
 EDITORIAL_PACKET_VERSION = "writer_editorial_packet_v2"
+EDITORIAL_PACKET_VERSION_V3 = "writer_editorial_packet_v3"
 WRITER_PROVENANCE_VERSION = "writer_packet_provenance_v2"
+WRITER_PROVENANCE_VERSION_V3 = "writer_packet_provenance_v3"
 FINAL_RECOMMENDATIONS = {"Buy", "Hold", "Sell"}
 LABEL_FREE_STRATEGY_VERSION = "strategy_decision_output_v4"
+STRATEGY_VERSION_V5 = "strategy_decision_output_v5"
 WRITER_COMPONENTS = (
     "investment_call_thesis",
     "business_market_context",
@@ -52,6 +55,12 @@ def build_writer_editorial_packet(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Build the bounded Writer v2 input and its external provenance map."""
 
+    if strategy_decision.get("decision_version") == STRATEGY_VERSION_V5:
+        return _build_writer_editorial_packet_v5(
+            strategy_packet=strategy_packet,
+            strategy_decision=strategy_decision,
+            strategy_provenance=strategy_provenance,
+        )
     if strategy_decision.get("decision_version") == LABEL_FREE_STRATEGY_VERSION:
         return _build_writer_editorial_packet_v4(
             strategy_packet=strategy_packet,
@@ -180,6 +189,7 @@ def build_writer_editorial_packet(
             for item in _list(strategy_decision.get("peer_findings"))
             if isinstance(item, dict) and item.get("basis_card_key") in cards
         ],
+        "target_peer_context": [],
         "risk_factors": risk_factors,
         "general_limitations": copy.deepcopy(_list(strategy_packet.get("reader_limitations"))),
         "required_limitations": limitation_requirements,
@@ -230,9 +240,38 @@ def _build_writer_editorial_packet_v4(
     selected_keys = _dedupe(item.get("card_key") for item in basis_rows)
     if not selected_keys:
         raise ValueError("Writer requires at least one Strategy v4 basis card.")
+    if "peer.agent_analysis" in selected_keys:
+        raise ValueError(
+            "Writer cannot expose peer.agent_analysis; select a structured peer metric card."
+        )
     basis_by_key = {str(item.get("card_key")): item for item in basis_rows}
+    peer_context_rows = [
+        copy.deepcopy(item)
+        for item in _list(strategy_decision.get("target_peer_context"))
+        if isinstance(item, dict)
+    ]
+    peer_context_by_key = {
+        str(item.get("basis_card_key") or ""): item
+        for item in peer_context_rows
+        if str(item.get("basis_card_key") or "").strip()
+    }
+    if len(peer_context_by_key) != len(peer_context_rows):
+        raise ValueError("Writer requires unique target_peer_context basis cards.")
+    selected_peer_keys = {
+        card_key
+        for card_key in selected_keys
+        if str(_dict(source_cards.get(card_key)).get("domain") or "") == "peer"
+    }
+    if selected_peer_keys != set(peer_context_by_key):
+        raise ValueError(
+            "Every selected peer card requires one target_peer_context entry."
+        )
     cards = {
-        card_key: _writer_card_v4(source_cards[card_key], basis_by_key[card_key])
+        card_key: _writer_card_v4(
+            source_cards[card_key],
+            basis_by_key[card_key],
+            peer_context=peer_context_by_key.get(card_key),
+        )
         for card_key in selected_keys
     }
     rationale_keys = _dedupe(
@@ -258,7 +297,7 @@ def _build_writer_editorial_packet_v4(
     business_keys = [
         card_key
         for card_key in selected_keys
-        if cards[card_key].get("domain") in {"financial", "market", "valuation", "peer"}
+        if cards[card_key].get("domain") in {"financial", "market", "valuation"}
         and basis_by_key[card_key].get("role") != "monitoring"
     ]
     catalyst_keys = [
@@ -299,18 +338,40 @@ def _build_writer_editorial_packet_v4(
         if not keys:
             continue
         risk = str(item.get("risk") or "").strip()
+        risk_title = str(item.get("risk_title") or "").strip()
         implication = str(item.get("current_implication") or "").strip()
         risk_factors.append(
             {
                 "category": _risk_category_from_card(cards[keys[0]]),
+                "display_title": risk_title,
                 "basis_card_keys": keys,
                 "risk_summary": risk,
-                "reader_summary": " ".join(value for value in (risk, implication) if value),
+                "reader_summary": risk,
                 "monitoring_point": implication,
             }
         )
     target = _dict(strategy_packet.get("target_company"))
     limitation_summary = str(brief.get("limitation_summary") or "").strip()
+    target_peer_context = [
+        {
+            "basis_card_key": card_key,
+            "metric_keys": _text_list(item.get("metric_keys")),
+            "decision_role": item.get("decision_role"),
+            "target_implication": item.get("target_implication"),
+            "target_company": _dict(cards[card_key].get("comparison_entities")).get(
+                "target_company"
+            ) or target.get("company_name"),
+            "peer_companies": copy.deepcopy(
+                _dict(cards[card_key].get("comparison_entities")).get("peer_companies")
+                or []
+            ),
+            "reader_observation": copy.deepcopy(
+                cards[card_key].get("reader_observation") or {}
+            ),
+        }
+        for card_key, item in peer_context_by_key.items()
+        if card_key in cards
+    ]
     packet = {
         "packet_version": EDITORIAL_PACKET_VERSION,
         "strategy_contract_version": LABEL_FREE_STRATEGY_VERSION,
@@ -329,33 +390,23 @@ def _build_writer_editorial_packet_v4(
             "decision_confidence": brief.get("decision_confidence"),
         },
         "recommendation_bridge": {
-            "current_price_rationale": brief.get("price_context"),
-            "current_price_card_keys": current_price_keys,
-            "forward_support": " ".join(
-                value
-                for value in (
-                    str(brief.get("thesis") or "").strip(),
-                    f"기존 편입자 대응: {brief.get('existing_position_response')}",
-                    f"신규 접근자 대응: {brief.get('new_entry_response')}",
-                )
-                if value
-            ),
-            "forward_support_card_keys": thesis_keys,
-            "valuation_counterweight": " ".join(
-                value
-                for value in (
-                    str(brief.get("counterview") or "").strip(),
-                    limitation_summary,
-                )
-                if value
-            ),
-            "valuation_card_keys": valuation_keys or counter_keys,
+            "thesis": str(brief.get("thesis") or "").strip(),
+            "thesis_card_keys": thesis_keys,
+            "existing_position_response": str(
+                brief.get("existing_position_response") or ""
+            ).strip(),
+            "new_entry_response": str(brief.get("new_entry_response") or "").strip(),
+            "price_context": str(brief.get("price_context") or "").strip(),
+            "price_context_card_keys": current_price_keys,
+            "counterview": str(brief.get("counterview") or "").strip(),
+            "counterview_card_keys": counter_keys or valuation_keys,
             "residual_uncertainty": limitation_summary,
             "decision_confidence": brief.get("decision_confidence"),
         },
         "required_card_keys_by_component": required_by_component,
         "cards": cards,
         "peer_findings": [],
+        "target_peer_context": target_peer_context,
         "risk_factors": risk_factors,
         "general_limitations": copy.deepcopy(_list(strategy_packet.get("reader_limitations"))),
         "required_limitations": [
@@ -380,10 +431,395 @@ def _build_writer_editorial_packet_v4(
     return packet, provenance
 
 
-def _writer_card_v4(source: dict[str, Any], basis: dict[str, Any]) -> dict[str, Any]:
-    role = str(basis.get("role") or "context")
-    reader_observation = _reader_observation(source)
+def _build_writer_editorial_packet_v5(
+    *,
+    strategy_packet: dict[str, Any],
+    strategy_decision: dict[str, Any],
+    strategy_provenance: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Build Writer v3 input from Strategy v5's two-tier evidence plan."""
+
+    source_cards = _dict(strategy_packet.get("cards"))
+    brief = _require_dict(strategy_decision.get("strategy_brief"), "strategy_brief")
+    plan = _require_dict(strategy_decision.get("evidence_plan"), "evidence_plan")
+    decision_rows = [
+        copy.deepcopy(item)
+        for item in _list(plan.get("decision_basis_cards"))
+        if isinstance(item, dict) and str(item.get("card_key") or "") in source_cards
+    ]
+    context_rows = [
+        copy.deepcopy(item)
+        for item in _list(plan.get("report_context_cards"))
+        if isinstance(item, dict) and str(item.get("card_key") or "") in source_cards
+    ]
+    decision_keys = _dedupe(item.get("card_key") for item in decision_rows)
+    context_keys = _dedupe(item.get("card_key") for item in context_rows)
+    if not decision_keys:
+        raise ValueError("Writer requires at least one Strategy v5 decision-basis card.")
+    overlap = sorted(set(decision_keys) & set(context_keys))
+    if overlap:
+        raise ValueError(f"Writer decision and report-context cards overlap: {overlap}")
+    if "peer.agent_analysis" in decision_keys:
+        raise ValueError("peer.agent_analysis cannot be a Writer decision-basis card.")
+
+    decision_by_key = {str(item["card_key"]): item for item in decision_rows}
+    context_by_key = {str(item["card_key"]): item for item in context_rows}
+    selected_keys = _dedupe([*decision_keys, *context_keys])
+    limitations = _select_v5_limitations(
+        _list(strategy_packet.get("limitation_requirements")),
+        selected_keys=selected_keys,
+        source_cards=source_cards,
+    )
+    limitation_keys = _dedupe(
+        card_key
+        for item in limitations
+        for card_key in _text_list(item.get("basis_card_keys"))
+        if card_key in source_cards
+    )
+    included_keys = _dedupe([*selected_keys, *limitation_keys])
+
+    cards: dict[str, dict[str, Any]] = {}
+    for card_key in included_keys:
+        if card_key in decision_by_key:
+            cards[card_key] = _writer_card_v5(
+                source_cards[card_key],
+                decision_by_key[card_key],
+                evidence_tier="decision_basis",
+            )
+        elif card_key in context_by_key:
+            cards[card_key] = _writer_card_v5(
+                source_cards[card_key],
+                context_by_key[card_key],
+                evidence_tier="report_context",
+            )
+        else:
+            cards[card_key] = _writer_card_v5(
+                source_cards[card_key],
+                {
+                    "report_implication": "자료의 기준일과 적용 범위를 구분한다.",
+                    "purpose": "limitation_context",
+                },
+                evidence_tier="limitation_context",
+            )
+
+    def linked_keys(field: str) -> list[str]:
+        return [
+            key
+            for key in _text_list(_dict(brief.get(field)).get("card_keys"))
+            if key in cards
+        ]
+
+    insight_rows = [
+        copy.deepcopy(item)
+        for item in _list(strategy_decision.get("report_insights"))
+        if isinstance(item, dict)
+    ]
+    insight_keys = {
+        insight_type: _dedupe(
+            key
+            for item in insight_rows
+            if item.get("insight_type") == insight_type
+            for key in _text_list(item.get("card_keys"))
+            if key in cards
+        )
+        for insight_type in (
+            "performance_and_financial_position",
+            "price_and_valuation",
+            "events_and_execution",
+        )
+    }
+    risk_rows = [
+        copy.deepcopy(item)
+        for item in _list(strategy_decision.get("key_risks"))
+        if isinstance(item, dict)
+    ]
+    risk_keys = _dedupe(
+        key
+        for item in risk_rows
+        for key in _text_list(item.get("card_keys"))
+        if key in cards
+    )
+    thesis_keys = _dedupe(
+        [
+            *linked_keys("thesis"),
+            *linked_keys("existing_position_response"),
+            *linked_keys("new_entry_response"),
+            *linked_keys("price_assessment"),
+            *linked_keys("counterview"),
+        ]
+    )
+    business_keys = _dedupe(
+        [
+            *insight_keys["performance_and_financial_position"],
+            *insight_keys["price_and_valuation"],
+        ]
+    )
+    event_keys = _dedupe(
+        [
+            *insight_keys["events_and_execution"],
+            *[key for key in selected_keys if _dict(cards.get(key)).get("domain") == "news"],
+        ]
+    )
+    data_limit_keys = _dedupe([*linked_keys("decision_limitation"), *limitation_keys])
+    required_by_component = {
+        "investment_call_thesis": thesis_keys or decision_keys,
+        "business_market_context": business_keys,
+        "key_evidence_table": decision_keys,
+        "catalysts_execution": event_keys,
+        "risk_monitoring_matrix": risk_keys,
+        "data_limits": data_limit_keys,
+    }
+
+    risk_factors = []
+    for item in risk_rows:
+        keys = [key for key in _text_list(item.get("card_keys")) if key in cards]
+        if not keys:
+            continue
+        risk_factors.append(
+            {
+                "category": _risk_category_from_card(cards[keys[0]]),
+                "display_title": str(item.get("risk_title") or "").strip(),
+                "basis_card_keys": keys,
+                "risk_summary": str(item.get("risk") or "").strip(),
+                "reader_summary": str(item.get("risk") or "").strip(),
+                "current_implication": str(item.get("current_implication") or "").strip(),
+            }
+        )
+
+    target = _dict(strategy_packet.get("target_company"))
+    peer_contexts = []
+    for row in decision_rows:
+        peer_context = row.get("target_peer_context")
+        if not isinstance(peer_context, dict):
+            continue
+        card_key = str(row.get("card_key") or "")
+        card = _dict(cards.get(card_key))
+        peer_contexts.append(
+            {
+                "basis_card_key": card_key,
+                "metric_keys": _text_list(peer_context.get("metric_keys")),
+                "decision_role": peer_context.get("decision_role"),
+                "target_implication": peer_context.get("target_implication"),
+                "target_company": _dict(card.get("comparison_entities")).get(
+                    "target_company"
+                ) or target.get("company_name"),
+                "peer_companies": copy.deepcopy(
+                    _dict(card.get("comparison_entities")).get("peer_companies") or []
+                ),
+                "reader_observation": copy.deepcopy(card.get("reader_observation") or {}),
+            }
+        )
+
+    packet = {
+        "packet_version": EDITORIAL_PACKET_VERSION_V3,
+        "strategy_contract_version": STRATEGY_VERSION_V5,
+        "target": {
+            "company_name": target.get("company_name"),
+            "run_key": target.get("run_key"),
+            "ticker": target.get("ticker"),
+            "selected_date": target.get("as_of_date") or target.get("selected_date"),
+        },
+        "decision": {
+            "judgment": _dict(brief.get("thesis")).get("text"),
+            "existing_position_response": _dict(
+                brief.get("existing_position_response")
+            ).get("text"),
+            "new_entry_response": _dict(brief.get("new_entry_response")).get("text"),
+            "investment_horizon": brief.get("horizon"),
+            "data_coverage": brief.get("evidence_sufficiency"),
+            "decision_confidence": brief.get("decision_confidence"),
+        },
+        "recommendation_bridge": {
+            "thesis": _dict(brief.get("thesis")).get("text"),
+            "thesis_card_keys": linked_keys("thesis"),
+            "existing_position_response": _dict(
+                brief.get("existing_position_response")
+            ).get("text"),
+            "existing_position_card_keys": linked_keys("existing_position_response"),
+            "new_entry_response": _dict(brief.get("new_entry_response")).get("text"),
+            "new_entry_card_keys": linked_keys("new_entry_response"),
+            "price_context": _dict(brief.get("price_assessment")).get("text"),
+            "price_context_card_keys": linked_keys("price_assessment"),
+            "counterview": _dict(brief.get("counterview")).get("text"),
+            "counterview_card_keys": linked_keys("counterview"),
+            "residual_uncertainty": _dict(brief.get("decision_limitation")).get("text"),
+            "residual_uncertainty_card_keys": linked_keys("decision_limitation"),
+            "decision_confidence": brief.get("decision_confidence"),
+        },
+        "evidence_plan": {
+            "decision_basis_card_keys": decision_keys,
+            "report_context_card_keys": context_keys,
+            "coverage_assessment": copy.deepcopy(plan.get("coverage_assessment") or {}),
+        },
+        "report_insights": insight_rows,
+        "required_card_keys_by_component": required_by_component,
+        "cards": cards,
+        "peer_findings": [],
+        "target_peer_context": peer_contexts,
+        "risk_factors": risk_factors,
+        "general_limitations": copy.deepcopy(_list(strategy_packet.get("reader_limitations"))),
+        "required_limitations": limitations,
+    }
+    provenance = _writer_provenance_for_cards(
+        cards=cards,
+        source_cards=source_cards,
+        strategy_provenance=strategy_provenance,
+        target_run_key=target.get("run_key"),
+        provenance_version=WRITER_PROVENANCE_VERSION_V3,
+    )
+    validate_writer_editorial_packet(
+        packet,
+        provenance=provenance,
+        strategy_packet=strategy_packet,
+    )
+    return packet, provenance
+
+
+def _select_v5_limitations(
+    requirements: list[Any],
+    *,
+    selected_keys: list[str],
+    source_cards: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Route only limitations that apply to evidence selected by Strategy v5."""
+
+    selected = set(selected_keys)
+    selected_domains = {
+        str(_dict(source_cards.get(card_key)).get("domain") or "")
+        for card_key in selected
+    }
+    result = []
+    for raw in requirements:
+        if not isinstance(raw, dict):
+            continue
+        category = str(raw.get("category") or "")
+        basis = [key for key in _text_list(raw.get("basis_card_keys")) if key in source_cards]
+        include = False
+        selected_basis = [key for key in basis if key in selected]
+        if category == "filing_lag":
+            # 기준일 현재 이용 가능한 최신 정기공시를 사용했다는 사실은 자료
+            # 기준에 표시하되, 그 자체를 투자 판단의 실질적 한계로 반복하지 않는다.
+            include = False
+        elif category == "valuation_input_date_mix":
+            include = "valuation" in selected_domains
+        elif category == "news_financial_link":
+            include = bool(selected_basis)
+            basis = selected_basis
+        elif category == "single_peer_scope":
+            # 비교기업 수는 실험 설계의 범위이며 공개 보고서의 판단 한계로 쓰지 않는다.
+            include = False
+        else:
+            include = bool(selected_basis)
+            basis = selected_basis
+        if not include:
+            continue
+        facts = copy.deepcopy(_dict(raw.get("facts")))
+        if category == "news_financial_link":
+            facts = {"selected_event_count": len(basis)}
+        result.append(
+            {
+                "category": category,
+                "basis_card_keys": basis,
+                "facts": facts,
+            }
+        )
+    return result
+
+
+def _writer_card_v5(
+    source: dict[str, Any],
+    plan_row: dict[str, Any],
+    *,
+    evidence_tier: str,
+) -> dict[str, Any]:
+    peer_context = plan_row.get("target_peer_context")
+    source_for_reader = copy.deepcopy(source)
     primary_observation = copy.deepcopy(source.get("primary_observation") or {})
+    if isinstance(peer_context, dict):
+        selected_metrics = set(_text_list(peer_context.get("metric_keys")))
+        pairs = [
+            copy.deepcopy(pair)
+            for pair in _list(primary_observation.get("pairs"))
+            if isinstance(pair, dict)
+            and str(pair.get("metric_key") or "") in selected_metrics
+            and pair.get("comparability") == "comparable"
+        ]
+        if {str(pair.get("metric_key") or "") for pair in pairs} != selected_metrics:
+            raise ValueError(
+                f"Writer peer context contains unavailable metric(s): {sorted(selected_metrics)}"
+            )
+        primary_observation["pairs"] = pairs
+        source_for_reader["primary_observation"] = primary_observation
+    reader_observation = _reader_observation(source_for_reader)
+    if str(source.get("domain") or "") == "news" and reader_observation:
+        primary_observation = copy.deepcopy(reader_observation)
+    relation = str(plan_row.get("relation_to_decision") or "")
+    interpretation = (
+        _dict(peer_context).get("target_implication")
+        if isinstance(peer_context, dict)
+        else plan_row.get("investment_implication")
+        or plan_row.get("report_implication")
+    )
+    card = {
+        "card_key": source.get("card_key"),
+        "axis": source.get("card_type"),
+        "domain": source.get("domain"),
+        "label": source.get("label"),
+        "primary_observation": primary_observation,
+        "strategy_interpretation": interpretation,
+        "strategy_role": {
+            "supports": "supports_decision",
+            "opposes": "opposes_decision",
+            "limits": "limits_confidence",
+        }.get(relation, "context"),
+        "evidence_tier": evidence_tier,
+        "context_purpose": plan_row.get("purpose"),
+        "importance": plan_row.get("importance"),
+        "evidence_family": source.get("evidence_family"),
+        "observation_basis": source.get("observation_basis"),
+        "comparison_scope": source.get("comparison_scope"),
+        "decision_use": source.get("decision_use"),
+    }
+    for key in ("comparison_label", "comparison_entities", "reader_limitations"):
+        if key in source:
+            card[key] = copy.deepcopy(source[key])
+    if reader_observation:
+        card["reader_observation"] = reader_observation
+    if source.get("secondary_context"):
+        card["secondary_context"] = copy.deepcopy(source["secondary_context"])
+    if isinstance(peer_context, dict):
+        card["target_peer_decision_role"] = peer_context.get("decision_role")
+        card["target_peer_metric_keys"] = _text_list(peer_context.get("metric_keys"))
+    return card
+
+
+def _writer_card_v4(
+    source: dict[str, Any],
+    basis: dict[str, Any],
+    *,
+    peer_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    role = str(basis.get("role") or "context")
+    source_for_reader = copy.deepcopy(source)
+    primary_observation = copy.deepcopy(source.get("primary_observation") or {})
+    strategy_interpretation = basis.get("usage_reason")
+    if peer_context is not None:
+        selected_metrics = set(_text_list(peer_context.get("metric_keys")))
+        pairs = [
+            copy.deepcopy(pair)
+            for pair in _list(primary_observation.get("pairs"))
+            if isinstance(pair, dict)
+            and str(pair.get("metric_key") or "") in selected_metrics
+            and pair.get("comparability") == "comparable"
+        ]
+        if {str(pair.get("metric_key") or "") for pair in pairs} != selected_metrics:
+            raise ValueError(
+                f"Writer peer context contains unavailable metric(s): {sorted(selected_metrics)}"
+            )
+        primary_observation["pairs"] = pairs
+        source_for_reader["primary_observation"] = primary_observation
+        strategy_interpretation = peer_context.get("target_implication")
+    reader_observation = _reader_observation(source_for_reader)
     if str(source.get("domain") or "") == "news" and reader_observation:
         primary_observation = copy.deepcopy(reader_observation)
     card = {
@@ -392,7 +828,7 @@ def _writer_card_v4(source: dict[str, Any], basis: dict[str, Any]) -> dict[str, 
         "domain": source.get("domain"),
         "label": source.get("label"),
         "primary_observation": primary_observation,
-        "strategy_interpretation": basis.get("usage_reason"),
+        "strategy_interpretation": strategy_interpretation,
         "strategy_role": role,
         "evidence_family": source.get("evidence_family"),
         "observation_basis": source.get("observation_basis"),
@@ -410,6 +846,9 @@ def _writer_card_v4(source: dict[str, Any], basis: dict[str, Any]) -> dict[str, 
         card["reader_observation"] = reader_observation
     if source.get("secondary_context"):
         card["secondary_context"] = copy.deepcopy(source["secondary_context"])
+    if peer_context is not None:
+        card["target_peer_decision_role"] = peer_context.get("decision_role")
+        card["target_peer_metric_keys"] = _text_list(peer_context.get("metric_keys"))
     return card
 
 
@@ -429,6 +868,7 @@ def _writer_provenance_for_cards(
     source_cards: dict[str, Any],
     strategy_provenance: dict[str, Any],
     target_run_key: Any,
+    provenance_version: str = WRITER_PROVENANCE_VERSION,
 ) -> dict[str, Any]:
     source_provenance = _dict(strategy_provenance.get("cards"))
     provenance_cards: dict[str, Any] = {}
@@ -446,7 +886,7 @@ def _writer_provenance_for_cards(
             "source_files": copy.deepcopy(_list(source_entry.get("source_files"))),
         }
     return {
-        "provenance_version": WRITER_PROVENANCE_VERSION,
+        "provenance_version": provenance_version,
         "target_run_key": target_run_key,
         "cards": provenance_cards,
     }
@@ -460,17 +900,23 @@ def validate_writer_editorial_packet(
 ) -> None:
     """Validate the v2 Writer input without judging free-form Korean prose."""
 
-    if not isinstance(packet, dict) or packet.get("packet_version") != EDITORIAL_PACKET_VERSION:
-        raise ValueError(f"writer editorial packet version must be {EDITORIAL_PACKET_VERSION}.")
+    packet_version = str(_dict(packet).get("packet_version") or "")
+    if packet_version not in {EDITORIAL_PACKET_VERSION, EDITORIAL_PACKET_VERSION_V3}:
+        raise ValueError(
+            "writer editorial packet version must be "
+            f"{EDITORIAL_PACKET_VERSION} or {EDITORIAL_PACKET_VERSION_V3}."
+        )
     target = _require_dict(packet.get("target"), "target")
     for key in ("company_name", "run_key", "selected_date"):
         if not str(target.get(key) or "").strip():
             raise ValueError(f"writer editorial target.{key} is required.")
     decision = _require_dict(packet.get("decision"), "decision")
-    label_free = packet.get("strategy_contract_version") == LABEL_FREE_STRATEGY_VERSION
+    strategy_version = packet.get("strategy_contract_version")
+    label_free = strategy_version in {LABEL_FREE_STRATEGY_VERSION, STRATEGY_VERSION_V5}
+    strategy_v5 = strategy_version == STRATEGY_VERSION_V5
     if label_free:
         if not str(decision.get("judgment") or "").strip():
-            raise ValueError("writer editorial decision.judgment is required for Strategy v4.")
+            raise ValueError("writer editorial decision.judgment is required for label-free Strategy.")
         if "opinion" in decision:
             raise ValueError("label-free Writer decision cannot contain opinion.")
     elif decision.get("opinion") not in FINAL_RECOMMENDATIONS:
@@ -501,7 +947,21 @@ def validate_writer_editorial_packet(
             raise ValueError(f"Writer card observation is required: {card_key}")
         if not str(card.get("strategy_interpretation") or "").strip():
             raise ValueError(f"Writer card Strategy interpretation is required: {card_key}")
-        if label_free:
+        if strategy_v5:
+            if card.get("strategy_role") not in {
+                "supports_decision",
+                "opposes_decision",
+                "limits_confidence",
+                "context",
+            }:
+                raise ValueError(f"Writer card Strategy role is invalid: {card_key}")
+            if card.get("evidence_tier") not in {
+                "decision_basis",
+                "report_context",
+                "limitation_context",
+            }:
+                raise ValueError(f"Writer card evidence tier is invalid: {card_key}")
+        elif label_free:
             if card.get("strategy_role") not in {"primary", "counter", "monitoring", "context"}:
                 raise ValueError(f"Writer card Strategy role is invalid: {card_key}")
         elif card.get("investment_effect") not in {"positive", "negative", "mixed", "neutral", "reference"}:
@@ -511,9 +971,64 @@ def validate_writer_editorial_packet(
     for index, risk in enumerate(_list(packet.get("risk_factors"))):
         if not isinstance(risk, dict):
             raise ValueError(f"risk_factors[{index}] must be an object.")
+        if label_free and not str(risk.get("display_title") or "").strip():
+            raise ValueError(
+                f"risk_factors[{index}].display_title is required for label-free Strategy."
+            )
         unknown = sorted(set(_text_list(risk.get("basis_card_keys"))) - set(cards))
         if unknown:
             raise ValueError(f"Risk factor references cards omitted from Writer packet: {unknown}")
+    peer_contexts = _list(packet.get("target_peer_context"))
+    seen_peer_cards: set[str] = set()
+    for index, item in enumerate(peer_contexts):
+        if not isinstance(item, dict):
+            raise ValueError(f"target_peer_context[{index}] must be an object.")
+        card_key = str(item.get("basis_card_key") or "")
+        card = _dict(cards.get(card_key))
+        if not card or card.get("domain") != "peer":
+            raise ValueError(
+                f"target_peer_context[{index}] references an omitted or non-peer card."
+            )
+        if card_key in seen_peer_cards:
+            raise ValueError("target_peer_context contains duplicate cards.")
+        seen_peer_cards.add(card_key)
+        metric_keys = _text_list(item.get("metric_keys"))
+        if not metric_keys or metric_keys != _text_list(card.get("target_peer_metric_keys")):
+            raise ValueError(
+                f"target_peer_context[{index}] metric selection does not match its card."
+            )
+        if item.get("decision_role") != card.get("target_peer_decision_role"):
+            raise ValueError(
+                f"target_peer_context[{index}] decision role does not match its card."
+            )
+        implication = str(item.get("target_implication") or "").strip()
+        if not implication or implication != str(card.get("strategy_interpretation") or "").strip():
+            raise ValueError(
+                f"target_peer_context[{index}] implication does not match Strategy meaning."
+            )
+    if strategy_v5:
+        selected_peer_cards = {
+            card_key
+            for card_key, card in cards.items()
+            if isinstance(card, dict)
+            and card.get("domain") == "peer"
+            and card.get("evidence_tier") == "decision_basis"
+            and card.get("target_peer_metric_keys")
+        }
+        if selected_peer_cards != seen_peer_cards:
+            raise ValueError(
+                "Every structured Strategy v5 peer basis requires one target_peer_context entry."
+            )
+    elif label_free:
+        selected_peer_cards = {
+            card_key
+            for card_key, card in cards.items()
+            if isinstance(card, dict) and card.get("domain") == "peer"
+        }
+        if selected_peer_cards != seen_peer_cards:
+            raise ValueError(
+                "Every label-free Writer peer card requires one target_peer_context entry."
+            )
     limitation_categories: set[str] = set()
     for index, limitation in enumerate(_list(packet.get("required_limitations"))):
         if not isinstance(limitation, dict) or not str(limitation.get("category") or "").strip():
@@ -536,9 +1051,9 @@ def validate_writer_editorial_packet(
                 for card_key in _text_list(values)
             ),
         },
-        location="writer_editorial_packet_v2.reader_text",
+        location=f"{packet_version}.reader_text",
     )
-    assert_no_opaque_ids(packet, location="writer_editorial_packet_v2")
+    assert_no_opaque_ids(packet, location=packet_version)
 
     if provenance is None:
         return
@@ -564,6 +1079,11 @@ def _writer_reader_text(packet: dict[str, Any]) -> dict[str, Any]:
         "recommendation_bridge": {
             key: bridge.get(key)
             for key in (
+                "thesis",
+                "existing_position_response",
+                "new_entry_response",
+                "price_context",
+                "counterview",
                 "current_price_rationale",
                 "forward_support",
                 "valuation_counterweight",
@@ -580,10 +1100,21 @@ def _writer_reader_text(packet: dict[str, Any]) -> dict[str, Any]:
             for item in _list(packet.get("peer_findings"))
             if isinstance(item, dict)
         ],
+        "target_peer_context": [
+            {"target_implication": item.get("target_implication")}
+            for item in _list(packet.get("target_peer_context"))
+            if isinstance(item, dict)
+        ],
         "risk_factors": [
             {
                 key: item.get(key)
-                for key in ("risk_summary", "reader_summary", "monitoring_point")
+                for key in (
+                    "display_title",
+                    "risk_summary",
+                    "reader_summary",
+                    "monitoring_point",
+                    "current_implication",
+                )
             }
             for item in _list(packet.get("risk_factors"))
             if isinstance(item, dict)
@@ -648,6 +1179,13 @@ def _reader_observation(
 ) -> dict[str, Any]:
     card_key = str(source.get("card_key") or "")
     observation = _dict(source.get("primary_observation"))
+    if card_key == "peer.agent_analysis":
+        entities = _dict(source.get("comparison_entities"))
+        return {
+            "대상 기업": entities.get("target_company"),
+            "비교 기업": entities.get("peer_companies") or [],
+            "종합 비교": observation.get("comparison_brief"),
+        }
     if str(source.get("domain") or "") == "news" or card_key.startswith("news."):
         coverage = _dict(observation.get("coverage"))
         article_count = coverage.get("deduplicated_article_count") or coverage.get("article_count")
@@ -673,7 +1211,7 @@ def _reader_observation(
             "재무적 영향": financial_link,
         }
     if card_key == "financial.same_period_trend":
-        return {
+        result = {
             "비교 기준": _period_pair_display(observation),
             "당기": _financial_value_display(
                 _dict(observation.get("current_values")),
@@ -684,6 +1222,17 @@ def _reader_observation(
                 source_unit=financial_source_unit,
             ),
         }
+        change_display = _financial_change_display(_dict(observation.get("change_rates")))
+        if change_display:
+            result["전년 동기 대비"] = change_display
+        margin_display = _financial_margin_display(
+            _dict(observation.get("current_margins")),
+            _dict(observation.get("previous_margins")),
+            _dict(observation.get("margin_changes")),
+        )
+        if margin_display:
+            result["수익성"] = margin_display
+        return result
     if card_key == "financial.annual_trend":
         return {
             _period_display(_dict(item.get("period"))): {
@@ -708,7 +1257,7 @@ def _reader_observation(
             if isinstance(item, dict)
         }
     if card_key == "financial.cash_flow":
-        return {
+        result = {
             "비교 기준": _period_pair_display(observation),
             "당기 영업현금흐름": _krw_100m(
                 observation.get("current_operating_cash_flow"),
@@ -719,6 +1268,18 @@ def _reader_observation(
                 source_unit=financial_source_unit,
             ),
         }
+        if observation.get("operating_cash_flow_change_rate") is not None:
+            result["전년 동기 대비"] = _signed_percent(
+                observation.get("operating_cash_flow_change_rate")
+            )
+        current_margin = observation.get("current_operating_cash_flow_margin")
+        previous_margin = observation.get("previous_operating_cash_flow_margin")
+        if current_margin is not None:
+            margin_text = _ratio_percent(current_margin)
+            if previous_margin is not None:
+                margin_text += f" (전년 동기 {_ratio_percent(previous_margin)})"
+            result["영업현금흐름률"] = margin_text
+        return result
     if card_key == "financial.balance_sheet":
         values = _dict(observation.get("values"))
         return {
@@ -876,6 +1437,61 @@ def _financial_value_display(
     if values.get("eps") is not None:
         displayed["EPS"] = f"{float(values['eps']):,.0f}원"
     return displayed
+
+
+def _financial_change_display(values: dict[str, Any]) -> dict[str, str]:
+    labels = {
+        "revenue": "매출",
+        "operating_profit": "영업이익",
+        "net_income": "순이익",
+        "operating_cash_flow": "영업현금흐름",
+        "eps": "EPS",
+    }
+    return {
+        labels[key]: _signed_percent(value)
+        for key, value in values.items()
+        if key in labels and value is not None
+    }
+
+
+def _financial_margin_display(
+    current: dict[str, Any],
+    previous: dict[str, Any],
+    changes: dict[str, Any],
+) -> dict[str, str]:
+    labels = {
+        "operating_margin": "영업이익률",
+        "net_margin": "순이익률",
+        "operating_cash_flow_margin": "영업현금흐름률",
+        "contribution_margin": "공헌이익률",
+        "sga_margin": "판매비와관리비율",
+    }
+    result: dict[str, str] = {}
+    for key, label in labels.items():
+        if current.get(key) is None:
+            continue
+        text = _ratio_percent(current.get(key))
+        if previous.get(key) is not None:
+            text += f" (전년 동기 {_ratio_percent(previous.get(key))}"
+            if changes.get(key) is not None:
+                text += f", {_signed_percentage_point(changes.get(key))}"
+            text += ")"
+        result[label] = text
+    return result
+
+
+def _signed_percent(value: Any) -> str:
+    try:
+        return f"{float(value) * 100:+.2f}%"
+    except (TypeError, ValueError):
+        return "데이터 추가 필요"
+
+
+def _signed_percentage_point(value: Any) -> str:
+    try:
+        return f"{float(value) * 100:+.2f}%p"
+    except (TypeError, ValueError):
+        return "데이터 추가 필요"
 
 
 def _period_pair_display(observation: dict[str, Any]) -> str:

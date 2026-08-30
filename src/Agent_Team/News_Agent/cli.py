@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
-import sys
 from datetime import date
 from pathlib import Path
-from typing import Any
 
 from tqdm.auto import tqdm
 
@@ -14,7 +11,7 @@ from .context_export import build_context_exports, execute_llm_summary_request
 from .workflow import NewsWorkflow, WorkflowRequest
 
 
-PIPELINE_PHASES = ["collect", "export", "llm", "analysis", "sy"]
+PIPELINE_PHASES = ["collect", "export", "llm", "analysis"]
 
 
 def _project_root() -> Path:
@@ -29,7 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="all",
         help=(
             "collect: 수집/청킹/스코어링, export: LLM 입력 생성, llm: 기간 요약 LLM 실행, "
-            "analysis: News Agent handoff 생성, sy: News SY 검증, all: 전체 실행"
+            "analysis: News Agent handoff 생성, all: 전체 실행"
         ),
     )
     parser.add_argument("--collect-date", required=True, help="Search date in YYYY-MM-DD")
@@ -56,16 +53,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help=(
-            "Max same-day-deduplicated news events retained after article reranking. "
+            "Final globally ranked events retained after weekly selection. "
             "--total-max-results is a deprecated compatibility alias."
         ),
     )
     parser.add_argument("--config", default=None, help="Path to workflow config YAML")
-    parser.add_argument("--granularity", choices=["day", "month"], default="month", help="Export period granularity")
-    parser.add_argument("--period-count", type=int, default=12, help="Number of periods for LLM summary input")
-    parser.add_argument("--raw-period-count", type=int, default=3, help="Recent periods kept as raw input")
-    parser.add_argument("--min-mention-count", type=int, default=3, help="Minimum mention_count for export")
-    parser.add_argument("--llm-model", default="gpt-5.4-mini", help="LLM model for summary execution")
+    parser.add_argument("--granularity", choices=["day", "week", "month"], default="week", help="Export period granularity")
+    parser.add_argument("--period-count", type=int, default=14, help="Number of periods for LLM summary input")
+    parser.add_argument("--raw-period-count", type=int, default=14, help="Periods containing globally selected raw events")
+    parser.add_argument("--min-mention-count", type=int, default=1, help="Minimum mention_count for export")
+    parser.add_argument("--llm-model", default="gpt-5.4", help="LLM model for summary execution")
     parser.add_argument("--context-export-dir", default=None, help="Context export root. Defaults to Output_total/News/{run_key}/context_exports.")
     parser.add_argument("--ticker", default=None, help="Ticker for News Agent target_entity.")
     parser.add_argument("--corp-code", default=None, help="DART corp code for News Agent target_entity.")
@@ -78,13 +75,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Use News evidence only and omit DART/market secondary context.",
     )
     parser.add_argument("--analysis-output-dir", default=None, help="News Agent output dir. Defaults to Output_total/News/{run_key}/output.")
-    parser.add_argument("--analysis-model", default=None, help="News Agent LLM model. Defaults to NEWS_AGENT_LLM_MODEL or gpt-5.4-mini.")
-    parser.add_argument("--max-raw-events-per-period", type=int, default=40, help="Raw events per recent period for News Agent.")
-    parser.add_argument("--sy-input", default=None, help="News SY input handoff path. Defaults to <analysis-output-dir>/news_agent_handoff.json.")
-    parser.add_argument("--sy-output-dir", default=None, help="News SY output dir. Defaults to <analysis-output-dir>/sy_agent.")
-    parser.add_argument("--sy-model", default=None, help="News SY LLM model. Defaults to NEWS_SY_AGENT_LLM_MODEL or gpt-5.4-mini.")
-    parser.add_argument("--news-claim-limit", type=int, default=10, help="Max news_only claims for News SY Agent.")
-    parser.add_argument("--timeout-seconds", type=float, default=300.0, help="OpenAI request timeout for analysis and SY phases.")
+    parser.add_argument("--analysis-model", default=None, help="News Agent LLM model. Defaults to NEWS_AGENT_LLM_MODEL or gpt-5.4.")
+    parser.add_argument("--max-raw-events-per-period", type=int, default=20, help="Compatibility cap for the global News Agent raw-event list.")
+    parser.add_argument("--timeout-seconds", type=float, default=300.0, help="OpenAI request timeout for the analysis phase.")
     parser.add_argument(
         "--split-by-period",
         action="store_true",
@@ -174,49 +167,6 @@ def _run_analysis_phase(args: argparse.Namespace, project_root: Path, collect_da
     )
 
 
-def _load_news_sy_module(project_root: Path) -> Any:
-    module_path = project_root / "src" / "Agent_Team" / "News_Agent" / "SY_Agent" / "sy_agent.py"
-    spec = importlib.util.spec_from_file_location("news_sy_agent_runtime", module_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Unable to load News SY Agent module: {module_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-def _run_sy_phase(args: argparse.Namespace, project_root: Path, collect_date: date) -> dict[str, Any]:
-    sy_module = _load_news_sy_module(project_root)
-    if hasattr(sy_module, "_load_env_file"):
-        sy_module._load_env_file(project_root / ".env")
-        if args.env_path:
-            sy_module._load_env_file(Path(args.env_path).expanduser())
-
-    analysis_output_dir = _analysis_output_dir(args, project_root, collect_date)
-    handoff_path = Path(args.sy_input).expanduser() if args.sy_input else analysis_output_dir / "news_agent_handoff.json"
-    if not handoff_path.is_absolute():
-        handoff_path = project_root / handoff_path
-    output_dir = Path(args.sy_output_dir).expanduser() if args.sy_output_dir else analysis_output_dir / "sy_agent"
-    if not output_dir.is_absolute():
-        output_dir = project_root / output_dir
-
-    paths = sy_module.OutputPaths(
-        output_dir=output_dir,
-        verified_output=output_dir / "sy_claim_validations.json",
-        verified_report=output_dir / "news_agent_verified_handoff.json",
-        audit_trace=output_dir / "sy_audit_trace.json",
-    )
-    model = args.sy_model or sy_module.os.getenv("NEWS_SY_AGENT_LLM_MODEL") or sy_module.os.getenv("NEWS_AGENT_LLM_MODEL") or sy_module.DEFAULT_MODEL
-    return sy_module.run_sy_agent(
-        handoff_path=handoff_path.resolve(),
-        paths=paths,
-        model=model,
-        claim_limit=args.news_claim_limit,
-        timeout_seconds=args.timeout_seconds,
-        show_progress=True,
-    )
-
-
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
@@ -255,6 +205,7 @@ def main() -> None:
                 tqdm.write(f"article_ranking={artifacts.article_ranking_path}")
                 tqdm.write(f"news_events={artifacts.news_events_path}")
                 tqdm.write(f"all_news_events={artifacts.all_news_events_path}")
+                tqdm.write(f"weekly_news_events={artifacts.weekly_news_events_path}")
                 tqdm.write(f"event_ranking={artifacts.event_ranking_path}")
                 tqdm.write(f"report_context={artifacts.report_context_path}")
                 tqdm.write(f"manifest={artifacts.manifest_path}")
@@ -271,20 +222,10 @@ def main() -> None:
                 tqdm.write(f"llm_request={paths.llm_request_path}")
                 tqdm.write(f"handoff={paths.handoff_path}")
                 tqdm.write(f"evidence_map={paths.evidence_map_path}")
-            elif phase == "sy":
-                result = _run_sy_phase(args, project_root, collect_date)
-                tqdm.write(json_summary(result.get("summary") or {}))
             else:
                 raise ValueError(f"Unsupported phase: {phase}")
             tqdm.write(f"[news:{phase}] done")
             progress.update(1)
-
-
-def json_summary(payload: dict[str, Any]) -> str:
-    import json
-
-    return json.dumps(payload, ensure_ascii=False, indent=2)
-
 
 if __name__ == "__main__":
     main()

@@ -60,7 +60,9 @@ def _embed_market_chart_assets(
 
     embedded = copy.deepcopy(report_payload)
     output_dir = output_dir.resolve()
-    charts = embedded.get("market_charts")
+    charts = embedded.get("report_charts")
+    if not isinstance(charts, list):
+        charts = embedded.get("market_charts")
     if not isinstance(charts, list):
         return embedded
     for chart in charts:
@@ -121,9 +123,9 @@ def build_complete_html(report_payload: dict[str, Any]) -> str:
         {_sidebar_header(metadata)}
 {_render_sidebar_key_data(metadata)}
 {_render_sidebar_signal_summary(report_payload)}
-{_render_sidebar_market_charts(report_payload)}
       </div>
     </div>
+{_render_report_charts(report_payload)}
     <footer class="report-disclaimer">{_text(REPORT_DISCLAIMER)}</footer>
   </main>
 </body>
@@ -149,7 +151,7 @@ def _sidebar_header(metadata: dict[str, Any]) -> str:
     horizon = metadata.get("investment_horizon") or MISSING_VALUE
     return f"""
         <div class="sidebar-summary">
-          <p class="sidebar-brand">Financial Agent</p>
+          <p class="sidebar-brand">기업분석 리포트</p>
           <dl>
             <div><dt>기준일</dt><dd>{_inline(base_date)}</dd></div>
             <div><dt>투자기간</dt><dd>{_inline(horizon)}</dd></div>
@@ -165,7 +167,7 @@ def _render_sidebar_key_data(metadata: dict[str, Any]) -> str:
         <section class="sidebar-panel key-data-panel">
           <h2>핵심 정보</h2>
           <dl>
-            <div><dt>자료 범위</dt><dd>{_inline(coverage)}</dd></div>
+            <div><dt>자료 충실도</dt><dd>{_inline(coverage)}</dd></div>
             <div><dt>판단 확신도</dt><dd>{_inline(confidence)}</dd></div>
           </dl>
         </section>
@@ -178,15 +180,20 @@ def _render_sidebar_signal_summary(report_payload: dict[str, Any]) -> str:
     rows = [row for row in evidence.get("rows") or [] if isinstance(row, dict)]
     role_based = any(str(row.get("_strategy_role") or "") for row in rows)
     groups = ({
-        "핵심 근거": [
+        "판단 지지": [
             str(row.get("핵심 근거") or "").strip()
             for row in rows
-            if row.get("_strategy_role") == "primary"
+            if row.get("_strategy_role") in {"primary", "supports_decision"}
         ][:3],
-        "반대 근거": [
+        "반대 논리": [
             str(row.get("핵심 근거") or "").strip()
             for row in rows
-            if row.get("_strategy_role") == "counter"
+            if row.get("_strategy_role") in {"counter", "opposes_decision"}
+        ][:3],
+        "불확실성": [
+            str(row.get("핵심 근거") or "").strip()
+            for row in rows
+            if row.get("_strategy_role") in {"monitoring", "limits_confidence"}
         ][:3],
     } if role_based else {
         "긍정 요인": [
@@ -219,26 +226,36 @@ def _render_sidebar_signal_summary(report_payload: dict[str, Any]) -> str:
 """
 
 
-def _render_sidebar_market_charts(report_payload: dict[str, Any]) -> str:
+def _render_report_charts(report_payload: dict[str, Any]) -> str:
     charts = [
         chart
-        for chart in report_payload.get("market_charts") or []
+        for chart in (
+            report_payload.get("report_charts")
+            or report_payload.get("market_charts")
+            or []
+        )
         if isinstance(chart, dict) and str(chart.get("src") or "").strip()
     ]
     if not charts:
         return ""
     figures = "\n".join(
         f"""
-          <figure class="market-chart">
-            <img src="{escape(str(chart['src']), quote=True)}" alt="{escape(str(chart.get('caption') or '시장 차트'), quote=True)}">
-            <figcaption>{_text(chart.get('caption') or '시장 차트')}</figcaption>
+          <figure class="report-chart">
+            <img src="{escape(str(chart['src']), quote=True)}" alt="{escape(str(chart.get('alt') or chart.get('title') or '주요 차트'), quote=True)}">
+            <figcaption>
+              <strong class="chart-caption-title">{_text(chart.get('title') or '주요 차트')}</strong>
+              <span class="chart-observation">{_text(chart.get('chart_observation'))}</span>
+              <span class="chart-interpretation">{_text(chart.get('investment_interpretation'))}</span>
+            </figcaption>
           </figure>"""
-        for chart in charts[:3]
+        for chart in charts[:2]
     )
     return f"""
-        <section class="sidebar-panel market-chart-panel">
-          <h2>주요 시장 차트</h2>
+        <section class="report-chart-section">
+          <h1>주요 차트</h1>
+          <div class="report-chart-grid">
 {figures}
+          </div>
         </section>
 """
 
@@ -482,8 +499,8 @@ def _css() -> str:
       margin: 0;
       font-family: Arial, "Noto Sans KR", "Noto Sans CJK KR", "Apple SD Gothic Neo", sans-serif;
       color: var(--text);
-      font-size: 7.7pt;
-      line-height: 1.2;
+      font-size: 8.2pt;
+      line-height: 1.23;
       background: #e5e7eb;
       word-break: keep-all;
     }
@@ -575,7 +592,7 @@ def _css() -> str:
     .meta-grid span {
       display: inline;
       color: var(--muted);
-      font-size: 5.8pt;
+      font-size: 6.1pt;
       line-height: 1.05;
       text-transform: uppercase;
     }
@@ -587,8 +604,8 @@ def _css() -> str:
       border-collapse: collapse;
       margin: 0.8mm 0 2mm;
       background: #ffffff;
-      font-size: 5.4pt;
-      line-height: 1.16;
+      font-size: 5.8pt;
+      line-height: 1.18;
       table-layout: fixed;
       word-break: break-word;
       border-top: 1.2pt solid var(--ink);
@@ -694,7 +711,7 @@ def _css() -> str:
       grid-template-columns: 19mm minmax(0, 1fr);
       gap: 1mm;
       margin-bottom: 0.65mm;
-      font-size: 5.9pt;
+      font-size: 6.2pt;
       line-height: 1.15;
     }
     .sidebar-summary dt {
@@ -730,7 +747,7 @@ def _css() -> str:
       grid-template-columns: 24mm minmax(0, 1fr);
       gap: 1mm;
       margin-bottom: 0.85mm;
-      font-size: 6.2pt;
+      font-size: 6.4pt;
       line-height: 1.15;
     }
     .key-data-panel dt {
@@ -749,7 +766,7 @@ def _css() -> str:
     .signal-group h3 {
       margin: 0 0 0.8mm;
       color: var(--muted);
-      font-size: 6.2pt;
+      font-size: 6.4pt;
       line-height: 1.1;
     }
     .signal-group ul {
@@ -761,7 +778,7 @@ def _css() -> str:
       margin: 0 0 0.65mm;
       padding-left: 2.2mm;
       position: relative;
-      font-size: 6.2pt;
+      font-size: 6.4pt;
       line-height: 1.15;
     }
     .signal-group li::before {
@@ -773,21 +790,54 @@ def _css() -> str:
       height: 1.1mm;
       background: var(--ink);
     }
-    .market-chart {
-      margin: 0 0 1.5mm;
+    .report-chart-section {
+      margin: 2.5mm 0 0;
+      break-inside: avoid;
+      page-break-inside: avoid;
     }
-    .market-chart img {
+    .report-chart-section > h1 {
+      margin-bottom: 1.5mm;
+      padding-bottom: 0.8mm;
+      border-bottom: 1pt solid var(--ink);
+    }
+    .report-chart-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 3mm;
+      align-items: start;
+    }
+    .report-chart {
+      margin: 0;
+      min-width: 0;
+    }
+    .report-chart img {
       display: block;
       width: 100%;
       height: auto;
       border: 0.35pt solid #d1d5db;
     }
-    .market-chart figcaption {
-      margin-top: 0.45mm;
+    .report-chart figcaption {
+      margin-top: 0.7mm;
+      color: var(--ink);
+      font-size: 6pt;
+      line-height: 1.22;
+      text-align: left;
+    }
+    .chart-caption-title,
+    .chart-observation,
+    .chart-interpretation {
+      display: block;
+    }
+    .chart-caption-title {
+      margin-bottom: 0.45mm;
+      font-size: 6.2pt;
+    }
+    .chart-observation {
+      color: var(--ink);
+    }
+    .chart-interpretation {
+      margin-top: 0.35mm;
       color: var(--muted);
-      font-size: 5.2pt;
-      line-height: 1.1;
-      text-align: center;
     }
     @media print {
       @page {
@@ -826,14 +876,32 @@ def _css() -> str:
         height: auto;
         overflow: visible;
       }
+      p {
+        margin-bottom: 1.2mm;
+      }
+      .report-section {
+        margin-bottom: 1.8mm;
+      }
+      #data-limits p {
+        font-size: 7.8pt;
+        line-height: 1.16;
+      }
+      .report-chart-grid {
+        grid-template-columns: 1fr;
+        gap: 4mm;
+      }
+      .report-chart img {
+        width: 100%;
+        max-height: 112mm;
+        object-fit: contain;
+      }
+      .report-chart figcaption {
+        font-size: 6pt;
+      }
       .report-section,
       .sidebar-panel {
         break-inside: auto;
         page-break-inside: auto;
-      }
-      #risk-monitoring-matrix {
-        break-before: page;
-        page-break-before: always;
       }
       .report-disclaimer {
         position: absolute;
@@ -878,6 +946,9 @@ def _css() -> str:
         white-space: normal;
       }
       .meta-grid {
+        grid-template-columns: 1fr;
+      }
+      .report-chart-grid {
         grid-template-columns: 1fr;
       }
     }"""

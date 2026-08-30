@@ -349,49 +349,32 @@ def extract_financial_health_snapshot(
     return snapshot_df
 
 
-def extract_strategy_evidence_map(decision_basis_card: dict[str, Any]) -> pd.DataFrame:
-    """Summarize Strategy Agent decision basis items into countable evidence buckets."""
-
-    card = decision_basis_card.get("decision_basis_card", decision_basis_card)
-    sections = [
-        ("basis_items", "Positive Basis"),
-        ("risk_items", "Risk"),
-        ("mixed_or_conflicting_signals", "Mixed Signal"),
-        ("monitoring_points", "Monitoring"),
-    ]
-    rows: list[dict[str, Any]] = []
-    for section_key, signal_type in sections:
-        items = card.get(section_key, [])
-        if not isinstance(items, list):
-            continue
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            rows.append(
-                {
-                    "signal_type": signal_type,
-                    "category": str(item.get("category", "uncategorized")),
-                    "direction": str(item.get("direction", "")),
-                    "claim": item.get("claim"),
-                    "evidence_count": len(item.get("evidence", [])) if isinstance(item.get("evidence"), list) else 0,
-                }
-            )
-    if not rows:
-        raise ValueError("Decision basis card has no basis/risk/mixed/monitoring items to visualize.")
-    return pd.DataFrame(rows)
-
-
 def format_period_label(period: dict[str, Any]) -> str:
     """Format DART period metadata into Writer-safe labels."""
 
     fiscal_year = period.get("fiscal_year")
-    period_type = period.get("period_type")
-    basis = period.get("basis")
-    if basis == "FULL_YEAR":
-        return f"{fiscal_year} FY"
-    if period_type == "Q3" and basis == "YTD":
-        return f"{fiscal_year} Q3 YTD"
-    return " ".join(str(part) for part in [fiscal_year, period_type, basis] if part is not None)
+    period_type = str(period.get("period_type") or "").upper()
+    basis = str(period.get("basis") or "").upper()
+    year_label = f"{fiscal_year}년" if fiscal_year else ""
+    if basis == "TTM" or period_type == "TTM":
+        return " ".join(part for part in [year_label, "최근 12개월"] if part)
+    if basis == "FULL_YEAR" or period_type == "ANNUAL":
+        return f"{fiscal_year}년 연간"
+    period_labels = {
+        "Q1": "1분기",
+        "Q2": "2분기",
+        "HALF": "반기",
+        "Q3": "3분기",
+        "Q4": "4분기",
+    }
+    period_label = period_labels.get(period_type, period_type)
+    if basis == "YTD":
+        period_label = f"{period_label} 누적" if period_label else "누적"
+    return " ".join(
+        str(part)
+        for part in [year_label, period_label, basis if basis not in {"", "YTD"} else ""]
+        if part
+    )
 
 
 def _period_for_metric(metrics_by_key: dict[str, Any], period_key: str) -> dict[str, Any]:

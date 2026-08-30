@@ -38,13 +38,13 @@ def _configure_matplotlib_fonts() -> None:
 _configure_matplotlib_fonts()
 
 
-def build_stock_price_ma_volume_relative_strength_chart(
+def build_stock_price_ma_volume_chart(
     market_df: pd.DataFrame,
     output_pdf: str | Path,
     output_png: str | Path,
     company_name: str,
 ) -> dict:
-    """Create the market composite chart and return manifest metadata."""
+    """Create the price, moving-average and volume chart."""
 
     output_pdf = Path(output_pdf).expanduser().resolve()
     output_png = Path(output_png).expanduser().resolve()
@@ -57,8 +57,6 @@ def build_stock_price_ma_volume_relative_strength_chart(
         "derived_ma20",
         "derived_ma60",
         "stock_volume_ratio_20",
-        "stock_excess_return_20d_pct",
-        "stock_relative_strength_60_pct",
     ]
     _require_columns(market_df, required_columns, "market chart")
     chart_df = market_df.dropna(subset=["date", "stock_close"]).sort_values("date")
@@ -66,22 +64,22 @@ def build_stock_price_ma_volume_relative_strength_chart(
         raise ValueError("Market chart data is empty after excluding rows without stock_close.")
 
     fig, axes = plt.subplots(
-        nrows=3,
+        nrows=2,
         ncols=1,
-        figsize=(12, 8),
+        figsize=(12, 6),
         sharex=True,
-        gridspec_kw={"height_ratios": [2.3, 1.0, 1.2]},
+        gridspec_kw={"height_ratios": [2.5, 1.0]},
     )
     fig.patch.set_facecolor("white")
 
     title_company = _safe_title_company(company_name)
-    price_ax, volume_ax, relative_ax = axes
-    price_ax.plot(chart_df["date"], chart_df["stock_close"], color="#1f5a99", linewidth=2.0, label="Close")
-    price_ax.plot(chart_df["date"], chart_df["derived_ma20"], color="#2b8a3e", linewidth=1.5, label="Derived MA20")
-    price_ax.plot(chart_df["date"], chart_df["derived_ma60"], color="#b7791f", linewidth=1.5, label="Derived MA60")
+    price_ax, volume_ax = axes
+    price_ax.plot(chart_df["date"], chart_df["stock_close"], color="#1f5a99", linewidth=2.0, label="종가")
+    price_ax.plot(chart_df["date"], chart_df["derived_ma20"], color="#2b8a3e", linewidth=1.5, label="20일 이동평균")
+    price_ax.plot(chart_df["date"], chart_df["derived_ma60"], color="#b7791f", linewidth=1.5, label="60일 이동평균")
     latest = chart_df.iloc[-1]
     price_ax.annotate(
-        f"{latest['stock_close']:,.0f} KRW",
+        f"{latest['stock_close']:,.0f}원",
         xy=(latest["date"], latest["stock_close"]),
         xytext=(-85, 18),
         textcoords="offset points",
@@ -89,42 +87,22 @@ def build_stock_price_ma_volume_relative_strength_chart(
         fontsize=9,
         color="#1a202c",
     )
-    price_ax.set_title(f"{title_company} Stock Price with MA20/MA60", fontsize=12, loc="left")
-    price_ax.set_ylabel("Price (KRW)")
+    price_ax.set_title(f"{title_company} 주가와 이동평균", fontsize=12, loc="left")
+    price_ax.set_ylabel("주가(원)")
     price_ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:,.0f}"))
     price_ax.legend(loc="upper left", ncol=3, frameon=False)
     _style_axis(price_ax)
 
-    volume_ax.plot(chart_df["date"], chart_df["stock_volume_ratio_20"], color="#5f6368", linewidth=1.5, label="20D Volume Ratio")
+    volume_ax.plot(chart_df["date"], chart_df["stock_volume_ratio_20"], color="#5f6368", linewidth=1.5, label="20일 평균 대비 거래량")
     volume_ax.axhline(1.0, color="#a0aec0", linewidth=1.0, linestyle="--")
-    volume_ax.set_title("20D Volume Ratio", fontsize=11, loc="left")
-    volume_ax.set_ylabel("Volume Ratio (20D)")
+    volume_ax.set_title("20일 평균 대비 거래량", fontsize=11, loc="left")
+    volume_ax.set_ylabel("거래량 배수")
     _style_axis(volume_ax)
 
-    relative_ax.plot(
-        chart_df["date"],
-        chart_df["stock_excess_return_20d_pct"],
-        color="#0f766e",
-        linewidth=1.6,
-        label="20D Excess Return",
-    )
-    relative_ax.plot(
-        chart_df["date"],
-        chart_df["stock_relative_strength_60_pct"],
-        color="#c2410c",
-        linewidth=1.6,
-        label="60D Relative Strength",
-    )
-    relative_ax.axhline(0.0, color="#a0aec0", linewidth=1.0, linestyle="--")
-    relative_ax.set_title("20D Excess Return and 60D Relative Strength", fontsize=11, loc="left")
-    relative_ax.set_ylabel("Relative Performance (%)")
-    relative_ax.legend(loc="upper left", ncol=2, frameon=False)
-    _style_axis(relative_ax)
-
     locator = mdates.AutoDateLocator(minticks=6, maxticks=10)
-    relative_ax.xaxis.set_major_locator(locator)
-    relative_ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
-    relative_ax.set_xlabel("Date")
+    volume_ax.xaxis.set_major_locator(locator)
+    volume_ax.xaxis.set_major_formatter(mdates.DateFormatter("%m.%d"))
+    volume_ax.set_xlabel("거래일")
 
     fig.tight_layout()
     _save_figure(fig, output_pdf, output_png)
@@ -132,10 +110,10 @@ def build_stock_price_ma_volume_relative_strength_chart(
     logger.info("Wrote market chart: %s, %s", output_pdf, output_png)
 
     return {
-        "figure_id": "fig_stock_price_ma_volume_relative_strength",
-        "title": "Stock Price with MA20/MA60, Volume Ratio, and Relative Strength",
+        "figure_id": "fig_stock_price_ma_volume",
+        "title": "주가·이동평균·거래량",
         "chart_type": "multi_panel_time_series",
-        "section_recommendation": "Market / Price View",
+        "section_recommendation": "시장·주가 분석",
         "asset_path_pdf": "figures/stock_price_ma_volume_relative_strength.pdf",
         "asset_path_png": "figures/stock_price_ma_volume_relative_strength.png",
         "asset_abs_path_pdf": str(output_pdf),
@@ -147,27 +125,20 @@ def build_stock_price_ma_volume_relative_strength_chart(
             "stock_close_to_ma20",
             "stock_close_to_ma60",
             "stock_volume_ratio_20",
-            "stock_excess_return_20d",
-            "stock_relative_strength_60",
         ],
         "derived_columns": [
             "derived_ma20",
             "derived_ma60",
-            "stock_excess_return_20d_pct",
-            "stock_relative_strength_60_pct",
         ],
         "caption": (
-            "주가는 20일 및 60일 이동평균선 대비 위치, 20일 거래량 비율, "
-            "20일 초과수익률 및 60일 상대강도를 함께 보여준다."
+            "주가는 20일 및 60일 이동평균선 대비 위치와 20일 거래량 비율을 함께 보여준다."
         ),
         "writer_allowed_interpretation": (
-            "주가의 절대 추세, 이동평균선 대비 위치, 거래량 활성도, "
-            "시장 대비 상대성과를 설명할 수 있다."
+            "주가의 절대 추세, 이동평균선 대비 위치와 거래량 활성도를 설명할 수 있다."
         ),
         "writer_forbidden_interpretation": [
             "이동평균선 상회만으로 매수 신호라고 단정하지 않는다.",
             "거래량 증가만으로 실적 개선을 단정하지 않는다.",
-            "상대강도 약세를 기업 펀더멘털 악화로 단정하지 않는다.",
             "목표주가, upside/downside를 이 차트에서 산출하지 않는다.",
         ],
         "data_limitations": [
@@ -189,52 +160,49 @@ def build_fundamental_margin_trend_chart(
     output_pdf.parent.mkdir(parents=True, exist_ok=True)
     output_png.parent.mkdir(parents=True, exist_ok=True)
 
-    required_columns = ["period_label", "contribution_margin_pct", "sga_margin_pct", "basis"]
+    required_columns = [
+        "period_key",
+        "period_label",
+        "period_type",
+        "contribution_margin_pct",
+        "sga_margin_pct",
+        "basis",
+    ]
     _require_columns(margin_df, required_columns, "fundamental margin chart")
-    chart_df = margin_df.reset_index(drop=True)
+    chart_df = _select_comparable_period_rows(margin_df)
     if chart_df.empty:
         raise ValueError("Fundamental margin chart data is empty.")
 
     fig, ax = plt.subplots(figsize=(10, 6))
     fig.patch.set_facecolor("white")
-    x_positions = list(range(len(chart_df)))
-    ax.plot(
-        x_positions,
+    x_positions = np.arange(len(chart_df))
+    width = 0.34
+    contribution_bars = ax.bar(
+        x_positions - width / 2,
         chart_df["contribution_margin_pct"],
+        width,
         color="#1f5a99",
-        linewidth=2.0,
-        marker="o",
-        label="Contribution Margin",
+        label="공헌이익률",
     )
-    ax.plot(
-        x_positions,
+    sga_bars = ax.bar(
+        x_positions + width / 2,
         chart_df["sga_margin_pct"],
+        width,
         color="#b7791f",
-        linewidth=2.0,
-        marker="o",
-        label="SG&A Margin",
+        label="판매관리비율",
     )
-    for index, row in chart_df.iterrows():
-        if row.get("basis") == "YTD":
-            ax.annotate(
-                "Q3 YTD\nnot FY",
-                xy=(index, row["contribution_margin_pct"]),
-                xytext=(8, 18),
-                textcoords="offset points",
-                arrowprops={"arrowstyle": "->", "color": "#4a5568", "lw": 0.8},
-                fontsize=9,
-                color="#4a5568",
-            )
+    _label_bars(ax, contribution_bars, suffix="%")
+    _label_bars(ax, sga_bars, suffix="%")
 
     title_company = _safe_title_company(company_name)
-    ax.set_title(f"{title_company} Contribution Margin and SG&A Margin Trend", fontsize=12, loc="left")
+    ax.set_title(f"{title_company} 동일 기간 수익성 비교", fontsize=12, loc="left")
     ax.set_xticks(x_positions)
     ax.set_xticklabels(chart_df["period_label"].tolist())
-    ax.set_ylabel("Percentage (%)")
+    ax.set_ylabel("비율(%)")
     ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:.0f}%"))
     ax.legend(loc="best", frameon=False)
     _style_axis(ax)
-    fig.text(0.01, 0.01, _ytd_note(chart_df), fontsize=9, color="#4a5568")
+    fig.text(0.01, 0.01, _period_comparison_note(chart_df), fontsize=9, color="#4a5568")
     fig.tight_layout(rect=(0, 0.04, 1, 1))
     _save_figure(fig, output_pdf, output_png)
     plt.close(fig)
@@ -242,9 +210,9 @@ def build_fundamental_margin_trend_chart(
 
     return {
         "figure_id": "fig_fundamental_margin_trend",
-        "title": "Contribution Margin and SG&A Margin Time-Series Fundamental Trend",
-        "chart_type": "line_time_series",
-        "section_recommendation": "Financial Analysis",
+        "title": "동일 기간 공헌이익률과 판매관리비율 비교",
+        "chart_type": "grouped_bar_comparison",
+        "section_recommendation": "재무 분석",
         "asset_path_pdf": "figures/fundamental_margin_trend.pdf",
         "asset_path_png": "figures/fundamental_margin_trend.png",
         "asset_abs_path_pdf": str(output_pdf),
@@ -252,21 +220,19 @@ def build_fundamental_margin_trend_chart(
         "data_source": "dart_main.json",
         "used_metrics": ["contribution_margin", "sga_margin"],
         "caption": (
-            "DART 기준 공헌이익률과 판관비율의 추이를 보여준다. YTD 수치가 포함된 경우 "
-            "연간 수치와 직접 비교에는 제한이 있다."
+            "DART 기준 당기와 전년 동기의 공헌이익률 및 판관비율을 동일 기간 기준으로 비교한다."
         ),
         "writer_allowed_interpretation": (
-            "공헌이익률과 판관비율의 방향성을 바탕으로 수익성 구조 변화를 설명할 수 있다. "
-            "단, YTD 수치를 연간 수치와 직접 YoY 개선으로 단정하지 않는다."
+            "동일 누적기간의 공헌이익률과 판관비율 차이를 바탕으로 수익성 구조 변화를 설명할 수 있다."
         ),
         "writer_forbidden_interpretation": [
             "contribution_margin을 별도 근거 없는 이익률 지표로 표현하지 않는다.",
             "sga_margin 개선만으로 별도 산출되지 않은 수익성 지표 개선을 단정하지 않는다.",
-            "YTD 수치와 FY 수치를 동일 기준 YoY로 단정하지 않는다.",
+            "서로 다른 누적기간이나 연간 수치를 동일 기준으로 비교하지 않는다.",
             "추가 근거 없이 수익성, 자본효율성, 밸류에이션 지표를 임의 확장하지 않는다.",
         ],
         "data_limitations": [
-            "YTD 수치가 포함된 경우 연간 확정치가 아니다.",
+            "누적 수치는 연간 확정치가 아니다.",
             "추가 수익성 및 자본효율성 지표는 별도 근거가 있을 때만 해석한다.",
         ],
     }
@@ -334,12 +300,12 @@ def build_indexed_stock_vs_kospi_chart(
         fontsize=9,
         color="#5f6368",
     )
-    ax.set_title(f"{title_company} Indexed Performance vs KOSPI", fontsize=12, loc="left")
-    ax.set_ylabel("Index (first date = 100)")
+    ax.set_title(f"{title_company}와 KOSPI 지수화 성과", fontsize=12, loc="left")
+    ax.set_ylabel("지수(시작일=100)")
     ax.legend(loc="upper left", frameon=False)
     locator = mdates.AutoDateLocator(minticks=6, maxticks=10)
     ax.xaxis.set_major_locator(locator)
-    ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%m.%d"))
     _style_axis(ax)
     fig.tight_layout()
     _save_figure(fig, output_pdf, output_png)
@@ -348,9 +314,9 @@ def build_indexed_stock_vs_kospi_chart(
 
     return {
         "figure_id": "fig_indexed_stock_vs_kospi",
-        "title": "Indexed Stock Performance vs KOSPI",
+        "title": "대상기업과 KOSPI 지수화 성과",
         "chart_type": "indexed_time_series",
-        "section_recommendation": "Market / Relative Performance",
+        "section_recommendation": "시장·상대성과 분석",
         "asset_path_pdf": "figures/indexed_stock_vs_kospi.pdf",
         "asset_path_png": "figures/indexed_stock_vs_kospi.png",
         "asset_abs_path_pdf": str(output_pdf),
@@ -397,31 +363,31 @@ def build_peer_return_comparison_chart(
     returns_ax, relative_ax = axes
 
     return_specs = [
-        ("stock_return_5d_pct", "5D", "#1f5a99", -width),
-        ("stock_return_20d_pct", "20D", "#2b8a3e", 0.0),
-        ("stock_return_60d_pct", "60D", "#b7791f", width),
+        ("stock_return_5d_pct", "5일", "#1f5a99", -width),
+        ("stock_return_20d_pct", "20일", "#2b8a3e", 0.0),
+        ("stock_return_60d_pct", "60일", "#b7791f", width),
     ]
     for column, label, color, offset in return_specs:
         bars = returns_ax.bar(x + offset, chart_df[column], width=width, label=label, color=color)
         _label_bars(returns_ax, bars)
     returns_ax.axhline(0.0, color="#4a5568", linewidth=0.9)
-    returns_ax.set_title("Peer Stock Return Comparison", fontsize=12, loc="left")
-    returns_ax.set_ylabel("Return (%)")
+    returns_ax.set_title("대상기업과 비교기업 주가수익률", fontsize=12, loc="left")
+    returns_ax.set_ylabel("수익률(%)")
     returns_ax.set_xticks(x)
     returns_ax.set_xticklabels(chart_df["company_label"])
     returns_ax.legend(loc="upper left", ncol=3, frameon=False)
     _style_axis(returns_ax)
 
     relative_specs = [
-        ("stock_excess_return_20d_pct", "20D Excess vs KOSPI", "#0f766e", -width / 2),
-        ("stock_relative_strength_60_pct", "60D Relative Strength", "#c2410c", width / 2),
+        ("stock_excess_return_20d_pct", "20일 KOSPI 초과수익률", "#0f766e", -width / 2),
+        ("stock_relative_strength_60_pct", "60일 상대강도", "#c2410c", width / 2),
     ]
     for column, label, color, offset in relative_specs:
         bars = relative_ax.bar(x + offset, chart_df[column], width=width, label=label, color=color)
         _label_bars(relative_ax, bars)
     relative_ax.axhline(0.0, color="#4a5568", linewidth=0.9)
-    relative_ax.set_title("Market Relative Performance", fontsize=11, loc="left")
-    relative_ax.set_ylabel("Relative Performance (%)")
+    relative_ax.set_title("시장 대비 상대성과", fontsize=11, loc="left")
+    relative_ax.set_ylabel("상대성과(%)")
     relative_ax.set_xticks(x)
     relative_ax.set_xticklabels(chart_df["company_label"])
     relative_ax.legend(loc="upper left", ncol=2, frameon=False)
@@ -434,9 +400,9 @@ def build_peer_return_comparison_chart(
 
     return {
         "figure_id": "fig_peer_return_comparison",
-        "title": "Peer Return and Relative Strength Comparison",
+        "title": "대상기업과 비교기업 주가·상대성과",
         "chart_type": "peer_group_bar_chart",
-        "section_recommendation": "Peer / Market Comparison",
+        "section_recommendation": "비교기업·시장 분석",
         "asset_path_pdf": "figures/peer_return_comparison.pdf",
         "asset_path_png": "figures/peer_return_comparison.png",
         "asset_abs_path_pdf": str(output_pdf),
@@ -459,11 +425,11 @@ def build_peer_return_comparison_chart(
         "caption": "비교 기업들의 단기·중기 주가 수익률과 시장 대비 상대성과를 비교한다.",
         "writer_allowed_interpretation": "동일 기준일의 시장 성과 비교와 상대강도 차이를 설명할 수 있다.",
         "writer_forbidden_interpretation": [
-            "peer 주가 수익률만으로 펀더멘털 우열을 단정하지 않는다.",
+            "비교기업 주가수익률만으로 펀더멘털 우열을 단정하지 않는다.",
             "상대성과를 목표주가나 추천 의견으로 변환하지 않는다.",
         ],
         "data_limitations": [
-            "peer 비교는 현재 확보된 동일 기준일 국내 비교 대상만 포함한다.",
+            "비교기업 분석은 현재 확보된 동일 기준일 국내 비교 대상만 포함한다.",
         ],
     }
 
@@ -490,10 +456,10 @@ def build_peer_profitability_comparison_chart(
     fig.patch.set_facecolor("white")
     revenue_ax, margin_ax, eps_ax = axes
 
-    revenue_bars = revenue_ax.bar(x, chart_df["revenue_100m"], width=0.46, color="#1f5a99", label="Revenue")
+    revenue_bars = revenue_ax.bar(x, chart_df["revenue_100m"], width=0.46, color="#1f5a99", label="매출")
     _label_bars(revenue_ax, revenue_bars)
-    revenue_ax.set_title("Domestic Peer Revenue Scale", fontsize=12, loc="left")
-    revenue_ax.set_ylabel("KRW 100mn")
+    revenue_ax.set_title("대상기업과 비교기업 매출 규모", fontsize=12, loc="left")
+    revenue_ax.set_ylabel("억원")
     revenue_ax.set_xticks(x)
     revenue_ax.set_xticklabels(chart_df["company_label"])
     revenue_ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:,.0f}"))
@@ -503,7 +469,7 @@ def build_peer_profitability_comparison_chart(
         x - width / 2,
         chart_df["contribution_margin_pct"],
         width=width,
-        label="Contribution Margin",
+        label="공헌이익률",
         color="#2b8a3e",
     )
     _label_bars(margin_ax, bars)
@@ -511,23 +477,23 @@ def build_peer_profitability_comparison_chart(
         x + width / 2,
         chart_df["sga_margin_pct"],
         width=width,
-        label="SG&A Margin",
+        label="판매관리비율",
         color="#b7791f",
     )
     _label_bars(margin_ax, bars)
-    margin_ax.set_title("Profitability Structure", fontsize=11, loc="left")
-    margin_ax.set_ylabel("Margin (%)")
+    margin_ax.set_title("수익성 구조", fontsize=11, loc="left")
+    margin_ax.set_ylabel("이익률(%)")
     margin_ax.set_xticks(x)
     margin_ax.set_xticklabels(chart_df["company_label"])
     margin_ax.legend(loc="upper right", frameon=False)
     _style_axis(margin_ax)
 
     eps_colors = ["#0f766e" if value >= 0 else "#c2410c" for value in chart_df["eps"].fillna(0)]
-    eps_bars = eps_ax.bar(x, chart_df["eps"], width=0.46, color=eps_colors, label="EPS")
+    eps_bars = eps_ax.bar(x, chart_df["eps"], width=0.46, color=eps_colors, label="주당순이익")
     _label_bars(eps_ax, eps_bars)
     eps_ax.axhline(0, color="#a0aec0", linewidth=1.0)
-    eps_ax.set_title("EPS Snapshot", fontsize=11, loc="left")
-    eps_ax.set_ylabel("KRW")
+    eps_ax.set_title("주당순이익", fontsize=11, loc="left")
+    eps_ax.set_ylabel("원")
     eps_ax.set_xticks(x)
     eps_ax.set_xticklabels(chart_df["company_label"])
     eps_ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:,.0f}"))
@@ -536,7 +502,7 @@ def build_peer_profitability_comparison_chart(
     fig.text(
         0.01,
         0.01,
-        "Note: 국내 peer 기준. 결측치는 보간하지 않으며 글로벌 peer, 가치평가 지표, 업종 평균 비교는 포함하지 않음.",
+        "주: 국내 비교기업 기준이며, 결측치는 보간하지 않았다. 해외 비교기업, 가치평가 지표, 업종 평균은 포함하지 않았다.",
         fontsize=9,
         color="#4a5568",
     )
@@ -547,16 +513,16 @@ def build_peer_profitability_comparison_chart(
 
     return {
         "figure_id": "fig_peer_profitability_comparison",
-        "title": "Domestic Peer Revenue and Profitability Comparison",
+        "title": "대상기업과 비교기업 매출·수익성",
         "chart_type": "peer_group_bar_chart",
-        "section_recommendation": "Peer / Profitability Comparison",
+        "section_recommendation": "비교기업·수익성 분석",
         "asset_path_pdf": "figures/peer_profitability_comparison.pdf",
         "asset_path_png": "figures/peer_profitability_comparison.png",
         "asset_abs_path_pdf": str(output_pdf),
         "asset_abs_path_png": str(output_png),
         "data_source": "Competitor peer_comparison_dataset.json",
         "used_metrics": ["revenue_100m", "contribution_margin_pct", "sga_margin_pct", "eps"],
-        "caption": "국내 peer 기준 매출 규모, 공헌이익률, 판관비율, EPS를 비교한다.",
+        "caption": "국내 비교기업을 기준으로 매출 규모, 공헌이익률, 판매관리비율, 주당순이익을 비교한다.",
         "writer_allowed_interpretation": "국내 비교군 안에서 대상 기업의 매출 규모, 수익성 구조, 비용 효율성, EPS 위치를 설명할 수 있다.",
         "writer_forbidden_interpretation": [
             "global peer와의 우열을 언급하지 않는다.",
@@ -565,9 +531,9 @@ def build_peer_profitability_comparison_chart(
             "결측치를 임의로 추정하지 않는다.",
         ],
         "data_limitations": [
-            "국내 peer 비교는 현재 확보된 동일 기준일 국내 비교 대상만 포함한다.",
+            "국내 비교기업 분석은 현재 확보된 동일 기준일 비교 대상만 포함한다.",
             "일부 peer의 재무 항목은 N/A이며 보간하지 않는다.",
-            "YTD 수치가 포함된 경우 연간 확정치와 직접 비교하지 않는다.",
+            "누적 수치가 포함된 경우 연간 확정치와 직접 비교하지 않는다.",
         ],
     }
 
@@ -581,9 +547,17 @@ def build_revenue_profit_sga_trend_chart(
     """Create revenue, contribution profit, and SG&A trend chart."""
 
     output_pdf, output_png = _prepare_output_paths(output_pdf, output_png)
-    required_columns = ["period_label", "revenue_krw_bn", "contribution_profit_krw_bn", "sga_krw_bn", "basis"]
+    required_columns = [
+        "period_key",
+        "period_label",
+        "period_type",
+        "revenue_krw_bn",
+        "contribution_profit_krw_bn",
+        "sga_krw_bn",
+        "basis",
+    ]
     _require_columns(income_df, required_columns, "revenue/profit/SG&A trend chart")
-    chart_df = income_df.reset_index(drop=True)
+    chart_df = _select_comparable_period_rows(income_df)
     if chart_df[["revenue_krw_bn", "contribution_profit_krw_bn", "sga_krw_bn"]].isna().all(axis=None):
         raise ValueError("Revenue/profit/SG&A trend chart has no usable numeric data.")
 
@@ -591,34 +565,22 @@ def build_revenue_profit_sga_trend_chart(
     fig, ax = plt.subplots(figsize=(10.5, 6))
     fig.patch.set_facecolor("white")
     specs = [
-        ("revenue_krw_bn", "Revenue", "#1f5a99"),
-        ("contribution_profit_krw_bn", "Contribution Profit", "#2b8a3e"),
-        ("sga_krw_bn", "SG&A", "#b7791f"),
+        ("revenue_krw_bn", "매출", "#1f5a99"),
+        ("contribution_profit_krw_bn", "공헌이익", "#2b8a3e"),
+        ("sga_krw_bn", "판매관리비", "#b7791f"),
     ]
     for column, label, color in specs:
         ax.plot(x, chart_df[column], linewidth=2.0, marker="o", label=label, color=color)
 
-    for index, row in chart_df.iterrows():
-        if row.get("basis") == "YTD":
-            ax.annotate(
-                "Q3 YTD\nnot FY",
-                xy=(index, row["revenue_krw_bn"]),
-                xytext=(8, 18),
-                textcoords="offset points",
-                arrowprops={"arrowstyle": "->", "color": "#4a5568", "lw": 0.8},
-                fontsize=9,
-                color="#4a5568",
-            )
-
     title_company = _safe_title_company(company_name)
-    ax.set_title(f"{title_company} Revenue, Contribution Profit, and SG&A Trend", fontsize=12, loc="left")
+    ax.set_title(f"{title_company} 매출·공헌이익·판매관리비 추이", fontsize=12, loc="left")
     ax.set_xticks(x)
     ax.set_xticklabels(chart_df["period_label"].tolist())
-    ax.set_ylabel("KRW bn")
+    ax.set_ylabel("십억원")
     ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:,.0f}"))
     ax.legend(loc="upper left", ncol=3, frameon=False)
     _style_axis(ax)
-    fig.text(0.01, 0.01, _ytd_note(chart_df), fontsize=9, color="#4a5568")
+    fig.text(0.01, 0.01, _period_comparison_note(chart_df), fontsize=9, color="#4a5568")
     fig.tight_layout(rect=(0, 0.04, 1, 1))
     _save_figure(fig, output_pdf, output_png)
     plt.close(fig)
@@ -626,9 +588,9 @@ def build_revenue_profit_sga_trend_chart(
 
     return {
         "figure_id": "fig_revenue_profit_sga_trend",
-        "title": "Revenue, Contribution Profit, and SG&A Trend",
+        "title": "매출·공헌이익·판매관리비 추이",
         "chart_type": "line_time_series",
-        "section_recommendation": "Financial Analysis",
+        "section_recommendation": "재무 분석",
         "asset_path_pdf": "figures/revenue_profit_sga_trend.pdf",
         "asset_path_png": "figures/revenue_profit_sga_trend.png",
         "asset_abs_path_pdf": str(output_pdf),
@@ -636,14 +598,14 @@ def build_revenue_profit_sga_trend_chart(
         "data_source": "dart_main.json",
         "used_metrics": ["revenue", "contribution_profit", "sga"],
         "derived_columns": ["revenue_krw_bn", "contribution_profit_krw_bn", "sga_krw_bn"],
-        "caption": "DART 기준 매출, 공헌이익, 판관비의 금액 추이를 함께 보여준다. YTD 수치가 포함된 경우 연간 확정치가 아니다.",
+        "caption": "DART 기준 매출, 공헌이익, 판관비의 금액 추이를 함께 보여준다. 누적 수치가 포함된 경우 연간 확정치가 아니다.",
         "writer_allowed_interpretation": "매출 규모, 공헌이익, 판관비 부담의 방향성을 설명할 수 있다.",
         "writer_forbidden_interpretation": [
-            "YTD 수치와 FY 수치를 동일 기준 YoY 성장으로 단정하지 않는다.",
+            "누적 수치와 연간 수치를 동일 기준의 전년 대비 성장으로 단정하지 않는다.",
             "공헌이익을 영업이익 또는 순이익으로 표현하지 않는다.",
         ],
         "data_limitations": [
-            "YTD 수치가 포함된 경우 연간 확정치가 아니다.",
+            "누적 수치가 포함된 경우 연간 확정치가 아니다.",
         ],
     }
 
@@ -667,26 +629,26 @@ def build_liquidity_leverage_peer_comparison_chart(
     fig.patch.set_facecolor("white")
     liquidity_ax, leverage_ax = axes
 
-    bars = liquidity_ax.bar(x - width / 2, chart_df["current_ratio_pct"], width=width, label="Current Ratio", color="#1f5a99")
+    bars = liquidity_ax.bar(x - width / 2, chart_df["current_ratio_pct"], width=width, label="유동비율", color="#1f5a99")
     _label_bars(liquidity_ax, bars)
-    bars = liquidity_ax.bar(x + width / 2, chart_df["cash_ratio_pct"], width=width, label="Cash Ratio", color="#2b8a3e")
+    bars = liquidity_ax.bar(x + width / 2, chart_df["cash_ratio_pct"], width=width, label="현금비율", color="#2b8a3e")
     _label_bars(liquidity_ax, bars)
-    liquidity_ax.set_title("Peer Liquidity Comparison", fontsize=12, loc="left")
-    liquidity_ax.set_ylabel("Ratio (%)")
+    liquidity_ax.set_title("대상기업과 비교기업 유동성", fontsize=12, loc="left")
+    liquidity_ax.set_ylabel("비율(%)")
     liquidity_ax.set_xticks(x)
     liquidity_ax.set_xticklabels(chart_df["company_label"])
-    liquidity_ax.legend(loc="upper right", frameon=False)
+    liquidity_ax.legend(loc="upper center", ncol=2, frameon=False)
     _style_axis(liquidity_ax)
 
-    bars = leverage_ax.bar(x - width / 2, chart_df["equity_ratio_pct"], width=width, label="Equity Ratio", color="#0f766e")
+    bars = leverage_ax.bar(x - width / 2, chart_df["equity_ratio_pct"], width=width, label="자기자본비율", color="#0f766e")
     _label_bars(leverage_ax, bars)
-    bars = leverage_ax.bar(x + width / 2, chart_df["debt_to_equity_pct"], width=width, label="Debt/Equity", color="#c2410c")
+    bars = leverage_ax.bar(x + width / 2, chart_df["debt_to_equity_pct"], width=width, label="부채비율", color="#c2410c")
     _label_bars(leverage_ax, bars)
-    leverage_ax.set_title("Capital Structure / Leverage", fontsize=11, loc="left")
-    leverage_ax.set_ylabel("Ratio (%)")
+    leverage_ax.set_title("자본구조와 레버리지", fontsize=11, loc="left")
+    leverage_ax.set_ylabel("비율(%)")
     leverage_ax.set_xticks(x)
     leverage_ax.set_xticklabels(chart_df["company_label"])
-    leverage_ax.legend(loc="upper right", frameon=False)
+    leverage_ax.legend(loc="upper center", ncol=2, frameon=False)
     _style_axis(leverage_ax)
 
     fig.tight_layout()
@@ -696,9 +658,9 @@ def build_liquidity_leverage_peer_comparison_chart(
 
     return {
         "figure_id": "fig_liquidity_leverage_peer_comparison",
-        "title": "Liquidity and Leverage Peer Comparison",
+        "title": "대상기업과 비교기업 유동성·레버리지",
         "chart_type": "peer_group_bar_chart",
-        "section_recommendation": "Peer / Financial Stability",
+        "section_recommendation": "비교기업·재무안정성 분석",
         "asset_path_pdf": "figures/liquidity_leverage_peer_comparison.pdf",
         "asset_path_png": "figures/liquidity_leverage_peer_comparison.png",
         "asset_abs_path_pdf": str(output_pdf),
@@ -707,7 +669,7 @@ def build_liquidity_leverage_peer_comparison_chart(
         "used_metrics": ["current_ratio", "cash_ratio", "equity_ratio", "debt_to_equity"],
         "derived_columns": ["current_ratio_pct", "cash_ratio_pct", "equity_ratio_pct", "debt_to_equity_pct"],
         "caption": "비교 기업의 유동비율, 현금비율, 자본비율, 부채비율을 비교해 재무 안정성 차이를 보여준다.",
-        "writer_allowed_interpretation": "동일 기준 산출물 내에서 peer 간 유동성 및 레버리지 부담의 상대적 차이를 설명할 수 있다.",
+        "writer_allowed_interpretation": "동일 기준 산출물 내에서 비교기업 간 유동성 및 부채 부담의 상대적 차이를 설명할 수 있다.",
         "writer_forbidden_interpretation": [
             "유동성 지표만으로 투자 의견을 산출하지 않는다.",
             "부채비율이 낮다는 이유만으로 성장성 또는 수익성을 단정하지 않는다.",
@@ -718,119 +680,48 @@ def build_liquidity_leverage_peer_comparison_chart(
     }
 
 
-def build_investment_thesis_evidence_map_chart(
-    evidence_df: pd.DataFrame,
-    output_pdf: str | Path,
-    output_png: str | Path,
-    recommendation: str = "Investment Decision",
-) -> dict:
-    """Create an evidence map from decision basis items."""
-
-    output_pdf, output_png = _prepare_output_paths(output_pdf, output_png)
-    recommendation_label = str(recommendation or "Investment Decision").strip()
-    required_columns = ["signal_type", "category"]
-    _require_columns(evidence_df, required_columns, "investment thesis evidence map")
-    counts = evidence_df.groupby(["signal_type", "category"]).size().reset_index(name="count")
-    if counts.empty:
-        raise ValueError("Investment thesis evidence map has no countable evidence items.")
-
-    signal_order = ["Positive Basis", "Risk", "Mixed Signal", "Monitoring"]
-    categories = sorted(counts["category"].unique().tolist())
-    x_lookup = {category: index for index, category in enumerate(categories)}
-    y_lookup = {signal: index for index, signal in enumerate(signal_order)}
-    counts["x"] = counts["category"].map(x_lookup)
-    counts["y"] = counts["signal_type"].map(y_lookup)
-    colors = {
-        "Positive Basis": "#2b8a3e",
-        "Risk": "#c2410c",
-        "Mixed Signal": "#b7791f",
-        "Monitoring": "#1f5a99",
-    }
-
-    fig, ax = plt.subplots(figsize=(11.5, 6.2))
-    fig.patch.set_facecolor("white")
-    for signal_type in signal_order:
-        subset = counts[counts["signal_type"] == signal_type]
-        if subset.empty:
-            continue
-        ax.scatter(
-            subset["x"],
-            subset["y"],
-            s=260 + subset["count"] * 180,
-            color=colors[signal_type],
-            alpha=0.82,
-            label=signal_type,
-            edgecolor="white",
-            linewidth=1.0,
-        )
-        for _, row in subset.iterrows():
-            ax.text(row["x"], row["y"], str(int(row["count"])), ha="center", va="center", color="white", fontsize=10, weight="bold")
-
-    ax.set_title(f"{recommendation_label} Decision Evidence Map", fontsize=12, loc="left")
-    ax.set_xticks(range(len(categories)))
-    ax.set_xticklabels([_safe_category_label(category) for category in categories], rotation=25, ha="right")
-    ax.set_yticks(range(len(signal_order)))
-    ax.set_yticklabels(signal_order)
-    ax.set_xlim(-0.6, len(categories) - 0.4)
-    ax.set_ylim(-0.6, len(signal_order) - 0.4)
-    ax.grid(True, color="#e2e8f0", linewidth=0.8)
-    ax.legend(loc="upper right", frameon=False)
-    for spine in ax.spines.values():
-        spine.set_color("#cbd5e0")
-    ax.tick_params(axis="both", colors="#2d3748", labelsize=9)
-    fig.text(
-        0.01,
-        0.01,
-        "Bubble size and number indicate count of decision-basis items by category.",
-        fontsize=9,
-        color="#4a5568",
-    )
-    fig.tight_layout(rect=(0, 0.04, 1, 1))
-    _save_figure(fig, output_pdf, output_png)
-    plt.close(fig)
-    logger.info("Wrote investment thesis evidence map chart: %s, %s", output_pdf, output_png)
-
-    return {
-        "figure_id": "fig_investment_thesis_evidence_map",
-        "title": "Investment Thesis Evidence Map",
-        "chart_type": "strategy_evidence_bubble_map",
-        "section_recommendation": "Investment Thesis / Decision Rationale",
-        "asset_path_pdf": "figures/investment_thesis_evidence_map.pdf",
-        "asset_path_png": "figures/investment_thesis_evidence_map.png",
-        "asset_abs_path_pdf": str(output_pdf),
-        "asset_abs_path_png": str(output_png),
-        "data_source": "decision_basis_card.json",
-        "used_fields": ["basis_items", "risk_items", "mixed_or_conflicting_signals", "monitoring_points"],
-        "derived_columns": ["signal_type", "category", "count"],
-        "caption": f"{recommendation_label} 판단 근거를 긍정 근거, 리스크, 혼재 신호, 모니터링 항목으로 요약한다.",
-        "writer_allowed_interpretation": f"최종 {recommendation_label} 판단이 어떤 근거와 리스크의 균형에서 나온 것인지 구조적으로 설명할 수 있다.",
-        "writer_forbidden_interpretation": [
-            "항목 개수를 정량 점수나 투자 등급 산식으로 해석하지 않는다.",
-            "차트 항목 수만으로 새로운 투자 의견을 생성하지 않는다.",
-        ],
-        "data_limitations": [
-            "이 차트는 투자 판단 근거 항목 수를 요약한 것이며 독립적인 정량 모델이 아니다.",
-        ],
-    }
-
-
 def _require_columns(df: pd.DataFrame, columns: list[str], context: str) -> None:
     missing = [column for column in columns if column not in df.columns]
     if missing:
         raise ValueError(f"{context} missing required columns: {missing}")
 
 
-def _ytd_note(chart_df: pd.DataFrame) -> str:
-    if "basis" not in chart_df.columns:
-        return "Note: YTD values, if present, are not directly comparable with full-year values."
-    ytd_df = chart_df[chart_df["basis"] == "YTD"]
-    if ytd_df.empty:
-        return "Note: Values use the period basis provided by DART."
-    labels = []
-    if "period_label" in ytd_df.columns:
-        labels = [str(label) for label in ytd_df["period_label"].dropna().unique().tolist()]
-    period_text = ", ".join(labels) if labels else "YTD"
-    return f"Note: {period_text} values are YTD and are not directly comparable with full-year values."
+def _select_comparable_period_rows(chart_df: pd.DataFrame) -> pd.DataFrame:
+    """Prefer current and prior-year same-period rows; otherwise use annual rows."""
+
+    comparable_keys = {"same_period_previous_year", "current_fiscal_year"}
+    same_period = chart_df[chart_df["period_key"].isin(comparable_keys)].copy()
+    if len(same_period) == 2:
+        basis_values = same_period["basis"].dropna().astype(str).unique().tolist()
+        period_types = same_period["period_type"].dropna().astype(str).unique().tolist()
+        if len(basis_values) == 1 and len(period_types) == 1:
+            return same_period.sort_values("period_end").reset_index(drop=True)
+
+    annual = chart_df[chart_df["basis"] == "FULL_YEAR"].copy()
+    if len(annual) >= 2:
+        return annual.sort_values("period_end").tail(4).reset_index(drop=True)
+
+    fallback = chart_df[chart_df["basis"] != "TTM"].copy()
+    return fallback.sort_values("period_end").tail(4).reset_index(drop=True)
+
+
+def _period_comparison_note(chart_df: pd.DataFrame) -> str:
+    if chart_df.empty:
+        return "주: DART가 제공한 기간 구분을 적용했다."
+    bases = chart_df["basis"].dropna().astype(str).unique().tolist()
+    period_types = chart_df["period_type"].dropna().astype(str).unique().tolist()
+    if bases == ["YTD"] and len(period_types) == 1:
+        label = {
+            "Q1": "1분기 누적",
+            "Q2": "2분기 누적",
+            "HALF": "반기 누적",
+            "Q3": "3분기 누적",
+            "Q4": "4분기 누적",
+        }.get(period_types[0], "누적")
+        return f"주: {label} 기준으로 당기와 전년 동기를 비교했다."
+    if bases == ["FULL_YEAR"]:
+        return "주: 연간 확정치 기준으로 비교했다."
+    return "주: 동일한 기간 구분의 수치만 비교해야 한다."
 
 
 def _prepare_output_paths(output_pdf: str | Path, output_png: str | Path) -> tuple[Path, Path]:
@@ -841,7 +732,7 @@ def _prepare_output_paths(output_pdf: str | Path, output_png: str | Path) -> tup
     return output_pdf, output_png
 
 
-def _label_bars(ax, bars) -> None:
+def _label_bars(ax, bars, *, suffix: str = "") -> None:
     for bar in bars:
         height = bar.get_height()
         if pd.isna(height):
@@ -849,7 +740,7 @@ def _label_bars(ax, bars) -> None:
         va = "bottom" if height >= 0 else "top"
         offset = 3 if height >= 0 else -3
         ax.annotate(
-            f"{height:.1f}",
+            f"{height:.1f}{suffix}",
             xy=(bar.get_x() + bar.get_width() / 2, height),
             xytext=(0, offset),
             textcoords="offset points",

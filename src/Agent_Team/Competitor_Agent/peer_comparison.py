@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from orchestration.config import agent_output_dir
 
 from . import OUTPUT_ROOT
 from .identity import (
@@ -43,28 +44,46 @@ def generate_peer_comparison(
     target: RunIdentity,
     peer_run_keys: list[str] | None = None,
     output_root: Path = OUTPUT_ROOT,
+    peer_output_root: Path | None = None,
     output_dir: Path | None = None,
 ) -> PeerComparisonPaths:
     """Generate domestic-only peer comparison artifacts for one target run."""
 
     output_root = Path(output_root).expanduser().resolve()
+    resolved_peer_root = (
+        Path(peer_output_root).expanduser().resolve()
+        if peer_output_root is not None
+        else output_root
+    )
     resolved_target = _resolve_target_identity(target, output_root)
     peers = _resolve_peer_identities(
         target=resolved_target,
-        output_root=output_root,
+        output_root=resolved_peer_root,
         peer_run_keys=peer_run_keys or [],
     )
     run_identities = [resolved_target, *peers]
     rows = [
         _build_company_metric_row(
             identity=identity,
-            output_root=output_root,
+            output_root=(
+                output_root
+                if identity.run_key == resolved_target.run_key
+                else resolved_peer_root
+            ),
             peer_group="target" if identity.run_key == resolved_target.run_key else "domestic_peer",
         )
         for identity in run_identities
     ]
-    dataset = _build_dataset_payload(target=resolved_target, peers=peers, rows=rows, output_root=output_root)
-    destination = output_dir or output_root / "Competitor" / resolved_target.run_key
+    dataset = _build_dataset_payload(
+        target=resolved_target,
+        peers=peers,
+        rows=rows,
+        output_root=output_root,
+        peer_output_root=resolved_peer_root,
+    )
+    destination = output_dir or agent_output_dir(
+        output_root, resolved_target.run_key, "Competitor"
+    )
     destination = Path(destination).expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)
     dataset_json = destination / "peer_comparison_dataset.json"
@@ -77,8 +96,8 @@ def _resolve_target_identity(target: RunIdentity, output_root: Path) -> RunIdent
     run_key = target.run_key
     if not run_key:
         raise ValueError("target.run_key is required for peer comparison.")
-    financial_path = output_root / "Financial" / run_key / "final_report.json"
-    yfinance_manifest = output_root / "Y_Finance" / run_key / "manifest.json"
+    financial_path = agent_output_dir(output_root, run_key, "Financial") / "final_report.json"
+    yfinance_manifest = agent_output_dir(output_root, run_key, "Y_Finance") / "manifest.json"
     company_name = target.company_name or company_from_run_key(run_key)
     ticker = target.ticker
     if yfinance_manifest.exists():
@@ -129,15 +148,15 @@ def _resolve_peer_identities(
 
 def _has_required_peer_files(output_root: Path, run_key: str) -> bool:
     return (
-        (output_root / "Financial" / run_key / "final_report.json").exists()
-        and (output_root / "Y_Finance" / run_key / "market_full_dataset.csv").exists()
+        (agent_output_dir(output_root, run_key, "Financial") / "final_report.json").exists()
+        and (agent_output_dir(output_root, run_key, "Y_Finance") / "market_full_dataset.csv").exists()
     )
 
 
 def _build_company_metric_row(*, identity: RunIdentity, output_root: Path, peer_group: str) -> dict[str, Any]:
-    financial_path = output_root / "Financial" / identity.run_key / "final_report.json"
-    market_path = output_root / "Y_Finance" / identity.run_key / "market_full_dataset.csv"
-    yfinance_path = output_root / "Y_Finance" / identity.run_key / "final_report.json"
+    financial_path = agent_output_dir(output_root, identity.run_key, "Financial") / "final_report.json"
+    market_path = agent_output_dir(output_root, identity.run_key, "Y_Finance") / "market_full_dataset.csv"
+    yfinance_path = agent_output_dir(output_root, identity.run_key, "Y_Finance") / "final_report.json"
     financial = _load_json(financial_path)
     market = _latest_market_row(market_path)
     yfinance = _load_json(yfinance_path)
@@ -206,12 +225,25 @@ def _build_dataset_payload(
     peers: list[RunIdentity],
     rows: list[dict[str, Any]],
     output_root: Path,
+    peer_output_root: Path,
 ) -> dict[str, Any]:
     source_files = {
         row["run_key"]: {
-            "financial_final_report": str(output_root / "Financial" / row["run_key"] / "final_report.json"),
-            "market_full_dataset": str(output_root / "Y_Finance" / row["run_key"] / "market_full_dataset.csv"),
-            "yfinance_final_report": str(output_root / "Y_Finance" / row["run_key"] / "final_report.json"),
+            "financial_final_report": str(agent_output_dir(
+                output_root if row["run_key"] == target.run_key else peer_output_root,
+                row["run_key"],
+                "Financial",
+            ) / "final_report.json"),
+            "market_full_dataset": str(agent_output_dir(
+                output_root if row["run_key"] == target.run_key else peer_output_root,
+                row["run_key"],
+                "Y_Finance",
+            ) / "market_full_dataset.csv"),
+            "yfinance_final_report": str(agent_output_dir(
+                output_root if row["run_key"] == target.run_key else peer_output_root,
+                row["run_key"],
+                "Y_Finance",
+            ) / "final_report.json"),
         }
         for row in rows
     }

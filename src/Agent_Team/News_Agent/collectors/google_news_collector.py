@@ -513,7 +513,7 @@ class GoogleNewsCollector:
             return records
 
         enriched = list(records)
-        max_workers = min(2, max(1, len(needs_enrichment)))
+        max_workers = min(4, max(1, len(needs_enrichment)))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_map = {
                 executor.submit(self._enrich_record, records[idx]): idx
@@ -530,7 +530,15 @@ class GoogleNewsCollector:
         )
         return enriched
 
-    def _collect_via_rss(self, query, collect_date, lookback_days=1, max_results=None, dedup_on_url=True):
+    def _collect_via_rss(
+        self,
+        query,
+        collect_date,
+        lookback_days=1,
+        max_results=None,
+        dedup_on_url=True,
+        enrich=True,
+    ):
         lookback_days = max(0, int(lookback_days))
         range_start = collect_date - timedelta(days=lookback_days)
         range_end = collect_date
@@ -637,7 +645,8 @@ class GoogleNewsCollector:
                 )
             )
 
-        collected = self._enrich_records(collected, notes)
+        if enrich:
+            collected = self._enrich_records(collected, notes)
         notes.append(f"rss_items_found_{len(collected)}")
         return collected, {
             "query": query,
@@ -645,7 +654,15 @@ class GoogleNewsCollector:
             "collection_notes": notes,
         }
 
-    def _collect_via_html(self, query, collect_date, lookback_days=1, max_results=None, dedup_on_url=True):
+    def _collect_via_html(
+        self,
+        query,
+        collect_date,
+        lookback_days=1,
+        max_results=None,
+        dedup_on_url=True,
+        enrich=True,
+    ):
         lookback_days = max(0, int(lookback_days))
         range_start = collect_date - timedelta(days=lookback_days)
         range_end = collect_date
@@ -744,7 +761,8 @@ class GoogleNewsCollector:
             # 봇 탐지 회피를 위한 지연 시간
             time.sleep(random.uniform(2.0, 4.0))
 
-        collected = self._enrich_records(collected, notes)
+        if enrich:
+            collected = self._enrich_records(collected, notes)
         meta = {
             "query": query,
             "collected": len(collected),
@@ -752,13 +770,22 @@ class GoogleNewsCollector:
         }
         return collected, meta
 
-    def collect(self, query, collect_date, lookback_days=1, max_results=None, dedup_on_url=True):
+    def collect(
+        self,
+        query,
+        collect_date,
+        lookback_days=1,
+        max_results=None,
+        dedup_on_url=True,
+        enrich=True,
+    ):
         rss_records, rss_meta = self._collect_via_rss(
             query,
             collect_date,
             lookback_days=lookback_days,
             max_results=max_results,
             dedup_on_url=dedup_on_url,
+            enrich=enrich,
         )
         if rss_records:
             return rss_records, rss_meta
@@ -769,6 +796,7 @@ class GoogleNewsCollector:
             lookback_days=lookback_days,
             max_results=max_results,
             dedup_on_url=dedup_on_url,
+            enrich=enrich,
         )
         html_meta["collection_notes"] = list(rss_meta.get("collection_notes", [])) + list(html_meta.get("collection_notes", []))
         return html_records, html_meta

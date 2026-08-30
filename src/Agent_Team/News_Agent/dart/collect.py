@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import io
 import json
+import re
+import time
 import zipfile
 from pathlib import Path
 from typing import Any
+from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 
@@ -16,6 +19,10 @@ REPORT_TYPE_MAP = {
     "A002": "반기보고서",
     "A003": "분기보고서",
 }
+
+
+class DartDocumentError(RuntimeError):
+    """Raised when OpenDART does not return a usable filing document."""
 
 
 def _http_get(url: str, timeout: int = 20) -> bytes:
@@ -61,19 +68,98 @@ def fetch_periodic_list(
     return json.loads(payload.decode("utf-8", errors="ignore"))
 
 
-def fetch_document_xml(api_key: str, rcept_no: str, *, timeout: int = 30) -> str:
+def fetch_document_xml(
+    api_key: str,
+    rcept_no: str,
+    *,
+    timeout: int = 30,
+    max_retries: int = 2,
+    retry_delay_seconds: float = 0.5,
+) -> str:
     url = f"{DART_BASE_URL}/document.xml?crtfc_key={api_key}&rcept_no={rcept_no}"
-    payload = _http_get(url, timeout=timeout)
+    attempts = max(0, int(max_retries)) + 1
+    last_error: Exception | None = None
+
+    for attempt in range(attempts):
+        try:
+            payload = _http_get(url, timeout=timeout)
+            return _decode_document_payload(payload, rcept_no=rcept_no)
+        except (DartDocumentError, URLError, TimeoutError) as exc:
+            last_error = exc
+            if attempt + 1 >= attempts:
+                break
+            if retry_delay_seconds > 0:
+                time.sleep(float(retry_delay_seconds) * (attempt + 1))
+
+    raise DartDocumentError(
+        f"OpenDART document.xml failed after {attempts} attempt(s) for {rcept_no}: "
+        f"{last_error}"
+    ) from last_error
+
+
+def _decode_document_payload(payload: bytes, *, rcept_no: str) -> str:
+    """Decode a filing ZIP and reject OpenDART status/error responses."""
 
     if payload.startswith(b"PK"):
-        with zipfile.ZipFile(io.BytesIO(payload)) as zf:
-            xml_names = [name for name in zf.namelist() if name.lower().endswith(".xml")]
-            if not xml_names:
-                return ""
-            with zf.open(xml_names[0]) as f:
-                return f.read().decode("utf-8", errors="ignore")
+        try:
+            with zipfile.ZipFile(io.BytesIO(payload)) as zf:
+                xml_names = sorted(
+                    name for name in zf.namelist() if name.lower().endswith(".xml")
+                )
+                if not xml_names:
+                    raise DartDocumentError(
+                        f"OpenDART document ZIP contains no XML file for {rcept_no}."
+                    )
+                with zf.open(xml_names[0]) as file:
+                    text = file.read().decode("utf-8", errors="ignore").strip()
+        except zipfile.BadZipFile as exc:
+            raise DartDocumentError(
+                f"OpenDART returned an invalid document ZIP for {rcept_no}."
+            ) from exc
+        if not text:
+            raise DartDocumentError(
+                f"OpenDART returned an empty document XML for {rcept_no}."
+            )
+        return text
 
-    return payload.decode("utf-8", errors="ignore")
+    text = payload.decode("utf-8", errors="ignore").strip()
+    status, message = _dart_error_status(text)
+    if status and status != "000":
+        detail = f"{status} {message}".strip()
+        raise DartDocumentError(
+            f"OpenDART returned an error response for {rcept_no}: {detail}"
+        )
+    if not text or "<DOCUMENT" not in text.upper():
+        preview = re.sub(r"\s+", " ", text)[:200] or "empty response"
+        raise DartDocumentError(
+            f"OpenDART returned a non-document response for {rcept_no}: {preview}"
+        )
+    return text
+
+
+def _dart_error_status(text: str) -> tuple[str, str]:
+    """Read JSON, XML, or plain-text OpenDART status responses."""
+
+    try:
+        payload = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        payload = None
+    if isinstance(payload, dict):
+        return str(payload.get("status") or "").strip(), str(
+            payload.get("message") or ""
+        ).strip()
+
+    status_match = re.search(r"<status>\s*([^<]+)\s*</status>", text, re.IGNORECASE)
+    message_match = re.search(r"<message>\s*([^<]+)\s*</message>", text, re.IGNORECASE)
+    if status_match:
+        return status_match.group(1).strip(), (
+            message_match.group(1).strip() if message_match else ""
+        )
+
+    plain_match = re.match(r"^\s*(\d{3})\s+(.+)$", text, re.DOTALL)
+    if plain_match:
+        return plain_match.group(1), re.sub(r"\s+", " ", plain_match.group(2)).strip()
+    return "", ""
 
 
 def fetch_latest_periodic_xml(
@@ -84,6 +170,8 @@ def fetch_latest_periodic_xml(
     *,
     list_timeout: int = 20,
     doc_timeout: int = 30,
+    document_max_retries: int = 2,
+    document_retry_delay_seconds: float = 0.5,
     max_pages: int = 20,
 ) -> dict[str, str]:
     candidates: list[dict[str, str]] = []
@@ -138,7 +226,13 @@ def fetch_latest_periodic_xml(
             _date_to_int(x["rcept_no"]),
         ),
     )
-    xml_text = fetch_document_xml(api_key, selected["rcept_no"], timeout=doc_timeout)
+    xml_text = fetch_document_xml(
+        api_key,
+        selected["rcept_no"],
+        timeout=doc_timeout,
+        max_retries=document_max_retries,
+        retry_delay_seconds=document_retry_delay_seconds,
+    )
 
     return {
         "rcept_no": selected["rcept_no"],

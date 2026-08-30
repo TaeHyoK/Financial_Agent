@@ -135,6 +135,53 @@ def build_run_key(company_name: str | None, selected_date: Any, fallback: str | 
     return f"{safe_label(company_name, fallback or 'company')}_{normalize_date(selected_date)}"
 
 
+def split_run_key(run_key: str) -> tuple[str, str]:
+    """Return the filesystem-safe company label and YYYYMMDD suffix."""
+
+    label, separator, date_suffix = str(run_key or "").rpartition("_")
+    if not separator or not label:
+        raise ValueError(f"run_key must end with _YYYYMMDD: {run_key}")
+    return label, normalize_date(date_suffix)
+
+
+def company_output_dir(output_root: str | Path, company_name: str) -> Path:
+    """Return the company-first output directory."""
+
+    return Path(output_root).expanduser().resolve() / safe_label(company_name)
+
+
+def agent_output_dir(output_root: str | Path, run_key: str, agent_name: str) -> Path:
+    """Return Output_total/<company>/<agent>/<YYYYMMDD>."""
+
+    company_label, selected_date = split_run_key(run_key)
+    return (
+        Path(output_root).expanduser().resolve()
+        / company_label
+        / safe_label(agent_name)
+        / selected_date
+    )
+
+
+def run_output_dir(output_root: str | Path, run_key: str) -> Path:
+    """Return Output_total/<company>/runs/<YYYYMMDD>."""
+
+    company_label, selected_date = split_run_key(run_key)
+    return Path(output_root).expanduser().resolve() / company_label / "runs" / selected_date
+
+
+def published_report_path(output_root: str | Path, company_name: str) -> Path:
+    """Return the reader-facing HTML path at the top of a company directory."""
+
+    company_label = safe_label(company_name)
+    return company_output_dir(output_root, company_name) / f"report_{company_label}.html"
+
+
+def peer_output_root(output_root: str | Path, target_company_name: str) -> Path:
+    """Return the nested root used for companies analyzed only as peers."""
+
+    return company_output_dir(output_root, target_company_name) / "비교기업"
+
+
 def load_project_env(env_file: str | Path | None = None, *, override: bool = False) -> dict[str, Any]:
     """Load the shared project env file without exposing secret values.
 

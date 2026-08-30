@@ -3,6 +3,7 @@ import argparse
 import copy
 import json
 import math
+from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, TypedDict
 
@@ -10,6 +11,10 @@ from langgraph.graph import END, START, StateGraph
 from shared.evidence_contracts import (
     canonical_evidence_id,
     validate_evidence_catalog,
+)
+from Agent_Team.Financial_Agent.financial_analysis_agent import (
+    apply_financial_analysis,
+    generate_financial_analysis_with_llm,
 )
 
 SECONDARY_MARKET_METRICS = (
@@ -28,8 +33,10 @@ class FinancialAnalystGraphState(TypedDict, total=False):
     manifest_path: str
     manifest: Dict[str, Any]
     inputs: Dict[str, Any]
+    model: str
     transcript: List[Dict[str, str]]
     financial_analysis_output: Dict[str, Any]
+    llm_analysis: Dict[str, Any]
     report_output: Dict[str, Any]
     schema_validation: Dict[str, Any]
 
@@ -251,26 +258,6 @@ def build_financial_trends(dart: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def signal_from_delta(current: int | float | None, previous: int | float | None, higher_is_better: bool = True) -> int:
-    if current is None or previous is None:
-        return 0
-    delta = current - previous
-    if abs(delta) < 1e-12:
-        return 0
-    improved = delta > 0 if higher_is_better else delta < 0
-    return 1 if improved else -1
-
-
-def signal_from_value(value: int | float | None, threshold: int | float = 0) -> int:
-    if value is None:
-        return 0
-    if value > threshold:
-        return 1
-    if value < threshold:
-        return -1
-    return 0
-
-
 def basis_caution(current_period: Dict[str, Any], previous_period: Dict[str, Any]) -> str:
     current_label = format_period(current_period)
     previous_label = format_period(previous_period)
@@ -279,87 +266,80 @@ def basis_caution(current_period: Dict[str, Any], previous_period: Dict[str, Any
     return f"{current_label}와 {previous_label}는 동일 집계 기준일 때만 직접 비교한다."
 
 
-def cash_flow_stance(position: Dict[str, Any]) -> str:
-    operating = position.get("operating_cash_flow")
-    net_change = position.get("net_cash_change")
-    if operating is None:
-        return "현금흐름 확인 제한"
-    if operating > 0 and (net_change is None or net_change >= 0):
-        return "영업현금흐름은 양수이며 현금 잔액도 방어되는 구조"
-    if operating > 0:
-        return "영업현금흐름은 양수이나 전체 현금 잔액은 감소"
-    return "영업현금흐름 부담 확인"
-
-
-def capital_structure_stance(position: Dict[str, Any]) -> str:
-    debt_to_equity = position.get("debt_to_equity")
-    equity_ratio = position.get("equity_ratio")
-    if debt_to_equity is None and equity_ratio is None:
-        return "자본 구조 확인 제한"
-    if (equity_ratio is not None and equity_ratio >= 0.5) and (debt_to_equity is None or debt_to_equity <= 1.0):
-        return "자본 비중이 높고 부채 부담은 제한적인 구조"
-    if debt_to_equity is not None and debt_to_equity > 1.0:
-        return "부채비율 부담을 함께 점검해야 하는 구조"
-    return "자본과 부채 균형을 추가 점검해야 하는 구조"
-
-
-def liquidity_stance(position: Dict[str, Any]) -> str:
-    current_ratio = position.get("current_ratio")
-    cash_ratio = position.get("cash_ratio")
-    if current_ratio is None:
-        return "단기 유동성 확인 제한"
-    if current_ratio >= 1.5:
-        return "단기 유동성은 비교적 안정적인 편"
-    if current_ratio >= 1.0:
-        return "단기 유동성은 최소 지급능력을 충족하는 수준"
-    cash_text = f", 현금비율 {pct1(cash_ratio)}" if cash_ratio is not None else ""
-    return f"단기 유동성 부담 점검 필요{cash_text}"
-
-
 def build_financial_secondary_context(inputs: Dict[str, Any]) -> Dict[str, Any]:
-    """Build raw News and market context without upstream agent claims."""
+    """Build weekly News and market context without upstream agent claims."""
 
     return {
-        "news": _company_news_top10_context(inputs.get("news_company_top10") or {}),
+        "news": _news_weekly_summary_context(inputs.get("news_weekly_summaries") or {}),
         "market": _market_secondary_context(inputs.get("yfinance_market_summary")),
     }
 
 
-def _company_news_top10_context(payload: Dict[str, Any]) -> Dict[str, Any]:
-    events = [
-        event
-        for event in payload.get("events") or []
-        if isinstance(event, dict)
-    ][:10]
+def _news_weekly_summary_context(payload: Dict[str, Any]) -> Dict[str, Any]:
+    output = payload.get("output") if isinstance(payload.get("output"), dict) else {}
+    periods = output.get("periods") if isinstance(output.get("periods"), list) else []
+    if not periods:
+        periods = [
+            item.get("output")
+            for item in payload.get("period_results") or []
+            if isinstance(item, dict)
+            and item.get("status") in {None, "success"}
+            and isinstance(item.get("output"), dict)
+        ]
     catalog: Dict[str, Dict[str, Any]] = {}
-    for event in events:
-        event_id = str(event.get("event_id") or "").strip()
-        source_date = str(event.get("time") or "")[:10]
-        if not event_id or not source_date:
+    for item in periods:
+        if not isinstance(item, dict):
             continue
-        evidence_id = f"NEWS_RAW_{source_date}_{event_id}"
+        period = str(item.get("period") or "").strip()
+        summary = str(item.get("period_summary") or "").strip()
+        if not period or not summary:
+            continue
+        source_date = _weekly_period_start(period)
+        evidence_id = canonical_evidence_id("news", f"weekly_{period}")
         catalog[evidence_id] = {
             "evidence_id": evidence_id,
             "domain": "news",
-            "origin_type": "raw_source",
-            "source_ref": f"news_top10.events.{event_id}",
+            "origin_type": "model_summarized",
+            "source_ref": f"news_periods.{period.replace('-', '_')}",
             "source_date": source_date,
-            "period": source_date,
-            "metric": "news_event",
-            "title": str(event.get("title") or ""),
-            "snippet": str(event.get("snippet") or ""),
-            "source": str(event.get("source") or ""),
-            "mention_count": int(event.get("mention_count") or 0),
-            "relevance_rank": int(event.get("relevance_rank") or 0),
+            "period": period,
+            "metric": "weekly_news_context",
+            "text": summary,
+            "issues": [
+                {
+                    key: issue.get(key)
+                    for key in ("issue", "mention_count", "importance")
+                    if issue.get(key) not in (None, "", [], {})
+                }
+                for issue in item.get("issues") or []
+                if isinstance(issue, dict)
+            ],
+            "source_event_ids": [
+                str(event_id)
+                for event_id in item.get("source_event_ids") or []
+                if str(event_id).strip()
+            ],
         }
     validate_evidence_catalog(catalog, allowed_domains={"news"})
     status = "available" if catalog else "unavailable"
     return {
         "status": status,
-        "input_type": "company_related_news_top_10",
-        "event_count": len(catalog),
+        "input_type": "weekly_news_summaries",
+        "period_count": len(catalog),
         "evidence_catalog": catalog,
     }
+
+
+def _weekly_period_start(period: str) -> str:
+    try:
+        return date.fromisoformat(period[:10]).isoformat()
+    except ValueError:
+        pass
+    try:
+        year_text, week_text = period.split("-W", 1)
+        return date.fromisocalendar(int(year_text), int(week_text), 1).isoformat()
+    except (TypeError, ValueError):
+        return ""
 
 
 def _market_secondary_context(payload: Any) -> Dict[str, Any]:
@@ -491,6 +471,15 @@ def build_financial_analyst_output(manifest: Dict[str, Any], inputs: Dict[str, A
     financial_trends["normalized_metrics"] = normalized_financial_metrics(financial_trends)
     share_information = dart.get("share_information") or {}
     position = build_financial_position_summary(dart_master)
+    comparison_current_values = (
+        (financial_trends.get("current_vs_same_period") or {}).get("current_values") or {}
+    )
+    if position.get("operating_cash_flow") is None and _finite_number(
+        comparison_current_values.get("operating_cash_flow")
+    ):
+        # 현금흐름표 master 표의 계정명 매핑이 누락돼도 주 분석 데이터에 이미
+        # 정규화된 동일 기간 값이 있으면 같은 공시 원천의 값을 사용한다.
+        position["operating_cash_flow"] = comparison_current_values["operating_cash_flow"]
 
     current_period = dart.get("periods", {}).get("current_fiscal_year", {})
     comparison_pair = current_comparison_pair(dart)
@@ -526,54 +515,30 @@ def build_financial_analyst_output(manifest: Dict[str, Any], inputs: Dict[str, A
     previous_sga_margin = metric_period_value(dart, "sga_margin", previous_period_key) if has_previous_period else None
     eps = metric_period_value(dart, "eps")
     previous_eps = metric_period_value(dart, "eps", previous_period_key) if has_previous_period else None
-
-    revenue_stance = (
-        "증가" if signal_from_value(revenue_growth) > 0
-        else "감소" if signal_from_value(revenue_growth) < 0
-        else "확인 제한 또는 유지"
-    )
-    profitability_stance = (
-        "공헌이익률 개선" if signal_from_delta(contribution_margin, previous_contribution_margin) > 0
-        else "공헌이익률 약화" if signal_from_delta(contribution_margin, previous_contribution_margin) < 0
-        else "공헌이익률 비교 제한 또는 유지"
-    )
-    cost_stance = (
-        "판관비율 하락으로 비용 효율성 개선"
-        if signal_from_delta(sga_margin, previous_sga_margin, higher_is_better=False) > 0
-        else "판관비율 상승으로 비용 부담 확대"
-        if signal_from_delta(sga_margin, previous_sga_margin, higher_is_better=False) < 0
-        else "판관비율 비교 제한 또는 유지"
-    )
-    eps_stance = (
-        "흑자 기조" if signal_from_value(eps) > 0
-        else "적자 또는 EPS 부담" if signal_from_value(eps) < 0
-        else "확인 제한 또는 손익분기 수준"
-    )
-    overall_score = (
-        signal_from_value(revenue_growth)
-        + signal_from_delta(contribution_margin, previous_contribution_margin)
-        + signal_from_delta(sga_margin, previous_sga_margin, higher_is_better=False)
-        + signal_from_value(eps)
-        + signal_from_value(position.get("operating_cash_flow"))
-        + signal_from_value(position.get("current_ratio"), threshold=1.0)
-    )
-    direction = "positive" if overall_score >= 2 else "negative" if overall_score <= -2 else "mixed"
-    direction_ko = {"positive": "개선 신호 우세", "negative": "부담 신호 우세", "mixed": "혼재된 신호"}[direction]
+    trend_values = (financial_trends.get("current_vs_same_period") or {}).get("current_values") or {}
+    previous_trend_values = (financial_trends.get("current_vs_same_period") or {}).get("previous_values") or {}
+    normalized = financial_trends.get("normalized_metrics") or {}
+    normalized_current = normalized.get("current_values") or {}
+    normalized_previous = normalized.get("previous_values") or {}
 
     revenue_anchor = (
         f"DART 기준 {period_label} 매출은 {krw_eok(revenue)}이고 "
         f"{previous_period_label} 매출은 {krw_eok(previous_revenue)}이다. "
-        f"증감률은 {pct(revenue_growth)}다. {period_caution}"
+        f"증감률은 {pct(revenue_growth)}이다. {period_caution}"
         if has_previous_period
         else f"DART 기준 {period_label} 매출은 {krw_eok(revenue)}이다. {period_caution}"
     )
     profitability_anchor = (
         f"공헌이익률은 {pct(contribution_margin)}, 비교 기간은 {pct(previous_contribution_margin)}이고 "
-        f"판관비율은 {pct(sga_margin)}, 비교 기간은 {pct(previous_sga_margin)}다."
+        f"판관비율은 {pct(sga_margin)}, 비교 기간은 {pct(previous_sga_margin)}다. "
+        f"영업이익률은 {pct(normalized_current.get('operating_margin'))}, 비교 기간은 "
+        f"{pct(normalized_previous.get('operating_margin'))}이며 순이익률은 "
+        f"{pct(normalized_current.get('net_margin'))}, 비교 기간은 "
+        f"{pct(normalized_previous.get('net_margin'))}다."
     )
     eps_anchor = (
         f"DART 기준 {period_label} EPS는 {won(eps)}이고 "
-        f"{previous_period_label} EPS는 {won(previous_eps)}다. {period_caution}"
+        f"{previous_period_label} EPS는 {won(previous_eps)}이다. {period_caution}"
     )
     financial_position_anchor = (
         f"영업활동현금흐름 {krw_eok(position['operating_cash_flow'])}, "
@@ -590,16 +555,16 @@ def build_financial_analyst_output(manifest: Dict[str, Any], inputs: Dict[str, A
             "status": "active",
             "dart_anchor_summary_ko": revenue_anchor,
             "caution_ko": period_caution,
-            "action_for_sy": "use_with_caution",
+            "action": "use_with_caution",
         },
         {
             "claim_id": "F002",
-            "claim_ko": f"{period_label} 공헌이익률 및 판관비율",
+            "claim_ko": f"{period_label} 수익성과 비용 효율",
             "financial_dimension": "profitability",
             "status": "active",
             "dart_anchor_summary_ko": profitability_anchor,
             "caution_ko": f"마진과 비용 지표는 {period_basis} 기준이다.",
-            "action_for_sy": "use_normally",
+            "action": "use_normally",
         },
         {
             "claim_id": "F003",
@@ -608,7 +573,7 @@ def build_financial_analyst_output(manifest: Dict[str, Any], inputs: Dict[str, A
             "status": "caution",
             "dart_anchor_summary_ko": eps_anchor,
             "caution_ko": period_caution,
-            "action_for_sy": "use_with_caution",
+            "action": "use_with_caution",
         },
         {
             "claim_id": "F004",
@@ -617,7 +582,7 @@ def build_financial_analyst_output(manifest: Dict[str, Any], inputs: Dict[str, A
             "status": "conditional",
             "dart_anchor_summary_ko": f"영업활동현금흐름 {krw_eok(position['operating_cash_flow'])}가 DART에서 확인된다.",
             "caution_ko": f"현금흐름표는 {period_basis} 누적 기간 기준이다.",
-            "action_for_sy": "use_normally",
+            "action": "use_normally",
         },
         {
             "claim_id": "F005",
@@ -626,13 +591,14 @@ def build_financial_analyst_output(manifest: Dict[str, Any], inputs: Dict[str, A
             "status": "conditional",
             "dart_anchor_summary_ko": financial_position_anchor,
             "caution_ko": "재무상태표는 시점 기준이며 손익·현금흐름 누적값과 같은 기간 지표로 혼용하지 않는다.",
-            "action_for_sy": "use_normally",
+            "action": "use_normally",
         },
     ]
     evidence = [
         {
             "evidence_id": "E001", "claim_id": "F001", "source": "DART",
             "metric_or_event": "revenue", "period": period_label, "value": revenue,
+            "previous_value": previous_revenue,
             "period_basis": period_basis, "interpretation_ko": "현재 기간 매출 원값",
         },
         {
@@ -644,18 +610,48 @@ def build_financial_analyst_output(manifest: Dict[str, Any], inputs: Dict[str, A
         {
             "evidence_id": "E003", "claim_id": "F002", "source": "DART",
             "metric_or_event": "contribution margin", "period": period_label,
-            "value": contribution_margin, "period_basis": period_basis,
+            "value": contribution_margin, "previous_value": previous_contribution_margin,
+            "period_basis": period_basis,
             "interpretation_ko": "현재 기간 공헌이익률 원값",
         },
         {
             "evidence_id": "E004", "claim_id": "F002", "source": "DART",
             "metric_or_event": "SG&A margin", "period": period_label, "value": sga_margin,
+            "previous_value": previous_sga_margin,
             "period_basis": period_basis, "interpretation_ko": "현재 기간 판관비율 원값",
         },
         {
             "evidence_id": "E005", "claim_id": "F003", "source": "DART",
             "metric_or_event": "EPS", "period": period_label, "value": eps,
+            "previous_value": previous_eps,
             "period_basis": period_basis, "interpretation_ko": "현재 기간 EPS 원값",
+        },
+        {
+            "evidence_id": "E006", "claim_id": "F002", "source": "DART",
+            "metric_or_event": "operating profit and margin", "period": period_label,
+            "value": trend_values.get("operating_profit"),
+            "previous_value": previous_trend_values.get("operating_profit"),
+            "margin": normalized_current.get("operating_margin"),
+            "previous_margin": normalized_previous.get("operating_margin"),
+            "period_basis": period_basis, "interpretation_ko": "영업이익과 영업이익률 원값",
+        },
+        {
+            "evidence_id": "E007", "claim_id": "F002", "source": "DART",
+            "metric_or_event": "net income and margin", "period": period_label,
+            "value": trend_values.get("net_income"),
+            "previous_value": previous_trend_values.get("net_income"),
+            "margin": normalized_current.get("net_margin"),
+            "previous_margin": normalized_previous.get("net_margin"),
+            "period_basis": period_basis, "interpretation_ko": "순이익과 순이익률 원값",
+        },
+        {
+            "evidence_id": "E008", "claim_id": "F004", "source": "DART",
+            "metric_or_event": "operating cash flow comparison", "period": period_label,
+            "value": trend_values.get("operating_cash_flow"),
+            "previous_value": previous_trend_values.get("operating_cash_flow"),
+            "margin": normalized_current.get("operating_cash_flow_margin"),
+            "previous_margin": normalized_previous.get("operating_cash_flow_margin"),
+            "period_basis": period_basis, "interpretation_ko": "영업현금흐름과 매출 대비 비율 원값",
         },
         {
             "evidence_id": "E009", "claim_id": "F004", "source": "DART",
@@ -705,15 +701,15 @@ def build_financial_analyst_output(manifest: Dict[str, Any], inputs: Dict[str, A
         "revenue_breakdown": revenue_breakdown,
         "share_information": share_information,
         "main_view": {
-            "summary": (
-                f"{company_name}은 {period_label} DART 기준 매출 {krw_eok(revenue)}, "
-                f"공헌이익률 {pct(contribution_margin)}, 판관비율 {pct(sga_margin)}, EPS {won(eps)}가 확인되며 "
-                f"종합 신호는 {direction_ko}다."
-            ),
-            "direction": direction,
+            "summary": "",
+            "direction": "analysis_pending",
             "primary_basis": [
                 f"매출 {krw_eok(revenue)}, 증감률 {pct(revenue_growth)}",
-                f"공헌이익률 {pct(contribution_margin)}, 판관비율 {pct(sga_margin)}",
+                (
+                    f"영업이익률 {pct(normalized_current.get('operating_margin'))}, "
+                    f"순이익률 {pct(normalized_current.get('net_margin'))}, "
+                    f"공헌이익률 {pct(contribution_margin)}, 판관비율 {pct(sga_margin)}"
+                ),
                 f"EPS {won(eps)}",
                 f"영업활동현금흐름 {krw_eok(position['operating_cash_flow'])}",
                 f"유동비율 {pct1(position['current_ratio'])}, 부채비율 {pct1(position['debt_to_equity'])}",
@@ -725,54 +721,76 @@ def build_financial_analyst_output(manifest: Dict[str, Any], inputs: Dict[str, A
             "not_investment_decision": True,
         },
         "financial_statement_view": {
-            "revenue_growth": statement_view(revenue_stance, revenue_anchor, ["revenue", "revenue_growth"]),
-            "profitability": statement_view(profitability_stance, profitability_anchor, ["contribution_margin"]),
-            "cost_efficiency": statement_view(cost_stance, profitability_anchor, ["sga_margin"]),
-            "eps": statement_view(eps_stance, eps_anchor, ["eps"]),
+            "revenue_growth": statement_view("analysis_pending", revenue_anchor, ["revenue", "revenue_growth"]),
+            "profitability": statement_view(
+                "analysis_pending", profitability_anchor,
+                ["contribution_margin", "operating_margin", "net_margin"],
+            ),
+            "cost_efficiency": statement_view("analysis_pending", profitability_anchor, ["sga_margin"]),
+            "eps": statement_view("analysis_pending", eps_anchor, ["eps"]),
             "cash_flow": statement_view(
-                cash_flow_stance(position), financial_position_anchor,
-                ["operating_cash_flow", "investing_cash_flow", "financing_cash_flow", "net_cash_change"],
+                "analysis_pending", financial_position_anchor,
+                [
+                    "operating_cash_flow", "previous_operating_cash_flow",
+                    "operating_cash_flow_margin", "investing_cash_flow",
+                    "financing_cash_flow", "net_cash_change",
+                ],
             ),
             "balance_sheet": statement_view(
-                "자산 구성과 현금 보유 규모 확인", financial_position_anchor,
+                "analysis_pending", financial_position_anchor,
                 ["total_assets", "current_assets", "non_current_assets", "cash_and_cash_equivalents"],
             ),
             "capital_structure": statement_view(
-                capital_structure_stance(position), financial_position_anchor,
+                "analysis_pending", financial_position_anchor,
                 ["total_equity", "total_liabilities", "equity_ratio", "debt_to_equity"],
             ),
             "debt": statement_view(
-                "총부채와 유동부채 부담 확인", financial_position_anchor,
+                "analysis_pending", financial_position_anchor,
                 ["liabilities_to_assets", "debt_to_equity", "current_liabilities", "non_current_liabilities"],
             ),
             "liquidity": statement_view(
-                liquidity_stance(position), financial_position_anchor,
+                "analysis_pending", financial_position_anchor,
                 ["current_ratio", "cash_ratio", "current_assets", "current_liabilities"],
             ),
         },
         "detailed_analysis": {
             "revenue": detailed_item(
-                revenue_stance,
+                "analysis_pending",
                 {"revenue": revenue, "previous_revenue": previous_revenue, "revenue_growth": revenue_growth, "period": period_label},
                 period_caution,
             ),
             "margin": detailed_item(
-                profitability_stance,
-                {"contribution_margin": contribution_margin, "previous_contribution_margin": previous_contribution_margin, "period": period_label},
+                "analysis_pending",
+                {
+                    "contribution_margin": contribution_margin,
+                    "previous_contribution_margin": previous_contribution_margin,
+                    "operating_profit": trend_values.get("operating_profit"),
+                    "previous_operating_profit": previous_trend_values.get("operating_profit"),
+                    "operating_margin": normalized_current.get("operating_margin"),
+                    "previous_operating_margin": normalized_previous.get("operating_margin"),
+                    "net_income": trend_values.get("net_income"),
+                    "previous_net_income": previous_trend_values.get("net_income"),
+                    "net_margin": normalized_current.get("net_margin"),
+                    "previous_net_margin": normalized_previous.get("net_margin"),
+                    "period": period_label,
+                },
             ),
             "expense_efficiency": detailed_item(
-                cost_stance,
+                "analysis_pending",
                 {"sga_margin": sga_margin, "previous_sga_margin": previous_sga_margin, "period": period_label},
             ),
             "eps": detailed_item(
-                eps_stance,
+                "analysis_pending",
                 {"eps": eps, "previous_eps": previous_eps, "period": period_label},
                 period_caution,
             ),
             "cash_flow": detailed_item(
-                cash_flow_stance(position),
+                "analysis_pending",
                 {
                     "operating_cash_flow": position["operating_cash_flow"],
+                    "previous_operating_cash_flow": previous_trend_values.get("operating_cash_flow"),
+                    "operating_cash_flow_margin": normalized_current.get("operating_cash_flow_margin"),
+                    "previous_operating_cash_flow_margin": normalized_previous.get("operating_cash_flow_margin"),
                     "investing_cash_flow": position["investing_cash_flow"],
                     "financing_cash_flow": position["financing_cash_flow"],
                     "net_cash_change": position["net_cash_change"],
@@ -781,7 +799,7 @@ def build_financial_analyst_output(manifest: Dict[str, Any], inputs: Dict[str, A
                 f"현금흐름표는 {period_basis} 기준이다.",
             ),
             "balance_sheet": detailed_item(
-                "재무상태표 시점 값",
+                "analysis_pending",
                 {
                     "total_assets": position["total_assets"],
                     "current_assets": position["current_assets"],
@@ -791,7 +809,7 @@ def build_financial_analyst_output(manifest: Dict[str, Any], inputs: Dict[str, A
                 },
             ),
             "capital_structure": detailed_item(
-                capital_structure_stance(position),
+                "analysis_pending",
                 {
                     "total_equity": position["total_equity"],
                     "total_liabilities": position["total_liabilities"],
@@ -801,7 +819,7 @@ def build_financial_analyst_output(manifest: Dict[str, Any], inputs: Dict[str, A
                 },
             ),
             "debt": detailed_item(
-                "부채 구조 시점 값",
+                "analysis_pending",
                 {
                     "total_liabilities": position["total_liabilities"],
                     "current_liabilities": position["current_liabilities"],
@@ -811,7 +829,7 @@ def build_financial_analyst_output(manifest: Dict[str, Any], inputs: Dict[str, A
                 },
             ),
             "liquidity": detailed_item(
-                liquidity_stance(position),
+                "analysis_pending",
                 {
                     "current_ratio": position["current_ratio"],
                     "cash_ratio": position["cash_ratio"],
@@ -823,11 +841,11 @@ def build_financial_analyst_output(manifest: Dict[str, Any], inputs: Dict[str, A
             ),
         },
         "secondary_context": build_financial_secondary_context(inputs),
-        "sy_handoff": {
+        "strategy_handoff": {
             "financial_claims": claims,
             "key_evidence": evidence,
             "reconciliation_flags": [
-                {"flag_ko": period_caution, "severity": "high", "action_for_sy": "use_with_caution"}
+                {"flag_ko": period_caution, "severity": "high", "action": "use_with_caution"}
             ],
         },
     }
@@ -839,7 +857,7 @@ def append_message(state: FinancialAnalystGraphState, node: str, role: str, cont
 
 
 def report_claims(report: Dict[str, Any]) -> List[Dict[str, Any]]:
-    return report.get("sy_handoff", {}).get("financial_claims", report.get("financial_claims", []))
+    return report.get("strategy_handoff", {}).get("financial_claims", report.get("financial_claims", []))
 
 
 def input_state_node(state: FinancialAnalystGraphState) -> FinancialAnalystGraphState:
@@ -852,8 +870,8 @@ def input_state_node(state: FinancialAnalystGraphState) -> FinancialAnalystGraph
         "yfinance_market_summary": load_input_file(paths["yfinance_market_summary"])
         if paths.get("yfinance_market_summary") and Path(paths["yfinance_market_summary"]).exists()
         else {},
-        "news_company_top10": load_input_file(paths["news_company_top10"])
-        if paths.get("news_company_top10") and Path(paths["news_company_top10"]).exists()
+        "news_weekly_summaries": load_input_file(paths["news_weekly_summaries"])
+        if paths.get("news_weekly_summaries") and Path(paths["news_weekly_summaries"]).exists()
         else {},
     }
     state["manifest"] = manifest
@@ -863,13 +881,21 @@ def input_state_node(state: FinancialAnalystGraphState) -> FinancialAnalystGraph
 
 
 def financial_agent_execution_node(state: FinancialAnalystGraphState) -> FinancialAnalystGraphState:
-    report = build_financial_analyst_output(state["manifest"], state["inputs"])
-    state["financial_analysis_output"] = report
+    factual_report = build_financial_analyst_output(state["manifest"], state["inputs"])
+    llm_analysis = generate_financial_analysis_with_llm(
+        factual_report,
+        model=state.get("model") or None,
+    )
+    state["llm_analysis"] = llm_analysis
+    state["financial_analysis_output"] = apply_financial_analysis(
+        factual_report,
+        llm_analysis,
+    )
     append_message(
         state,
         "Financial Agent Execution Node",
         "system",
-        "financial_analysis_built",
+        "financial_llm_analysis_built",
     )
     return state
 
@@ -892,7 +918,9 @@ def financial_report_output_node(state: FinancialAnalystGraphState) -> Financial
         "financial_statement_view",
         "detailed_analysis",
         "secondary_context",
-        "sy_handoff",
+        "secondary_context_assessment",
+        "analysis_metadata",
+        "strategy_handoff",
     ]
     missing = [key for key in required if key not in output]
     state["schema_validation"] = {
@@ -923,12 +951,14 @@ def main() -> None:
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--trace-output")
+    parser.add_argument("--model", default=None)
     args = parser.parse_args()
 
     app = build_graph()
     final_state = app.invoke(
         {
             "manifest_path": args.manifest,
+            "model": args.model or "",
             "transcript": [],
         }
     )
@@ -947,8 +977,8 @@ def main() -> None:
                 "Financial Report Output Node",
             ],
             "schema_validation": final_state["schema_validation"],
-            "execution_mode": "deterministic_dart_normalization",
-            "llm_call_count": 0,
+            "execution_mode": "deterministic_fact_preparation_plus_llm_interpretation",
+            "llm_call_count": 1,
             "transcript": final_state["transcript"],
         }
         trace_path.write_text(json.dumps(trace, ensure_ascii=False, indent=2) + "\n")

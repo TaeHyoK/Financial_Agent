@@ -1,0 +1,105 @@
+{
+  "change": "annual_context_v1 / strategy 12m_v1",
+  "tests": {
+    "command": "python -m unittest discover -s tests -v",
+    "count": 21,
+    "status": "pass",
+    "initial_suite_count": 11,
+    "review_suite_count": 10
+  },
+  "validation": {
+    "saved_artifact_schema_and_writer_replay": "2 adapted fixtures passed; these are not fresh investment analyses",
+    "html_visual_check": "Chromium screenshot inspected",
+    "cli_help": "full pipeline, market, news export, Strategy passed"
+  },
+  "not_executed": [
+    "new one-year API collection",
+    "live LLM report generation",
+    "ablation rerun"
+  ],
+  "backup": "/tmp/FINAL_before_12month_20260908T064114.tar.gz",
+  "files": {
+    "README.md": "c8108e6f93496b9ab5d5d8f3530e3d37b8f74005f5ccbcbc2f379ce3ac5697d9",
+    "configs/company_input.json": "d11c1d3bca32a1118e9ef61977c6ed23518b7990bdc1ee9dfb609e972e1600c2",
+    "configs/news_default.yaml": "28ba2016c206ad332136e66fcbf38c52ac0b344e2a945ea97b45a8a7b96e42f9",
+    "docs/annual_analysis.md": "14742a5ed1029dde42a668532d056aee75fe9ccb67bc70083a8930a3ff7d4116",
+    "src/Agent_Team/Competitor_Agent/peer_comparison.py": "977b93a3960d7d7de39d0ede4cb14101ba4a930180873d211648086a5c48d6d3",
+    "src/Agent_Team/Financial_Agent/financial_index.json": "3976b79b9d28910a593f8c97d7fe7eca95d3e25b691fedbe7b7c4c53f9486f45",
+    "src/Agent_Team/Financial_Agent/financial_index_calculator.py": "7cf83586e5a35a83498ce8b8ed4c6d920b9e80e62baaad7bde6e09d0b83b71e0",
+    "src/Agent_Team/Financial_Agent/input_manifest.example.json": "b1b7fb1f92134d69299e3cf9936c795950539be4813e9cf76cc7b80d779936ba",
+    "src/Agent_Team/Financial_Agent/langgraph_flow.py": "f44f66628d4917b3b7803249f80cd6cefdb9ee52873a47d72db5e5fbe59621e6",
+    "src/Agent_Team/Financial_Agent/main.py": "eef6f55f22cee019b881a021f2f085cad6b3991ae8432529ec5d95a6a19239bc",
+    "src/Agent_Team/News_Agent/README.md": "03e2424881842125448b5383c90af60b8710ba775a99d14b56ddd291edf1f136",
+    "src/Agent_Team/News_Agent/analysis_agent.py": "4a0ebca6276a616dfaa186e8aca43ca2f4afe092d713d83f8d8002959c850a82",
+    "src/Agent_Team/News_Agent/cli.py": "b399a08335f8c3de4c246ac651744e02df630894d4044c7a0eddfb915913f73c",
+    "src/Agent_Team/News_Agent/context_export.py": "cabc9957b7487c25f920470cfec26232fcd62d151407fb90cf9d2b16a00f8b8e",
+    "src/Agent_Team/Strategy_Agent/README.md": "aede0ddc228a2689ee1d0c04c2fbf2efc436a439a10612ce130c94c86b74c2db",
+    "src/Agent_Team/Strategy_Agent/agent.py": "894f2051f34c7ab5819713a0f90175d94730ed7a09de8046b380389907ebe4b1",
+    "src/Agent_Team/Strategy_Agent/cli.py": "a355c945af938a723dec3708b1a6836b23c9a0fc694b434942abb52f748b6844",
+    "src/Agent_Team/Strategy_Agent/contracts_v2.py": "e110d2f03d6761437882c12725331e5050e046a4bb228fb2645e04c1abf6f62d",
+    "src/Agent_Team/Strategy_Agent/contracts_v5.py": "3d5043038aa7479d89c87b6bd0a51872b4677eb758732c9d98bb60f3705328d9",
+    "src/Agent_Team/Strategy_Agent/prompts/decision_agent_v5.md": "b02ace868a4f06d6cd581a56f434704aa274cf21f37723c8d383d4d9b544dd9f",
+    "src/Agent_Team/Writer Agent/formatted_html_renderer.py": "ef347f01c347c2446ac0ca4d1cf0f92a17caf00caf64f31de50e1a8d11f0a503",
+    "src/Agent_Team/Writer Agent/html_report_spec.py": "0af653336347d878426866dfba6ddd2847da1959d908237a9825560a431ebbc0",
+    "src/Agent_Team/Writer Agent/html_report_validator.py": "ec1eafa144c60b184ea7a830f187736418e7faef7b0ac00f2eac7de5e4d5213a",
+    "src/Agent_Team/Writer Agent/html_report_writer.py": "ff5c760f9a200c4420249f62f4010c23270db9c601841495b13be6a2030bd0ce",
+    "src/Agent_Team/Writer Agent/writer_handoff.py": "31dbf764a433a9e09b85493740de0e6aed5c2a113a9b0e3e9ef37dee27b3b1cf",
+    "src/Agent_Team/YFinance_Agent/README.md": "a83f594cee1c745c8e604b72c5f89fe6fc7b50c1814cdad1a65755da82ee4723",
+    "src/Agent_Team/YFinance_Agent/annual_features.py": "33685aff80ff844f24b4462c92a18f400b403ed37060e4862f07c7cf5ea02540",
+    "src/Agent_Team/YFinance_Agent/pipeline.py": "117db4e208fe5d2502d2d6ae6ff35f80222728704f80b28ab5cd02fe800d4e2f",
+    "src/Agent_Team/YFinance_Agent/reporting.py": "9a4cd7dd0394ee19b2fb4ee537e6b18118aa61f60edc912c223eeaac6de30ffc",
+    "src/Agent_Team/YFinance_Agent/run_pipeline.py": "675b317138766112d782bdacc83f2a7c856829dc5da8e851acf562c83ed96d4b",
+    "src/orchestration/company_resolver.py": "ecf52f3db5cefe31fff7ec1c8c0d50082f77f8a0f9b732a12589e8a0de534204",
+    "src/orchestration/end_to_end_loop.py": "87a712358782844751fba6a6c36d3bb8011fa9de541f3650c6cccaf7f0514cd4",
+    "src/orchestration/full_report_pipeline.py": "2c6264351916ed89a0e6a9caa0d669c1dbba2b28800c39e8a20123a1ccf05853",
+    "src/orchestration/manifest.py": "4ad5057db27ad0e203c064a525e67b1c19adb92859b6757fa8c26c9a18037302",
+    "src/orchestration/paths.py": "5de17e02b17fda163f7c1824197ef721506b10fe8e825f587692d3a5df952081",
+    "src/orchestration/snapshot_validation.py": "a4223e006298c9ea653acf84bbc4655bebcb85bad5102f12f65b07e0fc7db234",
+    "src/shared/subdata.py": "db66a44119b5bd66d53fafc529e7cb008ff1b11bd49a277a0ae193dc1e403676",
+    "src/shared/time_windows.py": "6db56de81fb67fc4ed320db5e4403a0b1b8638aa20485eaa9c7b83b3a74f5bef",
+    "tests/test_annual_context.py": "35973851f8895523b5016c4a7544d88f350bca3abb19f659f3a3f56d0821364e",
+    "tests/test_annual_review.py": "784e60aa8e37982e853b9ac58da3d392143ad898fcb4af5f0af4972e56215ea6"
+  },
+  "review": {
+    "completed_at_utc": "2026-09-08T07:22:43+00:00",
+    "backup": "/tmp/FINAL_before_annual_review.tar.gz",
+    "six_regressions_reproduced_before_fixes": [
+      "Annual latest filing lost the previous annual comparison.",
+      "A gap in annual years was incorrectly interpreted as year-over-year growth.",
+      "DART reuse copied the old one-year lightweight file and omitted new metrics.",
+      "Domain reuse did not reject a three-month snapshot for an annual run.",
+      "A monthly news summary end date was promoted to an event date.",
+      "Monthly market evidence silently omitted periods without observations."
+    ],
+    "additional_checks": [
+      "Report generation filters future market rows before constructing LLM evidence.",
+      "Source filing dates at or after the selected-date boundary are rejected.",
+      "Matching reuse preserves the market manifest and regenerates common subdata.",
+      "Market history changes invalidate cached analysis even when the latest summary is identical.",
+      "The two receiving agents obtain identical subdata from each source."
+    ],
+    "saved_dart_reuse_checks": [
+      {
+        "company": "아모레퍼시픽",
+        "status": "materialized",
+        "periods": 5,
+        "metrics": 8,
+        "annual_periods": 3
+      },
+      {
+        "company": "고려아연",
+        "status": "materialized",
+        "periods": 5,
+        "metrics": 8,
+        "annual_periods": 3
+      }
+    ],
+    "compile": {
+      "command": "python -m compileall -q src tests",
+      "status": "pass"
+    },
+    "live_llm_calls": 0,
+    "new_provider_collection": false,
+    "ablation_rerun": false
+  }
+}

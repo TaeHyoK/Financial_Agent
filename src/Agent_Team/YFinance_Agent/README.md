@@ -39,7 +39,7 @@ python src/Agent_Team/YFinance_Agent/run_pipeline.py \
   --output-dir Output_total/Y_Finance/SK바이오팜_20251031 \
   --env-file configs/.env \
   --dart-json Output_total/Financial/SK바이오팜_20251031/dart_lightweight.json \
-  --news-json Output_total/News/SK바이오팜_20251031/context_exports/week/llm_period_summaries.json
+  --news-json Output_total/News/SK바이오팜_20251031/context_exports/month/llm_period_summaries.json
 ```
 
 이미 시장 데이터가 있으면 `--skip-collect`, 이미 보고서가 있으면 `--skip-report`를 사용할 수 있습니다.
@@ -75,13 +75,15 @@ python src/Agent_Team/YFinance_Agent/report.py
 
 기본적으로 `configs/.env`를 읽어 `OPENAI_API_KEY`를 사용합니다. 다른 env 파일을 쓰려면 `--env-file`로 지정합니다.
 
-모델은 `--model` 또는 `OPENAI_MODEL`로 지정할 수 있으며, 일반 보고서 실행의 기본값은 `gpt-5.4`입니다. 논문 실험 스크립트는 `gpt-5.4-mini`를 명시적으로 전달합니다.
+모델은 `--model` 또는 `OPENAI_MODEL`로 지정할 수 있으며, 현재 개발·테스트 기본값은 `gpt-5.4-mini`입니다. 과거 실행 결과의 모델은 당시 기록을 따릅니다.
 
 ```bash
-python src/Agent_Team/YFinance_Agent/report.py --model gpt-5.4
+python src/Agent_Team/YFinance_Agent/report.py --model gpt-5.4-mini
 ```
 
-보고서는 YFinance `market_full_dataset.json`을 주 분석자료로 사용합니다. 뉴스 에이전트의 주장을 전달받지 않고 90일 범위의 주간 뉴스 요약을 보조자료로 직접 읽으며, 같은 분석기간의 전체 거래일 수익률·시장 대비 수익률·거래량 변화와 함께 분석합니다. DART lightweight 지표도 보조자료로 사용합니다. 뉴스와 가격의 시간적 대응은 살펴보되 인과관계로 단정하지 않습니다.
+보고서는 YFinance `market_full_dataset.json`을 주 분석자료로 사용합니다. 뉴스 에이전트의 주장을 전달받지 않고 최근 1년의 월별 요약 12개와 DART 3개년 재무 추세표를 공통 subdata로 읽습니다. 주 분석 입력은 1·3·6·12개월 지표, 월별 관측치 12개와 최근 20거래일로 제한하며 전체 일별 자료는 파일에 보관합니다. 가격 수익률은 배당을 제외한 공급자 분할조정 종가 기준입니다. 뉴스와 가격의 시간적 대응은 살펴보되 인과관계로 단정하지 않습니다.
+
+보조자료는 시장 관측의 의미·지속성·위험을 해석하는 데 활용합니다. 도메인별 쟁점 배열에 연결 근거, `statement`, `judgment_impact`를 작성하고 `main_view.context_ids`로 종합 판단에 반영한 쟁점을 연결합니다. 관련성이 없으면 배열을 비워 두며 보조자료의 유무만으로 방향을 정하지 않습니다. 정규화된 산출물에는 보조자료의 출처와 기간 메타데이터도 함께 보존합니다.
 `Output_total/Y_Finance/yfinance_analyst_report.json`은 `Y-Finance Agent` 스키마로 생성되며, `score` 필드는 포함하지 않습니다.
 `secondary_context_assessment`는 `corroborates`, `contradicts`, `neutral`, `insufficient`만 허용하며 primary 시장 claim의 근거 상태를 변경하지 않습니다.
 

@@ -1,6 +1,8 @@
+> 기본 실행은 `v5 / schema_revision=12m_v3`입니다. 관측 자료·하위 해석·적용 범위를 구분해 제공하며, 실적·전망·가격 분석과 대안 해석을 먼저 작성한 뒤 12개월 Buy/Hold/Sell 의견을 정리합니다. 근거의 역할은 분류 라벨 대신 `investment_implication`으로 서술합니다. 실제 인용에 고정 개수 상한을 두지 않으며, 핵심 표에 쓰지 않은 인용도 문맥 근거로 보존합니다. 현재 계약은 [분석 중심 Strategy 변경 및 검토](../../../docs/strategy_analysis_first.md)를 참고하세요. 아래의 과거 계약 설명은 현재 실행 규격이 아닙니다.
+
 # Strategy Agent
 
-Strategy Agent는 대상 기업의 검증된 Financial, News, YFinance 보고서와 구조화된 비교기업 자료를 바탕으로 기준일 시점의 판단과 투자자 대응을 생성한다. 기본 v5 경로는 LLM이 판단 근거를 직접 선택하고, 기존 편입자와 신규 자금의 현재 대응을 구분해 한 번의 호출로 작성한다.
+Strategy Agent는 Financial, News, YFinance 분석과 비교기업 자료를 바탕으로 기준일 시점의 12개월 투자 의견을 한 번의 LLM 호출로 작성한다. 기존 보유자와 신규 진입자의 별도 대응으로 나누지 않는다.
 
 ## 입력
 
@@ -12,7 +14,7 @@ Strategy Agent는 대상 기업의 검증된 Financial, News, YFinance 보고서
 
 비교 데이터셋은 동일 지표·단위·날짜·기간 기준이 확인된 값을 제공하고, 비교 분석 보고서는 대상기업과 비교기업에 동일 절차를 적용한 하위 에이전트 결과를 종합해 두 기업의 상대적 위치를 설명한다.
 
-## v5 추론 계약
+## 과거 v5 추론 계약 참고
 
 입력 구성기는 하위 에이전트의 주요 분석, 교차 자료 판단과 사실 기반 근거 카드를 하나의 `strategy_context_package_v5`로 전달한다. 날짜·기간·단위·비교 대상·자료의 적용 범위는 유지하지만, 카드의 투자 방향과 중요도는 미리 결정하지 않는다.
 
@@ -84,7 +86,7 @@ strategy_report.md
 
 ```bash
 PYTHONPATH=src python -m Agent_Team.Strategy_Agent.evaluate_recommendation_bias \
-  --llm-model gpt-5.4 \
+  --llm-model gpt-5.4-mini \
   --env-file configs/.env
 ```
 

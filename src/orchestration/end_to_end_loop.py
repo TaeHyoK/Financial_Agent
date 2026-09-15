@@ -14,6 +14,9 @@ from pathlib import Path
 
 from tqdm.auto import tqdm
 
+from .snapshot_validation import validate_domain_source, validate_financial_source, rebuild_financial_indices
+from shared.subdata import market_subdata
+
 from .config import DEFAULT_CONFIG_PATH, DEFAULT_ENV_FILE, DEFAULT_NEWS_CONFIG_PATH, load_run_config
 from .dependency_graph import STEP_SPECS
 from .manifest import write_financial_runtime_manifest, write_run_config_copy, write_run_files
@@ -23,9 +26,9 @@ from .run_state import FAILED, SUCCESS, StepRecord
 
 DEFAULT_KOSPI_TICKER = "^KS11"
 DEFAULT_FX_TICKER = "KRW=X"
-DEFAULT_NEWS_GRANULARITY = "week"
-DEFAULT_NEWS_RAW_PERIOD_COUNT = 14
-STEP_FINGERPRINT_VERSION = "1"
+DEFAULT_NEWS_GRANULARITY = "month"
+DEFAULT_NEWS_RAW_PERIOD_COUNT = 12
+STEP_FINGERPRINT_VERSION = "3"
 FINGERPRINT_SOURCE_SUFFIXES = {".py", ".md", ".json", ".yaml", ".yml", ".toml"}
 REUSED_DOMAIN_SNAPSHOT_STEPS = frozenset(
     {
@@ -44,7 +47,7 @@ class AgentTeamOrchestrator:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
         self.run_config = load_run_config(args.config)
-        self.paths = resolve_run_paths(self.run_config, args.output_root)
+        self.paths = resolve_run_paths(self.run_config, args.output_root, news_granularity=args.news_granularity)
         self.paths.ensure_directories()
         write_run_config_copy(self.paths, self.run_config)
         self.reused_domain_snapshot: dict[str, object] = {}
@@ -58,6 +61,8 @@ class AgentTeamOrchestrator:
                 run_config=self.run_config,
                 source_root=self.args.reuse_domain_data_from,
                 destination_paths=self.paths,
+                expected_market_dates=self._market_date_range(),
+                expected_news_period_count=self._news_period_count(),
                 expected_news_model=(
                     self.args.news_llm_model or self.common_llm_model()
                 ),
@@ -186,17 +191,23 @@ class AgentTeamOrchestrator:
             return self.args.llm_model
         if self.run_config.llm_model:
             return self.run_config.llm_model
-        return "gpt-5.4"
+        return "gpt-5.4-mini"
 
     def outputs_for_step(self, step_name: str) -> dict[str, str]:
         if step_name == "yfinance_layer_1":
             return {
+                "market_full_dataset": str(self.paths.yfinance_dir / "market_full_dataset.json"),
+                "market_full_csv": str(self.paths.yfinance_dir / "market_full_dataset.csv"),
+                "market_manifest": str(self.paths.yfinance_dir / "manifest.json"),
+                "market_subdata": str(self.paths.yfinance_dir / "market_subdata.json"),
                 "market_summary": str(self.paths.market_summary),
                 "market_summary_dated": str(self.paths.market_summary_dated),
                 "valuation_snapshot": str(self.paths.valuation_snapshot),
             }
         if step_name == "financial_layer_1":
             return {
+                "dart_master": str(self.paths.dart_master),
+                "financial_subdata": str(self.paths.financial_dir / "financial_subdata.json"),
                 "dart_main": str(self.paths.dart_main),
                 "dart_lightweight": str(self.paths.dart_lightweight),
             }
@@ -204,13 +215,13 @@ class AgentTeamOrchestrator:
             return {"report_context": str(self.paths.news_report_context)}
         if step_name == "news_export":
             return {
-                "llm_summary_request": str(
-                    self.paths.news_context_export_dir / self.args.news_granularity / "llm_summary_request.json"
-                ),
-                "company_related_news_top20": str(self.paths.news_company_top20),
+                "news_articles": str(self.paths.news_articles),
+                "summary_request": str(self.paths.news_context_export_week_dir / "llm_summary_request.json"),
             }
         if step_name == "news_llm":
-            return {"llm_period_summaries": str(self.paths.news_llm_period_summaries)}
+            return {"summary_request" if self.args.primary_data_only else "news_summaries":
+                    str(self.paths.news_context_export_week_dir / "llm_summary_request.json")
+                    if self.args.primary_data_only else str(self.paths.news_llm_period_summaries)}
         if step_name == "news_analysis":
             return {"handoff": str(self.paths.news_handoff)}
         if step_name == "financial_analyst":
@@ -298,7 +309,7 @@ class AgentTeamOrchestrator:
                     for offset in range((end - start).days + 1)
                 }
             )
-        return max(1, int(self.args.news_period_count or 1))
+        return 12
 
     def _news_phase_command(self, phase: str) -> list[str]:
         news_collection_days = self._news_collection_days()
@@ -609,10 +620,12 @@ def materialize_reused_domain_snapshot(
     source_root: str | Path,
     destination_paths: RunPaths,
     expected_news_model: str | None = None,
+    expected_market_dates: tuple[str, str] | None = None,
+    expected_news_period_count: int = 12,
 ) -> dict[str, object]:
-    """Copy only the fixed provider/News-summary inputs needed by downstream agents."""
+    """Copy only the fixed provider/selected-article inputs needed by downstream agents."""
 
-    source_paths = resolve_run_paths(run_config, source_root)
+    source_paths = resolve_run_paths(run_config, source_root, news_granularity=destination_paths.news_granularity)
     if source_paths.output_root == destination_paths.output_root:
         raise ValueError("Reused domain snapshot source and destination roots must differ.")
     source_status = _load_json_object(source_paths.run_status)
@@ -621,25 +634,17 @@ def materialize_reused_domain_snapshot(
             f"Reused domain snapshot must come from a completed successful run: {source_paths.run_status}"
         )
 
-    summary_source = source_paths.news_llm_period_summaries
-    summary_payload = _load_json_object(summary_source)
-    summary_model = str(summary_payload.get("model") or "").strip()
-    if expected_news_model and summary_model and summary_model != expected_news_model:
-        raise ValueError(
-            "Reused News summary model does not match the requested model: "
-            f"snapshot={summary_model}, requested={expected_news_model}, "
-            f"file={summary_source}"
-        )
-
+    validate_domain_source(source_paths, run_config, market_dates=expected_market_dates, news_period_count=expected_news_period_count)
+    if expected_news_model and _load_json_object(source_paths.news_llm_period_summaries).get("model") != expected_news_model:
+        raise ValueError("Reused monthly news summary model differs from the requested model")
     file_pairs = [
         (source_paths.yfinance_dir / "market_full_dataset.json", destination_paths.yfinance_dir / "market_full_dataset.json"),
         (source_paths.yfinance_dir / "market_full_dataset.csv", destination_paths.yfinance_dir / "market_full_dataset.csv"),
         (source_paths.market_summary_dated, destination_paths.market_summary_dated),
-        (source_paths.market_summary, destination_paths.market_summary),
+        (source_paths.market_summary_dated, destination_paths.market_summary),
+        (source_paths.yfinance_dir / "manifest.json", destination_paths.yfinance_dir / "manifest.json"),
         (source_paths.valuation_snapshot, destination_paths.valuation_snapshot),
-        (source_paths.dart_main, destination_paths.dart_main),
         (source_paths.dart_master, destination_paths.dart_master),
-        (source_paths.dart_lightweight, destination_paths.dart_lightweight),
         (
             _reused_news_report_context_source(source_paths, run_config),
             destination_paths.news_report_context,
@@ -648,6 +653,12 @@ def materialize_reused_domain_snapshot(
     copied: list[dict[str, str]] = []
     for source, destination in file_pairs:
         copied.append(_copy_snapshot_file(source, destination))
+
+    regenerated = rebuild_financial_indices(destination_paths)
+    summary = json.loads(destination_paths.market_summary.read_text(encoding="utf-8"))
+    market_table = destination_paths.yfinance_dir / "market_subdata.json"
+    market_table.write_text(json.dumps(market_subdata(summary), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    regenerated.append(str(market_table))
 
     context_source = source_paths.news_context_export_dir
     if not context_source.is_dir():
@@ -676,10 +687,11 @@ def materialize_reused_domain_snapshot(
         "destination_root": str(destination_paths.output_root),
         "run_key": destination_paths.run_key,
         "selected_date": destination_paths.selected_date,
-        "news_summary_model": summary_model or "unrecorded",
+        "news_input_policy": "monthly_selected_articles_v1",
         "expected_news_model": expected_news_model or "",
         "reused_steps": sorted(REUSED_DOMAIN_SNAPSHOT_STEPS),
         "files": copied,
+        "regenerated_preprocessing_files": regenerated,
     }
 
 
@@ -694,22 +706,9 @@ def materialize_reused_dart_snapshot(
     source_paths = resolve_run_paths(run_config, source_root)
     if source_paths.output_root == destination_paths.output_root:
         raise ValueError("Reused DART snapshot source and destination roots must differ.")
-    pairs = [
-        (source_paths.dart_main, destination_paths.dart_main),
-        (source_paths.dart_master, destination_paths.dart_master),
-        (source_paths.dart_lightweight, destination_paths.dart_lightweight),
-    ]
-    for source, _destination in pairs:
-        payload = _load_json_object(source)
-        context = payload.get("collection_context")
-        if not isinstance(context, dict):
-            raise ValueError(f"Reused DART snapshot has no collection_context: {source}")
-        snapshot_date = str(context.get("selected_date") or "").replace("-", "")
-        if snapshot_date != run_config.selected_date:
-            raise ValueError(
-                f"Reused DART snapshot selected date does not match {run_config.selected_date}: {source}"
-            )
-    copied = [_copy_snapshot_file(source, destination) for source, destination in pairs]
+    validate_financial_source(source_paths, run_config)
+    copied = [_copy_snapshot_file(source_paths.dart_master, destination_paths.dart_master)]
+    regenerated = rebuild_financial_indices(destination_paths)
     return {
         "status": "materialized",
         "snapshot_scope": "dart_preprocessing_only",
@@ -722,12 +721,12 @@ def materialize_reused_dart_snapshot(
             "yfinance_layer_1",
             "news_collect",
             "news_export",
-            "news_llm",
             "news_analysis",
             "financial_analyst",
             "yfinance_report",
         ],
         "files": copied,
+        "regenerated_preprocessing_files": regenerated,
     }
 
 
@@ -755,12 +754,18 @@ def destination_paths_for_step(paths: RunPaths, step_name: str) -> dict[str, str
 
     if step_name == "yfinance_layer_1":
         return {
+            "market_full_dataset": str(paths.yfinance_dir / "market_full_dataset.json"),
+            "market_full_csv": str(paths.yfinance_dir / "market_full_dataset.csv"),
+            "market_manifest": str(paths.yfinance_dir / "manifest.json"),
+            "market_subdata": str(paths.yfinance_dir / "market_subdata.json"),
             "market_summary": str(paths.market_summary),
             "market_summary_dated": str(paths.market_summary_dated),
             "valuation_snapshot": str(paths.valuation_snapshot),
         }
     if step_name == "financial_layer_1":
         return {
+            "dart_master": str(paths.dart_master),
+            "financial_subdata": str(paths.financial_dir / "financial_subdata.json"),
             "dart_main": str(paths.dart_main),
             "dart_lightweight": str(paths.dart_lightweight),
         }
@@ -768,10 +773,11 @@ def destination_paths_for_step(paths: RunPaths, step_name: str) -> dict[str, str
         return {"report_context": str(paths.news_report_context)}
     if step_name == "news_export":
         return {
-            "llm_summary_request": str(paths.news_context_export_week_dir / "llm_summary_request.json")
+            "news_articles": str(paths.news_articles),
+            "summary_request": str(paths.news_context_export_week_dir / "llm_summary_request.json"),
         }
     if step_name == "news_llm":
-        return {"llm_period_summaries": str(paths.news_llm_period_summaries)}
+        return {"news_summaries": str(paths.news_llm_period_summaries)}
     raise KeyError(f"Step cannot be provided by a reused domain snapshot: {step_name}")
 
 
@@ -871,7 +877,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="OUTPUT_ROOT",
         help=(
-            "Reuse a completed run's DART, market, and News collection/summary snapshot, "
+            "Reuse a completed run's DART, market, and News selected-article snapshot, "
             "then rerun downstream domain analysis and report generation."
         ),
     )

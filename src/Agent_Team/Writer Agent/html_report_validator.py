@@ -14,11 +14,14 @@ from html_report_spec import (
     REPORT_DISCLAIMER,
     REPORT_SECTIONS,
     RISK_DISPLAY_COLUMNS,
-    TEXT_PARAGRAPH_LIMITS,
     SUPPORTED_INVESTMENT_HORIZONS,
     investment_horizon_heading,
+    has_data_limit_content,
 )
 from html_report_writer import (
+    _uses_narrative_evidence,
+    _evidence_display_columns,
+    _evidence_interpretation_column,
     _plain_korean_text,
     _qualify_partial_product_scope_v2,
     _strategy_role_label,
@@ -46,12 +49,12 @@ def validate_html_report(
             bool(re.search(r"<html(?:\s|>)", html_content, flags=re.IGNORECASE))
             and bool(re.search(r"</html>\s*$", html_content, flags=re.IGNORECASE))
         ),
-        "required_section_ids": _validate_required_section_ids(html_content, notes),
+        "required_section_ids": _validate_required_section_ids(html_content, notes, report_payload),
         "forbidden_content_removed": _validate_forbidden_content(report_payload, notes),
         "required_tables": _validate_required_tables(html_content, notes),
         "recommendation_consistency": _validate_recommendation(report_payload, writer_handoff, notes),
-        "reader_recommendation_labels_hidden": _validate_reader_recommendation_labels(
-            html_content, notes
+        "reader_recommendation_label": _validate_reader_recommendation_labels(
+            html_content, notes, expected=_dict(writer_handoff.get("decision")).get("opinion")
         ),
         "fixed_disclaimer": _validate_fixed_disclaimer(html_content, notes),
         "investment_horizon_heading": _validate_investment_horizon_heading(
@@ -85,7 +88,7 @@ def validate_html_report(
     advisory_checks = {
         "section_h1_count": _pass_fail(
             len(re.findall(r"<h1[>\s]", html_content))
-            == len(REPORT_SECTIONS)
+            == len(REPORT_SECTIONS) + 1 - (0 if has_data_limit_content(report_payload) else 1)
             + (1 if report_payload.get("report_charts") else 0)
         ),
         "table_of_contents_removed": _validate_no_table_of_contents(
@@ -122,10 +125,11 @@ def validate_html_report(
     }
 
 
-def _validate_required_section_ids(html_content: str, notes: list[str]) -> str:
+def _validate_required_section_ids(html_content: str, notes: list[str], report_payload: dict[str, Any] | None = None) -> str:
     missing = [
         section["id"]
         for section in REPORT_SECTIONS
+        if section["key"] != "data_limits" or report_payload is None or has_data_limit_content(report_payload)
         if not _html_has_id(html_content, section["id"])
     ]
     if missing:
@@ -170,11 +174,6 @@ def _validate_chart_selection_grounding(
         and bool(str(item.get("selection_reason") or "").strip())
         and bool(str(item.get("chart_observation") or "").strip())
         and bool(str(item.get("investment_interpretation") or "").strip())
-        and (
-            len(str(item.get("chart_observation") or "").strip())
-            + len(str(item.get("investment_interpretation") or "").strip())
-            <= 220
-        )
         for item in details
         if isinstance(item, dict)
     )
@@ -256,7 +255,13 @@ def _validate_recommendation(report_payload: dict[str, Any], writer_handoff: dic
     return _pass_fail(ok)
 
 
-def _validate_reader_recommendation_labels(html_content: str, notes: list[str]) -> str:
+def _validate_reader_recommendation_labels(html_content: str, notes: list[str], expected: str | None = None) -> str:
+    if expected in {"Buy", "Hold", "Sell"}:
+        label = {"Buy": "매수", "Hold": "중립", "Sell": "매도"}[expected]
+        ok = f'class="investment-opinion">{label}</strong>' in html_content
+        if not ok:
+            notes.append("Strategy investment opinion missing or changed in the report header")
+        return _pass_fail(ok)
     visible_text = _visible_html_text(html_content)
     matches = sorted(
         {
@@ -381,6 +386,7 @@ def _validate_card_key_coverage(
     if not _is_v2_writer_packet(writer_handoff):
         return "pass"
     required = _dict(writer_handoff.get("required_card_keys_by_component"))
+    available = _dict(writer_handoff.get("available_card_keys_by_component", required))
     sections = _dict(report_payload.get("sections"))
     errors: list[str] = []
     for section in REPORT_SECTIONS:
@@ -393,7 +399,7 @@ def _validate_card_key_coverage(
             if len(raw_keys) != len(set(raw_keys)):
                 errors.append(f"{component}.{item_key} contains duplicate card_keys")
             actual.update(raw_keys)
-        if actual != expected:
+        if not expected <= actual or not actual <= set(_text_list(available.get(component))):
             errors.append(
                 f"{component} card coverage mismatch: expected={sorted(expected)}, actual={sorted(actual)}"
             )
@@ -434,7 +440,10 @@ def _validate_strategy_meaning_preservation(
         interpretation = str(card.get("strategy_interpretation") or "")
         if row.get("_strategy_interpretation") != interpretation:
             errors.append(f"Strategy interpretation metadata changed: {card_key}")
-        if label_free:
+        if _uses_narrative_evidence(writer_handoff):
+            if "_strategy_role" in row or "판단상 역할" in row:
+                errors.append(f"Unexpected categorical role in narrative evidence: {card_key}")
+        elif label_free:
             if row.get("_strategy_role") != card.get("strategy_role"):
                 errors.append(f"Strategy role metadata changed: {card_key}")
         elif row.get("_investment_effect") != card.get("investment_effect"):
@@ -493,11 +502,7 @@ def _validate_strategy_presentation_preservation(
     sections = _dict(report_payload.get("sections"))
     evidence_item = _dict(_dict(sections.get("key_evidence_table")).get("evidence_table"))
     evidence_rows = [row for row in _list(evidence_item.get("rows")) if isinstance(row, dict)]
-    expected_columns = (
-        LABEL_FREE_KEY_EVIDENCE_DISPLAY_COLUMNS
-        if label_free
-        else KEY_EVIDENCE_DISPLAY_COLUMNS
-    )
+    expected_columns = _evidence_display_columns(writer_handoff)
     if _text_list(evidence_item.get("columns")) != list(expected_columns):
         errors.append("key_evidence_table display columns changed")
     expected_evidence_keys = _text_list(required.get("key_evidence_table"))
@@ -520,9 +525,11 @@ def _validate_strategy_presentation_preservation(
                 [card_key],
             )
         ).strip()
-        if str(row.get("투자 해석") or "").strip() != expected_visible_interpretation:
+        if str(row.get(_evidence_interpretation_column(writer_handoff)) or "").strip() != expected_visible_interpretation:
             errors.append(f"Visible Strategy interpretation was paraphrased: {card_key}")
-        if label_free:
+        if _uses_narrative_evidence(writer_handoff):
+            pass
+        elif label_free:
             expected_role_label = _strategy_role_label(card.get("strategy_role"))
             if str(row.get("판단상 역할") or "").strip() != expected_role_label:
                 errors.append(f"Visible Strategy role label changed: {card_key}")
@@ -680,6 +687,10 @@ def _validate_required_limitation_coverage(
         )
     )
     errors = []
+    if (writer_handoff.get("strategy_contract_version") == "strategy_decision_output_v5"
+            and str(_dict(writer_handoff.get("recommendation_bridge")).get("residual_uncertainty") or "").strip()
+            and not has_data_limit_content(report_payload)):
+        errors.append("Strategy supplied a decision limitation but Writer omitted its explanation")
     if declared != required:
         errors.append(f"Data-limit category order/coverage mismatch: expected={required}, actual={declared}")
     if set(covered) != set(required):
@@ -797,7 +808,6 @@ def _validate_compact_text_sections(
     notes: list[str],
 ) -> str:
     errors: list[str] = []
-    total_chars = 0
     sections = _dict(report_payload.get("sections"))
     for section in REPORT_SECTIONS:
         section_payload = _dict(sections.get(section["key"]))
@@ -807,23 +817,17 @@ def _validate_compact_text_sections(
             item = _dict(section_payload.get(item_key))
             paragraphs = [str(value).strip() for value in _list(item.get("paragraphs")) if str(value).strip()]
             bullets = [str(value).strip() for value in _list(item.get("bullets")) if str(value).strip()]
-            total_chars += sum(len(re.sub(r"<[^>]+>", "", paragraph)) for paragraph in paragraphs)
-            max_paragraphs = TEXT_PARAGRAPH_LIMITS.get(section["key"], 2)
-            if not 1 <= len(paragraphs) <= max_paragraphs:
+            if not paragraphs and section["key"] != "data_limits":
                 errors.append(
-                    f"{section['key']}.{item_key} must contain 1-{max_paragraphs} paragraphs"
+                    f"{section['key']}.{item_key} must contain analysis paragraphs"
                 )
             if bullets:
                 errors.append(f"{section['key']}.{item_key} bullets must be empty")
-    character_budget = (
-        4_200
-        if _dict(writer_handoff).get("packet_version") == EDITORIAL_PACKET_VERSION_V3
-        else 3_200
-    )
-    if total_chars > character_budget:
-        errors.append(
-            f"text section character budget exceeded: {total_chars} > {character_budget}"
-        )
+    for item in _list(report_payload.get("chart_selection_details")):
+        row = _dict(item)
+        count = len(str(row.get("chart_observation") or "")) + len(str(row.get("investment_interpretation") or ""))
+        if count > 220:
+            errors.append(f"chart commentary exceeds recommended length: {row.get('chart_key')} ({count} > 220)")
     if errors:
         notes.extend(errors)
     return _pass_fail(not errors)

@@ -56,12 +56,12 @@ def write_financial_runtime_manifest(
             "dart_main": "primary_financial_anchor",
             "dart_master": "primary_detailed_statement_evidence",
             "yfinance_market_summary": "market_context",
-            "news_weekly_summaries": "weekly_news_secondary_context",
+            "news_weekly_summaries": "monthly_news_secondary_context",
         },
         "source_notes": {
-            "news_granularity": "week",
-            "news_window": "Weekly summaries from the 90-day News window are used as Financial subdata.",
-            "market_window": "Derived from config.date_range by default; market_summary is selected_date only.",
+            "news_granularity": paths.news_granularity,
+            "news_window": "Twelve monthly summaries covering the preceding calendar year are shared as News subdata.",
+            "market_window": "One-year market indicators, calculated using warm-up history; dated at the latest session before selected_date.",
             "dart_window": (
                 "Latest regular filing available by selected_date, prior-year same-period filing, "
                 "and up to three annual periods; future receipt dates are excluded."
@@ -88,19 +88,21 @@ def build_outputs_manifest(paths: RunPaths) -> dict[str, Any]:
             "dart_main": str(paths.dart_main),
             "dart_master": str(paths.dart_master),
             "dart_lightweight": str(paths.dart_lightweight),
+            "financial_subdata": str(paths.financial_dir / "financial_subdata.json"),
             "analyst_report": str(paths.financial_analyst_report),
             "final_report": str(paths.financial_final_report),
             "agent_pipeline_dir": str(paths.financial_agent_pipeline_dir),
         },
         "news": {
             "context_exports": str(paths.news_context_export_dir),
-            "llm_period_summaries": str(paths.news_llm_period_summaries),
-            "company_related_news_top20": str(paths.news_company_top20),
+            "news_articles": str(paths.news_articles),
+            "company_related_news_top20": str(paths.news_articles),
             "handoff": str(paths.news_handoff),
             "final_report": str(paths.news_final_report),
         },
         "yfinance": {
             "market_summary": str(paths.market_summary),
+            "market_subdata": str(paths.yfinance_dir / "market_subdata.json"),
             "market_summary_dated": str(paths.market_summary_dated),
             "valuation_snapshot": str(paths.valuation_snapshot),
             "analyst_report": str(paths.yfinance_analyst_report),

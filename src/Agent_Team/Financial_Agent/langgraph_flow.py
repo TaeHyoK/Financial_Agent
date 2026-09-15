@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from shared.subdata import financial_subdata, market_subdata, news_subdata
 import argparse
 import copy
 import json
@@ -204,6 +205,9 @@ def build_financial_trends(dart: Dict[str, Any]) -> Dict[str, Any]:
         "contribution_margin",
         "sga_margin",
         "operating_profit",
+        "operating_margin",
+        "debt_ratio",
+        "total_equity",
         "net_income",
         "operating_cash_flow",
         "eps",
@@ -216,6 +220,9 @@ def build_financial_trends(dart: Dict[str, Any]) -> Dict[str, Any]:
         for metric_key in metric_keys:
             metric = (dart.get("metrics_by_key") or {}).get(metric_key) or {}
             value = (metric.get("values_by_period") or {}).get(period_key)
+            if metric_key == "revenue_growth":
+                value = next((item for item in (metric.get("comparisons") or {}).values()
+                              if item.get("current_period_key") == period_key), None)
             if isinstance(value, dict):
                 values[metric_key] = value.get("value")
         return values
@@ -225,22 +232,28 @@ def build_financial_trends(dart: Dict[str, Any]) -> Dict[str, Any]:
             pair
             for pair in comparison_pairs
             if pair.get("current_period_key") == "current_fiscal_year"
-            and pair.get("previous_period_key") == "same_period_previous_year"
         ),
         {},
     )
-    annual_keys = [
-        key
-        for key in ("previous_fiscal_year", "previous_fiscal_year_2", "previous_fiscal_year_3")
-        if key in periods
-    ]
+    previous_key = same_period_pair.get("previous_period_key")
+    annual_candidates = sorted(
+        (key for key, meta in periods.items() if meta.get("basis") in {"FY", "FULL_YEAR"}),
+        key=lambda key: str(periods[key].get("period_end") or ""), reverse=True,
+    )
+    annual_keys = []
+    seen_annual_ends = set()
+    for key in annual_candidates:
+        end = periods[key].get("period_end")
+        if end not in seen_annual_ends and len(annual_keys) < 3:
+            annual_keys.append(key)
+            seen_annual_ends.add(end)
     return {
         "current_vs_same_period": {
             "comparison": same_period_pair,
             "current_period": periods.get("current_fiscal_year", {}),
-            "previous_period": periods.get("same_period_previous_year", {}),
+            "previous_period": periods.get(previous_key, {}),
             "current_values": values_for_period("current_fiscal_year"),
-            "previous_values": values_for_period("same_period_previous_year"),
+            "previous_values": values_for_period(previous_key) if previous_key else {},
         },
         "annual_history": [
             {
@@ -267,7 +280,7 @@ def basis_caution(current_period: Dict[str, Any], previous_period: Dict[str, Any
 
 
 def build_financial_secondary_context(inputs: Dict[str, Any]) -> Dict[str, Any]:
-    """Build weekly News and market context without upstream agent claims."""
+    """Build common monthly News and market context without upstream agent claims."""
 
     return {
         "news": _news_weekly_summary_context(inputs.get("news_weekly_summaries") or {}),
@@ -275,59 +288,8 @@ def build_financial_secondary_context(inputs: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _news_weekly_summary_context(payload: Dict[str, Any]) -> Dict[str, Any]:
-    output = payload.get("output") if isinstance(payload.get("output"), dict) else {}
-    periods = output.get("periods") if isinstance(output.get("periods"), list) else []
-    if not periods:
-        periods = [
-            item.get("output")
-            for item in payload.get("period_results") or []
-            if isinstance(item, dict)
-            and item.get("status") in {None, "success"}
-            and isinstance(item.get("output"), dict)
-        ]
-    catalog: Dict[str, Dict[str, Any]] = {}
-    for item in periods:
-        if not isinstance(item, dict):
-            continue
-        period = str(item.get("period") or "").strip()
-        summary = str(item.get("period_summary") or "").strip()
-        if not period or not summary:
-            continue
-        source_date = _weekly_period_start(period)
-        evidence_id = canonical_evidence_id("news", f"weekly_{period}")
-        catalog[evidence_id] = {
-            "evidence_id": evidence_id,
-            "domain": "news",
-            "origin_type": "model_summarized",
-            "source_ref": f"news_periods.{period.replace('-', '_')}",
-            "source_date": source_date,
-            "period": period,
-            "metric": "weekly_news_context",
-            "text": summary,
-            "issues": [
-                {
-                    key: issue.get(key)
-                    for key in ("issue", "mention_count", "importance")
-                    if issue.get(key) not in (None, "", [], {})
-                }
-                for issue in item.get("issues") or []
-                if isinstance(issue, dict)
-            ],
-            "source_event_ids": [
-                str(event_id)
-                for event_id in item.get("source_event_ids") or []
-                if str(event_id).strip()
-            ],
-        }
-    validate_evidence_catalog(catalog, allowed_domains={"news"})
-    status = "available" if catalog else "unavailable"
-    return {
-        "status": status,
-        "input_type": "weekly_news_summaries",
-        "period_count": len(catalog),
-        "evidence_catalog": catalog,
-    }
+def _news_weekly_summary_context(payload: Dict[str, Any]) -> dict[str, Any]:
+    return news_subdata(payload)
 
 
 def _weekly_period_start(period: str) -> str:
@@ -342,30 +304,8 @@ def _weekly_period_start(period: str) -> str:
         return ""
 
 
-def _market_secondary_context(payload: Any) -> Dict[str, Any]:
-    row = payload[0] if isinstance(payload, list) and payload else payload
-    if not isinstance(row, dict):
-        return {"status": "unavailable", "evidence_catalog": {}}
-    source_date = str(row.get("date") or "")
-    catalog: Dict[str, Dict[str, Any]] = {}
-    for metric in SECONDARY_MARKET_METRICS:
-        value = row.get(metric)
-        if not _finite_number(value):
-            continue
-        evidence_id = canonical_evidence_id("market", metric)
-        catalog[evidence_id] = {
-            "evidence_id": evidence_id,
-            "domain": "market",
-            "origin_type": "raw_source",
-            "source_ref": f"market_full_dataset.latest.{metric}",
-            "source_date": source_date,
-            "period": "",
-            "metric": metric,
-            "value": value,
-            "unit": "index" if "rsi" in metric or "volume_ratio" in metric else "ratio",
-        }
-    validate_evidence_catalog(catalog, allowed_domains={"market"})
-    return {"status": "available" if catalog else "unavailable", "evidence_catalog": catalog}
+def _market_secondary_context(payload: Any) -> dict[str, Any]:
+    return market_subdata(payload)
 
 
 def _finite_number(value: Any) -> bool:
@@ -373,7 +313,11 @@ def _finite_number(value: Any) -> bool:
 
 
 def infer_statement_scope(dart_master: Dict[str, Any]) -> str:
-    """Infer the statement scope from canonical DART table titles."""
+    """Prefer explicit extraction metadata; never infer separate from a generic title."""
+
+    explicit = (dart_master.get("collection_context") or {}).get("statement_scope")
+    if explicit in {"consolidated", "separate", "mixed", "unknown"}:
+        return explicit
 
     titles = [
         str(table.get("table_title") or "")
@@ -383,7 +327,7 @@ def infer_statement_scope(dart_master: Dict[str, Any]) -> str:
     ]
     if any("연결" in title for title in titles):
         return "consolidated"
-    if any(title for title in titles):
+    if any("별도" in title or "개별" in title for title in titles):
         return "separate"
     return "unknown"
 

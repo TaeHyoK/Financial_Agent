@@ -105,6 +105,9 @@ NET_INCOME_SPEC = ItemLookupSpec(
         "분기순이익(손실)",
         "반기순이익",
         "반기순이익(손실)",
+        "반기연결순이익",
+        "분기연결순이익",
+        "당기연결순이익",
     ),
 )
 OPERATING_CASH_FLOW_SPEC = ItemLookupSpec(
@@ -116,6 +119,15 @@ TOTAL_EQUITY_SPEC = ItemLookupSpec(
     statement_key="4-1",
     item_keys=("total_equity",),
     labels=("자본총계", "자본합계"),
+)
+PARENT_NET_INCOME_SPEC = ItemLookupSpec(
+    statement_key="4-2", item_keys=("parent_net_income",),
+    labels=("지배기업의 소유주에게 귀속되는 당기순이익(손실)", "지배기업 소유주에게 귀속되는 당기순이익(손실)",
+            "지배기업의 소유주에게 귀속되는 분기순이익(손실)", "지배기업의 소유주에게 귀속되는 반기순이익(손실)"),
+)
+PARENT_EQUITY_SPEC = ItemLookupSpec(
+    statement_key="4-1", item_keys=("parent_equity",),
+    labels=("지배기업의 소유주에게 귀속되는 자본", "지배기업 소유주지분", "지배기업의 소유주지분", "지배기업의 소유지분"),
 )
 EPS_SPEC = ItemLookupSpec(
     statement_key="4-2",
@@ -138,7 +150,14 @@ DEPRECIATION_AMORTIZATION_SPEC = ItemLookupSpec(
     ),
 )
 
+TOTAL_LIABILITIES_SPEC = ItemLookupSpec(
+    statement_key="4-1", item_keys=("total_liabilities",), labels=("부채총계", "부채합계"),
+)
+
 METRIC_DEFINITIONS_BY_DISPLAY_NAME = {
+    "Operating Margin": MetricDefinition(metric_key="operating_margin", display_name="Operating Margin", formula="Operating Profit / Revenue", source_metric_keys=("operating_profit", "revenue")),
+    "Total Liabilities": MetricDefinition(metric_key="total_liabilities", display_name="Total Liabilities", source_items=("부채총계",)),
+    "Debt Ratio": MetricDefinition(metric_key="debt_ratio", display_name="Debt Ratio", formula="Total Liabilities / Total Equity", source_metric_keys=("total_liabilities", "total_equity")),
     "Revenue": MetricDefinition(
         metric_key="revenue",
         display_name="Revenue",
@@ -256,13 +275,33 @@ def calculate_financial_index(
         agent_metric_order.append(definition.metric_key)
         metrics_by_key[definition.metric_key] = _agent_metric_payload(definition, calculated_metric)
 
+    # Valuation-only denominators: never substitute consolidated group totals
+    # for profit/equity attributable to the listed parent's shareholders.
+    for key, spec in (("parent_net_income", PARENT_NET_INCOME_SPEC), ("parent_equity", PARENT_EQUITY_SPEC)):
+        series = _find_item_series(canonical_payload, spec, period_keys, derive_ttm=key == "parent_net_income")
+        metrics_by_key[key] = {"metric_key": key, **_period_value_metric(key, "원", series, context)}
+
+    collection_context = dict(canonical_payload.get("collection_context") or {})
+    titles = [str(table.get("table_title") or "") for section in ("4-1", "4-2", "4-4")
+              for table in (canonical_payload.get(section) or {}).get("tables", [])]
+    if "statement_scope" not in collection_context:
+        collection_context["statement_scope"] = (
+            "consolidated" if any("연결" in title for title in titles)
+            else "separate" if any("별도" in title or "개별" in title for title in titles) else "unknown"
+        )
+    if not ttm_period:
+        collection_context["ttm_unavailable_reason"] = (
+            "statement_scope_mismatch" if not _same_statement_scope([
+                periods.get(key, {}) for key in ("current_fiscal_year", "same_period_previous_year", "previous_fiscal_year")
+            ]) else "missing_or_noncomparable_component_periods"
+        )
     return {
         "schema_name": "dart_financial_index",
         "schema_version": "1.0",
         "source_file": source_file,
         "index_file": index_file,
         "unit": "원",
-        "collection_context": canonical_payload.get("collection_context", {}),
+        "collection_context": collection_context,
         "revenue_breakdown": canonical_payload.get("revenue_breakdown", {}),
         "share_information": canonical_payload.get("share_information", {}),
         "periods": {period_key: periods[period_key] for period_key in period_keys},
@@ -306,6 +345,8 @@ def calculate_financial_index_files(
         index_file=str(index_path),
     )
 
+    from shared.subdata import financial_subdata
+    (output_dir / "financial_subdata.json").write_text(json.dumps(financial_subdata(handoff_result), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     master_output_path = output_dir / master_output_name
     handoff_output_path = output_dir / handoff_output_name
     _dump_json(master_output_path, master_result)
@@ -420,6 +461,24 @@ def _calculate_metric(metric_name: str, context: _CalculationContext) -> dict[st
         operating_profit = _find_item_series(context.payload, OPERATING_PROFIT_SPEC, context.period_keys)
         return _period_value_metric(metric_name, "원", operating_profit, context)
 
+    if metric_name == "Operating Margin":
+        profit = _find_item_series(context.payload, OPERATING_PROFIT_SPEC, context.period_keys)
+        revenue = _find_item_series(context.payload, REVENUE_SPEC, context.period_keys)
+        return _period_value_metric(metric_name, "ratio", _divide_series(profit, revenue, context.period_keys), context)
+
+    if metric_name == "Total Liabilities":
+        debt = _find_item_series(context.payload, TOTAL_LIABILITIES_SPEC, context.period_keys, derive_ttm=False)
+        return _period_value_metric(metric_name, "원", debt, context)
+
+    if metric_name == "Debt Ratio":
+        debt = _find_item_series(context.payload, TOTAL_LIABILITIES_SPEC, context.period_keys, derive_ttm=False)
+        equity = _find_item_series(context.payload, TOTAL_EQUITY_SPEC, context.period_keys, derive_ttm=False)
+        result = _period_value_metric(metric_name, "ratio", _divide_series(debt, equity, context.period_keys), context)
+        for key, item in result["values_by_period"].items():
+            if equity.numeric_by_period.get(key) is not None and equity.numeric_by_period[key] <= 0:
+                item.update(value=None, display_value=None, status="insufficient_data", reason="nonpositive_equity")
+        return result
+
     if metric_name == "Net Income":
         net_income = _find_item_series(context.payload, NET_INCOME_SPEC, context.period_keys)
         return _period_value_metric(metric_name, "원", net_income, context)
@@ -493,6 +552,12 @@ def _comparison_metric(
         current_value = series.numeric_by_period.get(current_key)
         previous_value = series.numeric_by_period.get(previous_key)
         comparison_key = pair["comparison_key"]
+        if not _same_statement_scope([context.periods[current_key], context.periods[previous_key]]):
+            comparisons[comparison_key] = {
+                **pair, "value": None, "display_value": None,
+                "status": "insufficient_data", "reason": "statement_scope_mismatch",
+            }
+            continue
         if current_value is None or previous_value is None:
             comparisons[comparison_key] = {
                 **pair,
@@ -797,6 +862,13 @@ def _extract_periods(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {}
 
 
+def _same_statement_scope(periods: list[dict[str, Any]]) -> bool:
+    scopes = {period.get("statement_scope", "unknown") for period in periods}
+    # Legacy fixtures without scope remain readable, but known/unknown and
+    # consolidated/separate mixtures must not produce comparable numbers.
+    return len(scopes) == 1 and "mixed" not in scopes
+
+
 def _ttm_period_metadata(periods: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
     current = periods.get("current_fiscal_year") or {}
     same_period = periods.get("same_period_previous_year") or {}
@@ -809,7 +881,18 @@ def _ttm_period_metadata(periods: dict[str, dict[str, Any]]) -> dict[str, Any] |
         return None
     if current.get("period_type") != same_period.get("period_type"):
         return None
+    if not _same_statement_scope([current, same_period, annual]):
+        return None
+    current_end = str(current.get("period_end") or "")
+    prior_end = str(same_period.get("period_end") or "")
+    annual_end = str(annual.get("period_end") or "")
+    if (not current_end or not prior_end or not annual_end
+            or current_end[4:] != prior_end[4:]
+            or int(current_end[:4]) != int(prior_end[:4]) + 1
+            or annual_end != prior_end[:4] + "-12-31"):
+        return None
     return {
+        "statement_scope": current.get("statement_scope", "unknown"),
         "label": f"TTM through {current.get('period_end') or 'current period'}",
         "fiscal_year": current.get("fiscal_year"),
         "period_type": "TTM",
@@ -840,6 +923,19 @@ def _comparison_pairs(periods: dict[str, dict[str, Any]], period_keys: list[str]
     candidate_pairs.extend(zip(annual_keys, annual_keys[1:]))
 
     for current_key, previous_key in candidate_pairs:
+        current_meta = periods.get(current_key, {})
+        previous_meta = periods.get(previous_key, {})
+        # A missing intervening year must not turn a multi-year change into YoY.
+        current_end = str(current_meta.get("period_end") or "")
+        previous_end = str(previous_meta.get("period_end") or "")
+        if (
+            current_meta.get("basis") != previous_meta.get("basis")
+            or current_meta.get("period_type") != previous_meta.get("period_type")
+            or not current_end or not previous_end
+            or current_end[4:] != previous_end[4:]
+            or int(current_end[:4]) != int(previous_end[:4]) + 1
+        ):
+            continue
         current_year = periods.get(current_key, {}).get("fiscal_year")
         previous_year = periods.get(previous_key, {}).get("fiscal_year")
         current_type = periods.get(current_key, {}).get("period_type")

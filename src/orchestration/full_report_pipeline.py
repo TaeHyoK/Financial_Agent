@@ -195,7 +195,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--company-name", required=True, help="Exact listed company name, e.g. SK바이오팜.")
     parser.add_argument("--selected-date", required=True, help="YYYYMMDD report date, interpreted before market open.")
-    parser.add_argument("--news-window", default="3m", choices=["2w", "1m", "3m"])
+    parser.add_argument("--news-window", default="1y", choices=["2w", "1m", "3m", "1y"])
     parser.add_argument(
         "--target-news-query",
         default="",
@@ -211,7 +211,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=_positive_int,
         default=None,
         help=(
-            "Final globally ranked News events retained after weekly selection. "
+            "Legacy override: use a global News event limit instead of the default maximum two per month. "
             "--news-total-max-results is a compatibility alias."
         ),
     )
@@ -220,7 +220,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_DECISION_HORIZON_PROFILE,
         choices=list(DECISION_HORIZON_PROFILES),
         help=(
-            "Strategy decision horizon: default, unspecified, short_term (1 month), "
+            "Strategy decision horizon: annual (12 months, default), default (6-12 months), unspecified, short_term (1 month), "
             "medium_term (3 months), or long_term (6 months). Independent of --news-window."
         ),
     )
@@ -266,7 +266,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV_FILE)
-    parser.add_argument("--llm-model", default="gpt-5.4")
+    parser.add_argument("--llm-model", default="gpt-5.4-mini")
     parser.add_argument("--llm-timeout", type=int, default=300)
     parser.add_argument("--max-retries", type=int, default=1)
     parser.add_argument(
@@ -1078,8 +1078,7 @@ def validate_full_pipeline_outputs(
         "label_free_strategy_contract": strategy.get("decision_version") == "strategy_decision_output_v5",
         "visualization_catalog": chart_catalog_path.is_file(),
         "writer_chart_selection": (
-            len(requested_chart_keys) <= 2
-            and len(requested_chart_keys) == len(set(requested_chart_keys))
+            len(requested_chart_keys) == len(set(requested_chart_keys))
             and set(requested_chart_keys).issubset(available_chart_keys)
         ),
         "writer_chart_grounding": (
@@ -1591,9 +1590,7 @@ def _base_manifest(
 
 
 def _expected_calls(ablation: AblationConfig, *, reused_domain_snapshot: bool = False) -> dict[str, int]:
-    domain_calls = 4
-    if reused_domain_snapshot:
-        domain_calls -= 1  # News collection summary LLM output is part of the fixed snapshot.
+    domain_calls = 3 + int(not reused_domain_snapshot and not ablation.primary_data_only)
     return {
         "target": domain_calls,
         "peer": domain_calls if ablation.include_competitor else 0,

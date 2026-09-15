@@ -80,7 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_DECISION_HORIZON_PROFILE,
         choices=list(DECISION_HORIZON_PROFILES),
         help=(
-            "Decision horizon policy: default, unspecified, short_term (1 month), "
+            "Decision horizon policy: annual (12 months, default), default (6-12 months), unspecified, short_term (1 month), "
             "medium_term (3 months), or long_term (6 months)."
         ),
     )

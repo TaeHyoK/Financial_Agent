@@ -1,4 +1,4 @@
-"""Extract only section 4 financial statement subsections from DART XML."""
+"""Extract disclosed statements, preferring consolidated section 2 over section 4."""
 
 from __future__ import annotations
 
@@ -29,6 +29,57 @@ class TitleMatch:
     key: str
     title: str
     start: int
+
+
+def extract_financial_statements(xml_text: str) -> SectionMap:
+    """Keep canonical 4-x keys while recording the actual source scope.
+
+    An unreadable consolidated section is an extraction error, not evidence
+    that the company publishes only separate statements.
+    """
+    titles = list(_iter_titles(xml_text))
+    start = next((t.start for t in titles if re.match(
+        r"^2[.)]?연결재무제표$", re.sub(r"\s+", "", t.title))), None)
+    numbered = [t for t in titles if re.match(r"^2[-.]\s*[1-4](?:\D|$)", t.title)]
+    if start is None and numbered:
+        start = numbered[0].start
+    if start is not None:
+        end = next((t.start for t in titles if t.start > start and re.match(
+            r"^(?:3[.)]?연결재무제표주석|4[.)]?재무제표|[IVⅤⅣ]+[.)])",
+            re.sub(r"\s+", "", t.title))), len(xml_text))
+        fragment = xml_text[start:end]
+        # Reuse the established statement/table parser without changing keys
+        # throughout the canonical accounting pipeline.
+        def canonical_title(match: re.Match) -> str:
+            title = _clean_text(match.group(1))
+            title = re.sub(r"^2[-.]\s*([1-4])", r"4-\1", title)
+            if re.match(r"^2[.)]?연결재무제표$", re.sub(r"\s+", "", title)):
+                title = "4. 재무제표"
+            return f"<TITLE>{title}</TITLE>"
+        remapped = _TITLE_RE.sub(canonical_title, fragment)
+        result = extract_section_four(remapped)
+        found = any(section["tables"] for section in result.values())
+        absent = bool(re.search(
+            r"해당\s*사항(?:이)?\s*없|연결재무제표.{0,40}(?:작성하지\s*않|대상.{0,10}아니)",
+            _clean_text(fragment)))
+        if found:
+            return _with_scope(result, "consolidated", "2")
+        if not absent:
+            raise ValueError("Consolidated section exists but its statement tables could not be parsed")
+    result = extract_section_four(xml_text)
+    if not any(section["tables"] for section in result.values()):
+        raise ValueError("No readable financial statement tables were found")
+    return _with_scope(result, "separate", "4")
+
+
+def _with_scope(result: SectionMap, scope: str, source_section: str) -> SectionMap:
+    for section in result.values():
+        section["statement_scope"] = scope
+        section["source_section"] = source_section
+        for table in section["tables"]:
+            table["statement_scope"] = scope
+            table["source_section"] = source_section
+    return result
 
 
 def extract_section_four(xml_text: str) -> SectionMap:

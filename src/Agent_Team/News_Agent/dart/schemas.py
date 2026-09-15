@@ -7,6 +7,9 @@ from typing import Any, Literal, TypedDict
 
 
 SectionType = Literal[
+    "sales",
+    "earnings",
+    "materials_facilities",
     "overview",
     "products",
     "materials",
@@ -85,7 +88,6 @@ class NewsEventRecord:
     representative_source: str | None
     representative_article_date: str | None
     rel_dense: float
-    rel_rerank: float
     section_score: float
     global_section_score: float
     impact_score: float
@@ -99,3 +101,4 @@ class NewsEventRecord:
     member_article_ids: list[str] = field(default_factory=list)
     member_urls: list[str] = field(default_factory=list)
     query_used: str | None = None
+    dense_section_scores: dict[str, float] | None = None

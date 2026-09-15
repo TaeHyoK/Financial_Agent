@@ -57,8 +57,8 @@ def collect_token_usage(
         return manifest_usage
 
     items = {
+        "news_llm": _usage_at_path(paths.news_llm_period_summaries, ("usage",)),
         "financial_analyst": _usage_by_field(paths.financial_agent_pipeline_dir / "pipeline_financial_analyst_report_trace.json"),
-        "news_period_summary": _usage_at_path(paths.news_llm_period_summaries, ("usage", "total")),
         "news_analysis": _usage_at_path(paths.news_handoff, ("usage",)),
     }
     total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}

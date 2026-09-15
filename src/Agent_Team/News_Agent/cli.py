@@ -25,7 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=[*PIPELINE_PHASES, "all"],
         default="all",
         help=(
-            "collect: 수집/청킹/스코어링, export: LLM 입력 생성, llm: 기간 요약 LLM 실행, "
+            "collect: 수집/청킹/스코어링, export: 기사·요약 요청 생성, llm: 보조자료용 월별 요약, "
             "analysis: News Agent handoff 생성, all: 전체 실행"
         ),
     )
@@ -58,11 +58,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--config", default=None, help="Path to workflow config YAML")
-    parser.add_argument("--granularity", choices=["day", "week", "month"], default="week", help="Export period granularity")
-    parser.add_argument("--period-count", type=int, default=14, help="Number of periods for LLM summary input")
-    parser.add_argument("--raw-period-count", type=int, default=14, help="Periods containing globally selected raw events")
+    parser.add_argument("--granularity", choices=["day", "week", "month"], default="month", help="Export period granularity")
+    parser.add_argument("--period-count", type=int, default=12, help="Number of periods for LLM summary input")
+    parser.add_argument("--raw-period-count", type=int, default=12, help="Periods containing globally selected raw events")
     parser.add_argument("--min-mention-count", type=int, default=1, help="Minimum mention_count for export")
-    parser.add_argument("--llm-model", default="gpt-5.4", help="LLM model for summary execution")
+    parser.add_argument("--llm-model", default="gpt-5.4-mini", help="LLM model for summary execution")
     parser.add_argument("--context-export-dir", default=None, help="Context export root. Defaults to Output_total/News/{run_key}/context_exports.")
     parser.add_argument("--ticker", default=None, help="Ticker for News Agent target_entity.")
     parser.add_argument("--corp-code", default=None, help="DART corp code for News Agent target_entity.")
@@ -75,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Use News evidence only and omit DART/market secondary context.",
     )
     parser.add_argument("--analysis-output-dir", default=None, help="News Agent output dir. Defaults to Output_total/News/{run_key}/output.")
-    parser.add_argument("--analysis-model", default=None, help="News Agent LLM model. Defaults to NEWS_AGENT_LLM_MODEL or gpt-5.4.")
+    parser.add_argument("--analysis-model", default=None, help="News Agent LLM model. Defaults to NEWS_AGENT_LLM_MODEL or gpt-5.4-mini.")
     parser.add_argument("--max-raw-events-per-period", type=int, default=20, help="Compatibility cap for the global News Agent raw-event list.")
     parser.add_argument("--timeout-seconds", type=float, default=300.0, help="OpenAI request timeout for the analysis phase.")
     parser.add_argument(
@@ -131,17 +131,6 @@ def _run_export_phase(args: argparse.Namespace, project_root: Path, collect_date
         split_by_period=args.split_by_period,
         api_key_env=args.api_key_env,
         env_path=args.env_path,
-    )
-
-
-def _run_llm_phase(args: argparse.Namespace, project_root: Path, collect_date: date) -> str:
-    context_export_dir = _context_export_dir(args, project_root, collect_date)
-    llm_request_path = context_export_dir / args.granularity / "llm_summary_request.json"
-    return execute_llm_summary_request(
-        llm_request_path=llm_request_path,
-        api_key_env=args.api_key_env,
-        env_path=args.env_path,
-        split_by_period=args.split_by_period,
     )
 
 
@@ -213,15 +202,18 @@ def main() -> None:
                 paths = _run_export_phase(args, project_root, collect_date)
                 for key, value in paths.items():
                     tqdm.write(f"{key}={value}")
-            elif phase == "llm":
-                path = _run_llm_phase(args, project_root, collect_date)
-                tqdm.write(f"llm_period_summaries_path={path}")
             elif phase == "analysis":
                 paths = _run_analysis_phase(args, project_root, collect_date)
                 tqdm.write(f"input_payload={paths.input_payload_path}")
                 tqdm.write(f"llm_request={paths.llm_request_path}")
                 tqdm.write(f"handoff={paths.handoff_path}")
                 tqdm.write(f"evidence_map={paths.evidence_map_path}")
+            elif phase == "llm":
+                if not args.primary_data_only:
+                    folder = _context_export_dir(args, project_root, collect_date) / args.granularity
+                    result = execute_llm_summary_request(llm_request_path=folder / "llm_summary_request.json",
+                        api_key_env=args.api_key_env, env_path=args.env_path, split_by_period=args.split_by_period)
+                    tqdm.write(f"llm_period_summaries_path={result}")
             else:
                 raise ValueError(f"Unsupported phase: {phase}")
             tqdm.write(f"[news:{phase}] done")

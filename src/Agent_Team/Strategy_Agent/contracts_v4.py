@@ -30,6 +30,9 @@ _INTERNAL_COMPARISON_CARD_KEYS = {"peer.agent_analysis"}
 _CARD_POLICY_FIELDS = {"allowed_sections", "decision_use", "eligibility"}
 _PAIR_POLICY_FIELDS = {"allowed_interpretation", "preferred_direction"}
 _HANDOFF_INTERNAL_FIELDS = {
+    "anchor_evidence_id",
+    "primary_anchor_evidence_id",
+    "secondary_anchor_evidence_id",
     "evidence_ids",
     "source_evidence_ids",
     "source_paths",
@@ -63,6 +66,10 @@ def build_strategy_context_package_v4(
         "data_limitations": copy.deepcopy(packet.get("reader_limitations") or []),
         "coverage_summary": copy.deepcopy(packet.get("coverage_summary") or {}),
     }
+    for domain, linked in _dict(packet.get("context_links")).items():
+        if domain in context["domain_handoffs"]:
+            context["domain_handoffs"][domain]["cross_domain_assessments"] = copy.deepcopy(linked["assessments"])
+            context["domain_handoffs"][domain]["conclusion_card_keys"] = copy.deepcopy(linked["conclusion_card_keys"])
     validate_strategy_context_package_v4(context)
     return context
 
@@ -480,7 +487,11 @@ def _financial_handoff(report: dict[str, Any]) -> dict[str, Any]:
 
     main_view = _dict(report.get("main_view"))
     dimensions = {
-        key: {"stance": value.get("stance")}
+        key: {
+            field: copy.deepcopy(value[field])
+            for field in ("stance", "reasoning")
+            if value.get(field) not in (None, "", [], {})
+        }
         for key, value in _dict(report.get("financial_statement_view")).items()
         if isinstance(value, dict) and str(value.get("stance") or "").strip()
     }
@@ -504,7 +515,7 @@ def _news_handoff(report: dict[str, Any]) -> dict[str, Any]:
     news_only = _dict(_dict(output.get("analysis_blocks")).get("news_only"))
     return _clean_handoff(
         {
-            "overall_assessment": news_only.get("summary"),
+            "overall_assessment": output.get("overall_assessment") or news_only.get("summary"),
             "cross_domain_assessments": output.get("secondary_context_assessment"),
         }
     )

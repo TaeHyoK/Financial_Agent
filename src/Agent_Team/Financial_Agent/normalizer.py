@@ -146,11 +146,13 @@ def _filter_columns(matrix: list[list[str]], keep_cols: list[int]) -> list[list[
 
 
 def _unit_metadata(table: dict[str, Any]) -> dict[str, Any]:
+    source_metadata = {key: table[key] for key in ("statement_scope", "source_section") if key in table}
     unit = str(table.get("source_unit") or "").strip()
     multiplier = table.get("unit_multiplier_to_krw")
     if not unit or not isinstance(multiplier, int) or multiplier <= 0:
-        return {}
+        return source_metadata
     return {
+        **source_metadata,
         "source_unit": unit,
         "unit_multiplier_to_krw": multiplier,
     }

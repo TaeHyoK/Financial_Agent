@@ -6,6 +6,7 @@ import argparse
 import json
 import logging
 import os
+from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -26,8 +27,8 @@ try:
     from .models import Filing, PipelineInput, TargetReport
     from .normalizer import normalize_primary_report
     from .revenue_breakdown_extractor import extract_revenue_breakdown
-    from .report_resolver import build_primary_target, load_pipeline_input, resolve_report_set
-    from .section_extractor import extract_section_four
+    from .report_resolver import build_primary_target, load_pipeline_input, resolve_report_set, resolve_single_report
+    from .section_extractor import extract_financial_statements
     from .share_information_extractor import extract_share_information
 except ImportError:  # pragma: no cover - supports direct script execution
     from dart_client import DartClient
@@ -36,8 +37,8 @@ except ImportError:  # pragma: no cover - supports direct script execution
     from models import Filing, PipelineInput, TargetReport
     from normalizer import normalize_primary_report
     from revenue_breakdown_extractor import extract_revenue_breakdown
-    from report_resolver import build_primary_target, load_pipeline_input, resolve_report_set
-    from section_extractor import extract_section_four
+    from report_resolver import build_primary_target, load_pipeline_input, resolve_report_set, resolve_single_report
+    from section_extractor import extract_financial_statements
     from share_information_extractor import extract_share_information
     AGENT_DIR = Path(__file__).resolve().parent
     PROJECT_ROOT = AGENT_DIR.parents[2]
@@ -116,6 +117,7 @@ def main() -> None:
         logger.info("%s filing: %s %s %s", role, filing.rcept_dt, filing.rcept_no, filing.report_nm)
 
     collected = _collect_parallel(client, resolved)
+    supplement_annual_history(client, resolved, collected, pipeline_input)
     matrix_master = _build_matrix_master(collected)
     master = build_trend_canonical(
         matrix_master,
@@ -129,7 +131,7 @@ def main() -> None:
         resolved,
         selected_date=pipeline_input.selected_date,
         theoretical_target=primary_target,
-        annual_history_limit=1,
+        annual_history_limit=3,
     )
     revenue_breakdown = collected.get("primary", {}).get("revenue_breakdown") or {}
     share_information = collected.get("primary", {}).get("share_information") or {}
@@ -150,11 +152,38 @@ def main() -> None:
     )
 
 
+def supplement_annual_history(client, resolved, collected, pipeline_input) -> None:
+    """Fetch at most two older eligible annual filings when comparative years are missing."""
+    annual = sorted((target for target, _ in resolved.values() if not target.is_periodic),
+                    key=lambda target: target.fiscal_year, reverse=True)
+    if not annual:
+        return
+    latest = annual[0]
+    expected = set(range(latest.fiscal_year - 2, latest.fiscal_year + 1))
+    for offset in (1, 2):
+        snapshot = build_trend_canonical(_build_matrix_master(collected), resolved,
+                                         selected_date=pipeline_input.selected_date,
+                                         theoretical_target=build_primary_target(pipeline_input.selected_date))
+        coverage = snapshot["collection_context"]["annual_history_coverage"]
+        if all(expected.issubset(set(item["observed_years"])) for item in coverage.values()):
+            break
+        year = latest.fiscal_year - offset
+        target = replace(latest, role=f"annual_history_{offset}", fiscal_year=year,
+                         period_end=latest.period_end.replace(year=year))
+        try:
+            filing = resolve_single_report(client, pipeline_input.company_code, target,
+                                            as_of_date=pipeline_input.selected_date)
+        except LookupError:
+            continue
+        collected[target.role] = collect_report(client, target, filing)
+        resolved[target.role] = (target, filing)
+
+
 def collect_report(client: DartClient, target: TargetReport, filing: Filing) -> dict[str, Any]:
     """Fetch, extract, and normalize one resolved report."""
 
     xml_text = client.fetch_document_xml(rcept_no=filing.rcept_no)
-    raw = extract_section_four(xml_text)
+    raw = extract_financial_statements(xml_text)
     if target.is_periodic:
         normalized = normalize_primary_report(raw, target)
     else:

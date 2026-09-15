@@ -18,14 +18,11 @@ def time_score(article_time: datetime, collect_time: datetime, tau_hours: float)
     return math.exp(-delta_hours / tau)
 
 
-def final_score(
-    rel_rerank: float,
-    mention: float,
-    time: float,
-    impact: float,
-    alpha: float,
-    beta: float,
-    gamma: float,
-    delta: float,
-) -> float:
-    return alpha * rel_rerank + beta * mention + gamma * time + delta * impact
+def minmax_normalize(values: list[float]) -> list[float]:
+    """Normalize auxiliary diagnostic values, never the news selection score."""
+    if not values:
+        return []
+    low, high = min(values), max(values)
+    if low == high:
+        return [0.5 for _ in values]
+    return [(value - low) / (high - low) for value in values]

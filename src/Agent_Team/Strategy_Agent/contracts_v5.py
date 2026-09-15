@@ -16,13 +16,12 @@ from .contracts_v4 import build_strategy_context_package_v4
 
 CONTEXT_VERSION = "strategy_context_package_v5"
 DECISION_VERSION = "strategy_decision_output_v5"
-STRATEGY_CACHE_VERSION = "8"
-MAX_DECISION_BASIS_CARDS = 6
-MAX_REPORT_CONTEXT_CARDS = 10
+STRATEGY_CACHE_VERSION = "19"
+SCHEMA_REVISION = "12m_v3"
+# Counts are editorial guidance, not limits on preserving valid citations.
+# The model leaves this duplicate index empty; alignment fills it afterwards.
 MAX_MODEL_REPORT_CONTEXT_CARDS = 0
-MAX_TARGET_PEER_METRICS = 2
 
-_INTERNAL_COMPARISON_CARD_KEYS = {"peer.agent_analysis"}
 _COVERAGE_DIMENSIONS = (
     "performance",
     "cash_flow",
@@ -32,6 +31,18 @@ _COVERAGE_DIMENSIONS = (
     "events",
     "peer",
 )
+
+_NEWS_SELECTION_METADATA = {"relevance_rank", "final_score", "scores", "ablation_selection"}
+
+
+def _without_news_selection_metadata(value: Any) -> Any:
+    """Project news observations for generation; keep selection diagnostics on disk."""
+    if isinstance(value, dict):
+        return {key: _without_news_selection_metadata(item)
+                for key, item in value.items() if key not in _NEWS_SELECTION_METADATA}
+    if isinstance(value, list):
+        return [_without_news_selection_metadata(item) for item in value]
+    return value
 
 
 def build_strategy_context_package_v5(
@@ -44,16 +55,53 @@ def build_strategy_context_package_v5(
     context = build_strategy_context_package_v4(packet, input_bundle=input_bundle)
     context["context_version"] = CONTEXT_VERSION
     context["evidence_cards"].pop("financial.filing_basis", None)
+    for card in context["evidence_cards"].values():
+        # Legacy validation labels are not an agent's assessment of importance.
+        # Apply the same projection to every domain; retain factual source scope.
+        card.pop("evidence_role", None)
+        card.pop("machine_blockers", None)
+        if card.get("domain") == "news":
+            card["primary_observation"] = _without_news_selection_metadata(card["primary_observation"])
+            if card["primary_observation"].get("cited_sources"):
+                # The same excerpts are now carried with their individual dates.
+                card["primary_observation"].pop("representative_excerpts", None)
+    if "peer.agent_analysis" in context["evidence_cards"]:
+        context["evidence_cards"]["peer.agent_analysis"]["evidence_origin"] = "model_interpreted"
     context["limitation_requirements"] = [
         copy.deepcopy(item)
         for item in _list(packet.get("limitation_requirements"))
         if isinstance(item, dict)
-        and item.get("category") not in {"filing_lag", "single_peer_scope"}
+        and item.get("category") not in {"filing_lag", "single_peer_scope", "news_financial_link"}
     ]
     context["coverage_dimensions"] = {
         dimension: _dimension_card_keys(_dict(context.get("evidence_cards")), dimension)
         for dimension in _COVERAGE_DIMENSIONS
     }
+    # Preserve content; separate observations, interpretations and applicability.
+    # Only exact duplicate notes are merged. No sentiment/materiality filtering.
+    notes = context.pop("data_limitations", [])
+    shared_notes, scoped_notes = [], {}
+    for note in notes:
+        if not isinstance(note, dict):
+            if note not in shared_notes:
+                shared_notes.append(copy.deepcopy(note))
+            continue
+        key = str(note.get("basis_card_key") or "")
+        if key in context["evidence_cards"]:
+            values = scoped_notes.setdefault(key, [])
+        else:
+            values = shared_notes
+        if note not in values:
+            values.append(copy.deepcopy(note))
+    interpretations = context.pop("domain_handoffs")
+    context["input_roles"] = {
+        "evidence_cards": "인용 가능한 관측·자료 카드다. 원천 수치와 모델 요약을 evidence_origin 등 출처 속성으로 구분한다.",
+        "domain_handoffs": "하위 에이전트의 해석이다. 근거와 대조해 수용·보완·수정할 수 있으며 새로운 관측 사실로 취급하지 않는다.",
+        "applicability_notes": "자료의 적용 범위다. 관련 판단에만 적용하며 일괄적인 부정 근거나 보고서 필수 문구가 아니다. 카드별 기간·출처 속성도 유지된다.",
+    }
+    context["domain_handoffs"] = interpretations
+    context["applicability_notes"] = {"by_card": scoped_notes, "shared": shared_notes}
+    context["context_layout_revision"] = "observations_interpretations_scope_v1"
     validate_strategy_context_package_v5(context)
     return context
 
@@ -90,9 +138,11 @@ def strategy_decision_response_format_v5(
     """Return the strict response schema for the v5 Strategy Agent."""
 
     cards = _dict(context.get("evidence_cards"))
-    decision_keys = sorted(set(cards) - _INTERNAL_COMPARISON_CARD_KEYS)
+    decision_keys = sorted(cards)
     all_keys = sorted(cards)
-    all_ref = {"type": "string", "enum": all_keys}
+    # Reuse the same allowed IDs without repeating the enum across every field.
+    # This preserves all evidence and strict validation as the news input grows.
+    all_ref = {"$ref": "#/$defs/evidence_card_key"}
 
     def decision_basis_branch(card_key: str) -> dict[str, Any]:
         card = _dict(cards.get(card_key))
@@ -112,7 +162,6 @@ def strategy_decision_response_format_v5(
                         "type": "array",
                         "items": {"type": "string", "enum": comparable_metrics},
                         "minItems": 1,
-                        "maxItems": min(MAX_TARGET_PEER_METRICS, len(comparable_metrics)),
                     },
                     "decision_role": {
                         "type": "string",
@@ -126,10 +175,6 @@ def strategy_decision_response_format_v5(
         return _strict_object(
             {
                 "card_key": {"type": "string", "enum": [card_key]},
-                "relation_to_decision": {
-                    "type": "string",
-                    "enum": ["supports", "opposes", "limits"],
-                },
                 "importance": {
                     "type": "string",
                     "enum": ["high", "medium", "low"],
@@ -159,15 +204,14 @@ def strategy_decision_response_format_v5(
         }
     )
 
-    def linked_text(*, allow_empty_refs: bool = False) -> dict[str, Any]:
+    def linked_text(*, allow_empty_refs: bool = False, allow_empty_text: bool = False) -> dict[str, Any]:
         refs = {
             "type": "array",
             "items": all_ref,
-            "maxItems": MAX_DECISION_BASIS_CARDS + MAX_REPORT_CONTEXT_CARDS,
         }
         if not allow_empty_refs:
             refs["minItems"] = 1
-        return _strict_object({"text": _nonempty_string_schema(), "card_keys": refs})
+        return _strict_object({"text": {"type": "string"} if allow_empty_text else _nonempty_string_schema(), "card_keys": refs})
 
     brief = _strict_object(
         {
@@ -176,12 +220,15 @@ def strategy_decision_response_format_v5(
                 if required_horizon
                 else _nonempty_string_schema()
             ),
-            "thesis": linked_text(),
-            "existing_position_response": linked_text(),
-            "new_entry_response": linked_text(),
+            "earnings_review": linked_text(),
+            "outlook": linked_text(),
             "price_assessment": linked_text(),
-            "counterview": linked_text(),
-            "decision_limitation": linked_text(allow_empty_refs=True),
+            "counterview": linked_text(allow_empty_refs=True),
+            "decision_rationale": linked_text(),
+            "recommendation": {"type": "string", "enum": ["Buy", "Hold", "Sell"]},
+            "headline": _nonempty_string_schema(),
+            "thesis": linked_text(),
+            "decision_limitation": linked_text(allow_empty_refs=True, allow_empty_text=True),
             "evidence_sufficiency": {"type": "string", "enum": ["high", "medium", "low"]},
             "decision_confidence": {"type": "string", "enum": ["high", "medium", "low"]},
         }
@@ -201,7 +248,6 @@ def strategy_decision_response_format_v5(
                 "type": "array",
                 "items": all_ref,
                 "minItems": 1,
-                "maxItems": MAX_DECISION_BASIS_CARDS + MAX_REPORT_CONTEXT_CARDS,
             },
         }
     )
@@ -214,7 +260,6 @@ def strategy_decision_response_format_v5(
                 "type": "array",
                 "items": all_ref,
                 "minItems": 1,
-                "maxItems": MAX_DECISION_BASIS_CARDS + MAX_REPORT_CONTEXT_CARDS,
             },
         }
     )
@@ -244,13 +289,14 @@ def strategy_decision_response_format_v5(
     schema = _strict_object(
         {
             "decision_version": {"type": "string", "enum": [DECISION_VERSION]},
+            "schema_revision": {"type": "string", "enum": [SCHEMA_REVISION]},
+            "strategy_brief": brief,
             "evidence_plan": _strict_object(
                 {
                     "decision_basis_cards": {
                         "type": "array",
                         "items": decision_basis,
                         "minItems": 1,
-                        "maxItems": min(MAX_DECISION_BASIS_CARDS, len(decision_keys)),
                     },
                     "report_context_cards": {
                         "type": "array",
@@ -260,11 +306,11 @@ def strategy_decision_response_format_v5(
                     "coverage_assessment": _strict_object(coverage_properties),
                 }
             ),
-            "strategy_brief": brief,
-            "report_insights": {"type": "array", "items": insight, "maxItems": 3},
-            "key_risks": {"type": "array", "items": risk, "maxItems": 4},
+            "report_insights": {"type": "array", "items": insight},
+            "key_risks": {"type": "array", "items": risk},
         }
     )
+    schema["$defs"] = {"evidence_card_key": {"type": "string", "enum": all_keys}}
     return {
         "type": "json_schema",
         "json_schema": {
@@ -286,14 +332,12 @@ def validate_strategy_decision_v5(
     if not isinstance(output, dict) or output.get("decision_version") != DECISION_VERSION:
         raise ValueError(f"Strategy decision_version must be {DECISION_VERSION}.")
     cards = _dict(context.get("evidence_cards"))
-    decision_keys = set(cards) - _INTERNAL_COMPARISON_CARD_KEYS
+    decision_keys = set(cards)
     plan = _dict(output.get("evidence_plan"))
     decision_items = _list(plan.get("decision_basis_cards"))
     context_items = _list(plan.get("report_context_cards"))
-    if not decision_items or len(decision_items) > MAX_DECISION_BASIS_CARDS:
-        raise ValueError("Strategy v5 requires 1-6 decision basis cards.")
-    if len(context_items) > MAX_REPORT_CONTEXT_CARDS:
-        raise ValueError("Strategy v5 exceeds the report-context card budget.")
+    if not decision_items:
+        raise ValueError("Strategy v5 requires at least one decision-basis card.")
 
     selected_decision = _unique_plan_keys(decision_items, allowed=decision_keys, location="decision_basis_cards")
     selected_context = _unique_plan_keys(context_items, allowed=set(cards), location="report_context_cards")
@@ -304,8 +348,8 @@ def validate_strategy_decision_v5(
 
     for index, item in enumerate(decision_items):
         row = _dict(item)
-        if row.get("relation_to_decision") not in {"supports", "opposes", "limits"}:
-            raise ValueError(f"decision_basis_cards[{index}].relation_to_decision is invalid.")
+        if "relation_to_decision" in row:
+            raise ValueError("12m_v3 uses investment_implication, not relation_to_decision labels; regenerate.")
         if row.get("importance") not in {"high", "medium", "low"}:
             raise ValueError(f"decision_basis_cards[{index}].importance is invalid.")
         if not str(row.get("investment_implication") or "").strip():
@@ -325,30 +369,41 @@ def validate_strategy_decision_v5(
             raise ValueError(f"report_context_cards[{index}].report_implication is required.")
 
     brief = _dict(output.get("strategy_brief"))
+    if output.get("schema_revision") != SCHEMA_REVISION:
+        raise ValueError(f"Strategy output requires schema_revision={SCHEMA_REVISION}; regenerate old cached decisions.")
+    if brief.get("recommendation") not in {"Buy", "Hold", "Sell"}:
+        raise ValueError("Strategy recommendation must be Buy/Hold/Sell.")
+    if not str(brief.get("headline") or "").strip():
+        raise ValueError("Strategy headline is required.")
     if required_horizon is not None and str(brief.get("horizon") or "") != required_horizon:
         raise ValueError(
             f"Strategy decision horizon mismatch: expected={required_horizon}, actual={brief.get('horizon')}"
         )
     for field in (
         "thesis",
-        "existing_position_response",
-        "new_entry_response",
+        "earnings_review",
+        "outlook",
         "price_assessment",
         "counterview",
+        "decision_rationale",
         "decision_limitation",
     ):
         linked = _dict(brief.get(field))
-        if not str(linked.get("text") or "").strip():
+        if field != "decision_limitation" and not str(linked.get("text") or "").strip():
             raise ValueError(f"strategy_brief.{field}.text is required.")
         refs = _validate_refs(linked.get("card_keys"), allowed=selected_all, location=f"strategy_brief.{field}")
-        if field != "decision_limitation" and not refs:
+        if field == "decision_limitation":
+            if not isinstance(linked.get("text"), str):
+                raise ValueError("strategy_brief.decision_limitation.text must be a string.")
+            if not linked["text"].strip() and refs:
+                raise ValueError("Empty decision_limitation must not cite cards.")
+        if field not in {"decision_limitation", "counterview"} and not refs:
             raise ValueError(f"strategy_brief.{field} requires at least one selected card.")
     if brief.get("evidence_sufficiency") not in {"high", "medium", "low"}:
         raise ValueError("strategy_brief.evidence_sufficiency is invalid.")
     if brief.get("decision_confidence") not in {"high", "medium", "low"}:
         raise ValueError("strategy_brief.decision_confidence is invalid.")
 
-    insight_types: set[str] = set()
     for index, item in enumerate(_list(output.get("report_insights"))):
         row = _dict(item)
         insight_type = str(row.get("insight_type") or "")
@@ -358,9 +413,6 @@ def validate_strategy_decision_v5(
             "events_and_execution",
         }:
             raise ValueError(f"report_insights[{index}].insight_type is invalid.")
-        if insight_type in insight_types:
-            raise ValueError(f"report_insights contains duplicate type: {insight_type}")
-        insight_types.add(insight_type)
         if not str(row.get("text") or "").strip():
             raise ValueError(f"report_insights[{index}].text is required.")
         if not _validate_refs(row.get("card_keys"), allowed=selected_all, location=f"report_insights[{index}]"):
@@ -427,7 +479,7 @@ def align_strategy_decision_v5_evidence_plan(
             if card_key in selected_decision or card_key in selected_context:
                 continue
             if card_key not in cards:
-                continue
+                raise ValueError(f"Strategy reader text references unknown card: {card_key}")
             card = _dict(cards.get(card_key))
             resolved_purpose = purpose
             if card.get("domain") == "peer":
@@ -451,10 +503,11 @@ def align_strategy_decision_v5_evidence_plan(
     )
     for field in (
         "thesis",
-        "existing_position_response",
-        "new_entry_response",
+        "earnings_review",
+        "outlook",
         "price_assessment",
         "counterview",
+        "decision_rationale",
     ):
         linked = _dict(brief.get(field))
         request_context(
@@ -482,12 +535,6 @@ def align_strategy_decision_v5_evidence_plan(
             row.get("card_keys"),
             purpose="limitation_context",
             implication=str(row.get("current_implication") or row.get("risk") or "").strip(),
-        )
-    if len(context_items) + len(requested) > MAX_REPORT_CONTEXT_CARDS:
-        raise ValueError(
-            "Strategy v5 reader references require more report-context cards than the budget allows: "
-            f"selected={len(context_items)}, additional={sorted(requested)}, "
-            f"budget={MAX_REPORT_CONTEXT_CARDS}."
         )
     for card_key, metadata in requested.items():
         context_items.append({"card_key": card_key, **metadata})
@@ -544,7 +591,7 @@ def _validate_peer_context(row: dict[str, Any], *, cards: dict[str, Any], index:
         raise ValueError(f"decision_basis_cards[{index}].target_peer_context is required.")
     metrics = _dedupe_strings(peer_context.get("metric_keys") or [])
     available = {str(pair.get("metric_key") or "") for pair in pairs}
-    if not metrics or len(metrics) > MAX_TARGET_PEER_METRICS or not set(metrics).issubset(available):
+    if not metrics or not set(metrics).issubset(available):
         raise ValueError(f"decision_basis_cards[{index}].target_peer_context metrics are invalid.")
     if peer_context.get("decision_role") not in {"reinforce", "modify", "context"}:
         raise ValueError(f"decision_basis_cards[{index}].target_peer_context role is invalid.")
@@ -609,6 +656,7 @@ def _reader_text(output: dict[str, Any]) -> dict[str, Any]:
     plan = _dict(output.get("evidence_plan"))
     brief = _dict(output.get("strategy_brief"))
     return {
+        "headline": brief.get("headline"),
         "decision_basis_cards": [
             {
                 "investment_implication": item.get("investment_implication"),
@@ -632,10 +680,11 @@ def _reader_text(output: dict[str, Any]) -> dict[str, Any]:
             key: {"text": _dict(brief.get(key)).get("text")}
             for key in (
                 "thesis",
-                "existing_position_response",
-                "new_entry_response",
+                "earnings_review",
+                "outlook",
                 "price_assessment",
                 "counterview",
+                "decision_rationale",
                 "decision_limitation",
             )
         },
@@ -658,8 +707,6 @@ def _reader_text(output: dict[str, Any]) -> dict[str, Any]:
 __all__ = [
     "CONTEXT_VERSION",
     "DECISION_VERSION",
-    "MAX_DECISION_BASIS_CARDS",
-    "MAX_REPORT_CONTEXT_CARDS",
     "MAX_MODEL_REPORT_CONTEXT_CARDS",
     "STRATEGY_CACHE_VERSION",
     "build_strategy_context_package_v5",

@@ -33,9 +33,9 @@ from data_loader import (
 from manifest_builder import build_chart_manifest
 
 
-CATALOG_VERSION = "writer_chart_catalog_v2"
+CATALOG_VERSION = "writer_chart_catalog_v3"
 SELECTION_VERSION = "writer_chart_selection_v2"
-MAX_REPORT_CHARTS = 2
+RECOMMENDED_REPORT_CHARTS = 2
 
 
 @dataclass(frozen=True)
@@ -165,7 +165,8 @@ def build_report_chart_catalog(config: ReportChartConfig) -> dict[str, Any]:
         "catalog_version": CATALOG_VERSION,
         "target_run_key": config.run_key,
         "company_name": config.company_name,
-        "max_selected_charts": MAX_REPORT_CHARTS,
+        "max_selected_charts": len(available),
+        "recommended_chart_count": RECOMMENDED_REPORT_CHARTS,
         "available_charts": available,
         "unavailable_charts": unavailable,
         "source_files": source_files,
@@ -183,8 +184,6 @@ def generate_requested_report_charts(
     """Generate exactly the Writer-selected charts in the requested order."""
 
     requested = list(dict.fromkeys(str(value) for value in requested_chart_keys if str(value)))
-    if len(requested) > MAX_REPORT_CHARTS:
-        raise ValueError(f"Writer may select at most {MAX_REPORT_CHARTS} charts.")
     catalog = build_report_chart_catalog(config)
     available = {
         str(item["chart_key"]): item
@@ -606,7 +605,7 @@ def _write_json(path: Path, payload: Any) -> None:
 
 __all__ = [
     "CATALOG_VERSION",
-    "MAX_REPORT_CHARTS",
+    "RECOMMENDED_REPORT_CHARTS",
     "ReportChartConfig",
     "build_report_chart_catalog",
     "generate_requested_report_charts",

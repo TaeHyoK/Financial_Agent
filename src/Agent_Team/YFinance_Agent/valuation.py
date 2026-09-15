@@ -148,8 +148,9 @@ def build_valuation_snapshot(
     market_summary: dict[str, Any],
     dart_payload: dict[str, Any],
     direct_valuation: dict[str, Any],
+    market_frame: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
-    """Combine exact-date close with point-in-time DART denominators."""
+    """Estimate valuation from historical close and explicitly scoped disclosures."""
 
     latest_market = market_summary.get("latest_snapshot") or {}
     market_date = str(latest_market.get("date") or "")
@@ -157,27 +158,67 @@ def build_valuation_snapshot(
     close = _number(latest_market.get("stock_close"))
 
     shares_payload = dart_payload.get("share_information") or {}
-    shares = _number(shares_payload.get("shares_outstanding"))
-    ttm_revenue = _dart_metric_value(dart_payload, "revenue", "ttm")
-    ttm_net_income = _dart_metric_value(dart_payload, "net_income", "ttm")
-    total_equity = _dart_metric_value(dart_payload, "total_equity", "current_fiscal_year")
+    shares = _number(shares_payload.get("common_issued_shares"))
+    scope = (dart_payload.get("collection_context") or {}).get("statement_scope", "unknown")
+    income_key = "parent_net_income" if scope == "consolidated" else "net_income"
+    equity_key = "parent_equity" if scope == "consolidated" else "total_equity"
+    periods = dart_payload.get("periods") or {}
+    annual_primary = (periods.get("current_fiscal_year") or {}).get("basis") == "FULL_YEAR"
+    flow_period = "current_fiscal_year" if annual_primary else "ttm"
+    input_problems = []
+    if close is None or close <= 0 or not market_date or market_date >= selected_date:
+        close = None
+        input_problems.append("historical_close_not_eligible")
+    share_date = str(shares_payload.get("as_of_date") or "")
+    receipt_date = str((shares_payload.get("source") or {}).get("receipt_date") or "")
+    if shares_payload.get("share_class") != "common_only":
+        input_problems.append("multiple_or_unknown_share_classes")
+    if not share_date or not receipt_date or share_date > market_date or receipt_date >= selected_date:
+        input_problems.append("share_count_date_not_eligible")
+    if shares is None or shares <= 0:
+        input_problems.append("missing_or_non_positive_common_issued_shares")
+    if market_frame is not None and "stock_splits" in market_frame:
+        split_rows = market_frame[(pd.to_datetime(market_frame["date"]) > pd.Timestamp(share_date or selected_date))
+                                  & (pd.to_datetime(market_frame["date"]) <= pd.Timestamp(market_date))]
+        if (pd.to_numeric(split_rows["stock_splits"], errors="coerce").fillna(0) != 0).any():
+            input_problems.append("split_after_disclosed_share_count")
+    if input_problems:
+        shares = None
+    ttm_revenue = _dart_metric_value(dart_payload, "revenue", flow_period)
+    ttm_net_income = _dart_metric_value(dart_payload, income_key, flow_period) if scope in {"consolidated", "separate"} else None
+    total_equity = _dart_metric_value(dart_payload, equity_key, "current_fiscal_year") if scope in {"consolidated", "separate"} else None
+
+    def period_eligible(key: str) -> bool:
+        period = periods.get(key) or {}
+        components = period.get("component_period_keys") or [key]
+        return all(bool((periods.get(component) or {}).get("receipt_date"))
+                   and str(periods[component]["receipt_date"]) < selected_date
+                   and bool(periods[component].get("period_end"))
+                   and str(periods[component]["period_end"]) <= market_date for component in components)
+
+    if not period_eligible(flow_period):
+        ttm_revenue = ttm_net_income = None
+        input_problems.append("income_period_not_eligible")
+    if not period_eligible("current_fiscal_year"):
+        total_equity = None
+        input_problems.append("equity_period_not_eligible")
 
     market_cap = close * shares if close is not None and shares is not None else None
     calculated_metrics = {
         "market_cap": _calculated_metric(
             value=market_cap,
             unit="KRW",
-            formula="selected_date_close * shares_outstanding",
+            formula="historical_close * disclosed_common_issued_shares",
             missing_reason=_missing_reason(
                 ("selected_date_close", close),
-                ("shares_outstanding", shares),
+                ("common_issued_shares", shares),
             ),
         ),
         "trailing_pe": _ratio_metric(
             market_cap,
             ttm_net_income,
             denominator_name="ttm_net_income",
-            formula="market_cap / ttm_net_income",
+            formula=f"estimated_market_cap / {flow_period}_{income_key}",
         ),
         "price_to_sales": _ratio_metric(
             market_cap,
@@ -189,7 +230,7 @@ def build_valuation_snapshot(
             market_cap,
             total_equity,
             denominator_name="total_equity",
-            formula="market_cap / latest_disclosed_total_equity",
+            formula=f"estimated_market_cap / latest_disclosed_{equity_key}",
         ),
     }
     calculation_statuses = [metric["status"] for metric in calculated_metrics.values()]
@@ -203,6 +244,13 @@ def build_valuation_snapshot(
 
     calculated = {
         "status": calculated_status,
+        "calculation_basis": "disclosed_share_count_estimate",
+        "statement_scope": scope,
+        "input_problems": input_problems,
+        "data_limits": [
+            "공시된 보통주 발행주식 수에 과거 종가를 적용한 추정값이며, 공시 후 주식 수 변동을 모두 확인한 기준일 시가총액은 아니다.",
+            "가격 제공업체의 사후 분할 조정 가능성은 남아 있으며, 관측된 분할이 주식 수 기준일 뒤에 있으면 계산하지 않는다.",
+        ],
         "as_of_date": market_date,
         "inputs": {
             "selected_date_close": _input_value(
@@ -210,14 +258,14 @@ def build_valuation_snapshot(
                 as_of_date=market_date,
                 source={"provider": "YFinance", "method": "historical_ohlcv_close"},
             ),
-            "shares_outstanding": _input_value(
+            "common_issued_shares": _input_value(
                 shares,
                 as_of_date=str(shares_payload.get("as_of_date") or ""),
                 source=shares_payload.get("source") or {},
             ),
-            "ttm_revenue": _dart_metric_input(dart_payload, "revenue", "ttm"),
-            "ttm_net_income": _dart_metric_input(dart_payload, "net_income", "ttm"),
-            "total_equity": _dart_metric_input(dart_payload, "total_equity", "current_fiscal_year"),
+            "ttm_revenue": _dart_metric_input(dart_payload, "revenue", flow_period),
+            "ttm_net_income": _dart_metric_input(dart_payload, income_key, flow_period),
+            "total_equity": _dart_metric_input(dart_payload, equity_key, "current_fiscal_year"),
         },
         "metrics": calculated_metrics,
     }
@@ -247,7 +295,7 @@ def build_valuation_snapshot(
                 if within_tolerance
                 else "discrepancy"
             ),
-            "strong_evidence_eligible": bool(dates_match and within_tolerance),
+            "strong_evidence_eligible": False,
         }
 
     return {
@@ -267,6 +315,7 @@ def build_valuation_snapshot(
         },
         "data_limits": [
             "Direct provider values and calculated values may have different as-of dates.",
+            "Provider historical valuation dates do not establish what was available on the analysis date.",
             "Enterprise-value multiples are not recalculated without point-in-time debt, cash, and EBITDA inputs.",
         ],
     }

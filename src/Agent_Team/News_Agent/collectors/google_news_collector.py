@@ -8,6 +8,7 @@ Updated to target specific classes provided by user:
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import replace
 from email.utils import parsedate_to_datetime
 from html import unescape
 import json
@@ -27,6 +28,7 @@ from ..dart.schemas import RawNewsRecord
 
 LOGGER = logging.getLogger(__name__)
 KST = timezone(timedelta(hours=9))
+SNIPPET_POLICY = "short_excerpt_v5_heading_markup"
 
 # ---- Heuristics / signals ----------------------------------------------------
 
@@ -135,13 +137,41 @@ def _looks_like_content_snippet(text: str | None, title: str | None = None) -> b
     return True
 
 
-def _extract_meta_description(html_text: str) -> str:
+def _headline_key(text: str) -> str:
+    return re.sub(r"[\W_]+", "", unescape(text).casefold())
+
+
+def _same_headline(left: str, right: str, site_name: str = "") -> bool:
+    # Some publishers attach their declared site name to just one title.
+    # Do not accept partial matches or remove arbitrary company/subject words.
+    site = _headline_key(site_name)
+
+    def variants(text: str) -> set[str]:
+        key = _headline_key(text)
+        values = {key} if key else set()
+        if site:
+            if key.startswith(site) and key[len(site):]:
+                values.add(key[len(site):])
+            if key.endswith(site) and key[:-len(site)]:
+                values.add(key[:-len(site)])
+        return values
+
+    return bool(variants(left) & variants(right))
+
+
+def _extract_meta_description(html_text: str | bytes, title: str = "") -> str:
     if not html_text:
         return ""
     soup = BeautifulSoup(html_text, "html.parser")
+    page_type = soup.select_one('meta[property="og:type"]')
+    page_title = soup.select_one('meta[property="og:title"]')
+    site = soup.select_one('meta[property="og:site_name"]')
+    if not (page_type and page_type.get("content") == "article" and page_title
+            and _same_headline(str(page_title.get("content") or ""), title,
+                               str(site.get("content") or "") if site else "")):
+        return ""
     selectors = [
         'meta[property="og:description"]',
-        'meta[name="description"]',
         'meta[name="twitter:description"]',
     ]
     for selector in selectors:
@@ -165,36 +195,43 @@ def _iter_script_payloads(soup: BeautifulSoup):
             continue
 
 
-def _collect_json_snippet_candidates(node: Any, path: tuple[str, ...] = ()) -> list[tuple[int, str]]:
+def _collect_json_snippet_candidates(node: Any, *, title: str, page_url: str) -> list[tuple[int, str]]:
     candidates: list[tuple[int, str]] = []
     if isinstance(node, dict):
-        for key, value in node.items():
-            key_norm = str(key).strip().lower()
-            next_path = path + (key_norm,)
-            if isinstance(value, str):
-                priority = None
-                if key_norm == "content" and any(part in {"contentarrange", "articleview"} for part in path):
-                    priority = 1
-                elif key_norm in _BODY_SNIPPET_KEYS:
-                    priority = _BODY_SNIPPET_KEYS[key_norm]
-                if priority is not None:
-                    candidates.append((priority, value))
-            else:
-                candidates.extend(_collect_json_snippet_candidates(value, next_path))
+        types = node.get("@type") or []
+        types = [types] if isinstance(types, str) else types
+        if any(t in {"Article", "NewsArticle", "ReportageNewsArticle", "AnalysisNewsArticle", "BlogPosting"} for t in types):
+            identity = node.get("mainEntityOfPage") or node.get("url") or node.get("@id") or ""
+            if isinstance(identity, dict):
+                identity = identity.get("@id") or identity.get("url") or ""
+            same_url = isinstance(identity, str) and bool(page_url) and identity.split("#")[0].rstrip("/") == page_url.split("#")[0].rstrip("/")
+            same_title = bool(title) and _headline_key(str(node.get("headline") or "")) == _headline_key(title)
+            if same_url or same_title:
+                for key, value in node.items():
+                    priority = _BODY_SNIPPET_KEYS.get(key.lower())
+                    if priority is not None and isinstance(value, str):
+                        candidates.append((priority, value))
+            # Do not descend into this article's publisher, image, or related
+            # objects and attribute their descriptions to the article.
+            return candidates
+        for value in node.values():
+            if isinstance(value, (dict, list)):
+                candidates.extend(_collect_json_snippet_candidates(value, title=title, page_url=page_url))
     elif isinstance(node, list):
         for item in node:
-            candidates.extend(_collect_json_snippet_candidates(item, path))
+            candidates.extend(_collect_json_snippet_candidates(item, title=title, page_url=page_url))
     return candidates
 
 
-def _extract_script_backed_snippet(html_text: str, title: str) -> str:
+def _extract_script_backed_snippet(html_text: str | bytes, title: str, page_url: str = "") -> str:
     if not html_text:
         return ""
     soup = BeautifulSoup(html_text, "html.parser")
     ranked: list[tuple[int, int, str]] = []
     order = 0
     for payload in _iter_script_payloads(soup):
-        for priority, candidate in _collect_json_snippet_candidates(payload):
+        for priority, candidate in _collect_json_snippet_candidates(payload, title=title, page_url=page_url):
+            candidate = BeautifulSoup(candidate, "html.parser").get_text(" ", strip=True)
             cleaned = _clean_snippet_text(candidate, title)
             if not _looks_like_content_snippet(cleaned, title):
                 continue
@@ -206,45 +243,87 @@ def _extract_script_backed_snippet(html_text: str, title: str) -> str:
     return _truncate_snippet(ranked[0][2])
 
 
-def _extract_dom_text_snippet(html_text: str, title: str) -> str:
+_BODY_SELECTORS = (
+    "[itemprop='articleBody']", "[data-testid='article-body']", ".article-body",
+    ".article_body", ".article_txt", ".view_cont", ".news_cnt_detail_wrap",
+    "#newsContent.news_content", ".content_print .contarea", "article #boardContent",
+    ".se-main-container .se-section-text", ".view_con_wrap",
+)
+
+
+def _body_excerpt(body: Tag, max_chars: int = 280) -> str:
+    text = _clean_snippet_text(body.get_text(" ", strip=True))
+    # Preserve some lead context and expose the first section when a long
+    # introduction otherwise consumes the entire excerpt. This is layout-based,
+    # not a relevance score or a decision that repeated prose is disposable.
+    headings = body.select("h2, h3, h4, [role='heading'], p")
+    for heading in headings:
+        label = _clean_snippet_text(heading.get_text(" ", strip=True))
+        if heading.name == "p":
+            # A heading's marker can sit outside its bold text, and its title
+            # can span several bold tags. Ordinary unbolded prose is not allowed.
+            bold = [s for s in heading.strings if s.find_parent(["strong", "b"])]
+            plain = "".join(s for s in heading.strings if not s.find_parent(["strong", "b"]))
+            if not (any(s.strip() for s in bold) and re.match(r"^[■▶◆●]\s*\S", label)
+                    and re.sub(r"\s+", "", plain) in {"", label[0]}):
+                continue
+        if not label:
+            continue
+        start = text.find(label)
+        # If the first heading is already covered, keep the ordinary lead.
+        # Do not hunt for a later, potentially more favourable section.
+        if start <= max_chars:
+            break
+        section = text[start:]
+        if not _looks_like_content_snippet(_truncate_snippet(section[len(label):])):
+            break
+        separator = " […] "
+        # Same total budget; reserve one third for context and two thirds for
+        # the section. Account for the truncator's trailing three dots.
+        lead = _truncate_snippet(text[:start], max_chars=(max_chars - len(separator)) // 3 - 3)
+        detail = _truncate_snippet(section, max_chars=max_chars - len(lead) - len(separator) - 3)
+        return lead + separator + detail
+    return _truncate_snippet(text, max_chars=max_chars)
+
+
+def _extract_dom_text_snippet(html_text: str | bytes, title: str) -> str:
     if not html_text:
         return ""
     soup = BeautifulSoup(html_text, "html.parser")
-    selectors = [
-        "article p",
-        "[itemprop='articleBody'] p",
-        "[data-testid='article-body'] p",
-        ".article-body p",
-        ".article_body p",
-        ".article_txt p",
-        ".view_cont p",
-        ".news_cnt_detail_wrap p",
-        "main p",
-    ]
-    ranked: list[tuple[int, str]] = []
-    for priority, selector in enumerate(selectors):
-        for tag in soup.select(selector):
-            cleaned = _clean_snippet_text(tag.get_text(" ", strip=True), title)
-            if not _looks_like_content_snippet(cleaned, title):
-                continue
-            ranked.append((priority, cleaned))
-            break
-        if ranked:
-            break
-    if not ranked:
-        return ""
-    ranked.sort(key=lambda item: (item[0], -len(item[1])))
-    return _truncate_snippet(ranked[0][1])
+    for selector in _BODY_SELECTORS:
+        for body in soup.select(selector):
+            # Nested article elements are separate story cards, not paragraphs
+            # of the current article. Keep this pruning inside the body scope.
+            for node in list(body.select("article, aside, nav, figure, figcaption, header, footer, script, style, form, button, [itemprop='caption'], [class*='caption']")):
+                if node.parent is not None:
+                    node.decompose()
+            # Skip only a leading paragraph explicitly labelled as an editor's
+            # note. Repeated prose without that label may still be news evidence.
+            for paragraph in body.find_all("p"):
+                text = paragraph.get_text(" ", strip=True)
+                if not text:
+                    continue
+                if re.search(r"[<\[【]\s*편집자\s*주\s*[>\]】]\s*$", text):
+                    paragraph.decompose()
+                break
+            text = _body_excerpt(body)
+            if _looks_like_content_snippet(text, title):
+                return text
+    return ""
 
 
-def _extract_article_snippet(html_text: str, title: str) -> str:
-    script_snippet = _extract_script_backed_snippet(html_text, title)
+def _extract_article_snippet(html_text: str | bytes, title: str, page_url: str = "") -> str:
+    script_snippet = _extract_script_backed_snippet(html_text, title, page_url)
     if script_snippet:
         return script_snippet
     dom_snippet = _extract_dom_text_snippet(html_text, title)
     if dom_snippet:
         return dom_snippet
-    meta_snippet = _clean_snippet_text(_extract_meta_description(html_text), title)
+    # An explicit body containing only inaccessible/service content is not
+    # rescued by a description that may repeat the same notice.
+    if BeautifulSoup(html_text, "html.parser").select_one(",".join(_BODY_SELECTORS)):
+        return ""
+    meta_snippet = _clean_snippet_text(_extract_meta_description(html_text, title), title)
     if _looks_like_content_snippet(meta_snippet, title):
         return _truncate_snippet(meta_snippet)
     return ""
@@ -442,24 +521,42 @@ class GoogleNewsCollector:
                 continue
         return source_url
 
-    def _fetch_publisher_snippet(self, article_url: str, title: str) -> str:
+    def _fetch_publisher_snippet(self, article_url: str, title: str, *, diagnostics=None) -> str:
+        diagnostics = diagnostics if diagnostics is not None else {}
         parsed = urlparse(article_url)
         if parsed.scheme not in {"http", "https"}:
+            diagnostics["snippet_failure_reason"] = "invalid_url"
             return ""
         if _is_google_news_host(article_url):
+            diagnostics["snippet_failure_reason"] = "publisher_url_unresolved"
             return ""
         try:
             resp = self._request("GET", article_url, allow_redirects=True)
             resp.raise_for_status()
             if _is_google_news_host(resp.url):
+                diagnostics["snippet_failure_reason"] = "publisher_url_unresolved"
                 return ""
-            return _extract_article_snippet(resp.text, title)
-        except Exception:
+            # Let the HTML parser read the declared document encoding instead
+            # of requests' default ISO-8859-1 decoding for text/html.
+            snippet = _extract_article_snippet(resp.content, title, resp.url)
+            if not snippet:
+                diagnostics["snippet_failure_reason"] = "no_valid_article_excerpt"
+            return snippet
+        except requests.HTTPError as exc:
+            diagnostics["snippet_failure_reason"] = f"http_{exc.response.status_code}" if exc.response is not None else "http_error"
+            return ""
+        except requests.Timeout:
+            diagnostics["snippet_failure_reason"] = "request_timeout"
+            return ""
+        except Exception as exc:
+            diagnostics["snippet_failure_reason"] = f"request_or_parse_error:{type(exc).__name__}"
             return ""
 
     def _enrich_record(self, record: RawNewsRecord) -> RawNewsRecord:
         metadata = dict(record.metadata or {})
         snippet = _clean_snippet_text(record.snippet, record.title)
+        if metadata.get("snippet_policy") and metadata["snippet_policy"] != SNIPPET_POLICY:
+            snippet = ""
         final_url = record.url
 
         resolved_url = self._decode_google_news_url(record.url)
@@ -469,11 +566,11 @@ class GoogleNewsCollector:
             metadata["resolved_via"] = "google_news_decoder"
             final_url = resolved_url
 
-        if _is_generic_google_snippet(snippet):
+        if not _looks_like_content_snippet(snippet, record.title):
             snippet = ""
 
         if not snippet:
-            snippet = self._fetch_publisher_snippet(final_url, record.title)
+            snippet = self._fetch_publisher_snippet(final_url, record.title, diagnostics=metadata)
             if snippet:
                 metadata["snippet_source"] = "publisher_article_excerpt"
         elif "snippet_source" not in metadata:
@@ -481,6 +578,10 @@ class GoogleNewsCollector:
 
         if not snippet:
             metadata["snippet_source"] = "missing"
+        else:
+            metadata.pop("snippet_failure_reason", None)
+        snippet = _truncate_snippet(snippet)
+        metadata["snippet_policy"] = SNIPPET_POLICY
 
         return RawNewsRecord(
             collect_date=record.collect_date,
@@ -506,8 +607,7 @@ class GoogleNewsCollector:
         needs_enrichment = [
             idx
             for idx, record in enumerate(records)
-            if (not _clean_snippet_text(record.snippet, record.title))
-            or urlparse(record.url).hostname == "news.google.com"
+            if (record.metadata or {}).get("snippet_policy") != SNIPPET_POLICY
         ]
         if not needs_enrichment:
             return records
@@ -524,7 +624,10 @@ class GoogleNewsCollector:
                 try:
                     enriched[idx] = future.result()
                 except Exception as exc:
-                    notes.append(f"snippet_enrichment_failed:{records[idx].article_id}:{exc}")
+                    notes.append(f"snippet_enrichment_failed:{records[idx].article_id}:{type(exc).__name__}")
+                    enriched[idx] = replace(records[idx], snippet=None, doc_text=records[idx].title,
+                        metadata={**(records[idx].metadata or {}), "snippet_source": "missing", "snippet_policy": SNIPPET_POLICY,
+                                  "snippet_failure_reason": f"enrichment_error:{type(exc).__name__}"})
         notes.append(
             f"snippet_populated_{sum(1 for record in enriched if _clean_snippet_text(record.snippet, record.title))}"
         )
@@ -548,7 +651,6 @@ class GoogleNewsCollector:
         collected = []
         notes = []
         seen_urls = set()
-        seen_titles = set()
 
         query_with_range = f"{query} after:{query_after.isoformat()} before:{query_before.isoformat()}"
         params = {
@@ -617,13 +719,9 @@ class GoogleNewsCollector:
                 continue
             if dedup_on_url and url in seen_urls:
                 continue
-            if title in seen_titles:
-                continue
-
             article_date = _parse_rss_pub_date(pub_date)
 
             seen_urls.add(url)
-            seen_titles.add(title)
             collected.append(
                 RawNewsRecord(
                     collect_date=collect_date.isoformat(),
@@ -672,7 +770,6 @@ class GoogleNewsCollector:
         collected = []
         notes = []
         seen_urls = set()
-        seen_titles = set()
 
         query_with_range = f"{query} after:{query_after.isoformat()} before:{query_before.isoformat()}"
         encoded_query = quote_plus(query_with_range)
@@ -730,10 +827,8 @@ class GoogleNewsCollector:
                     continue
                 
                 if dedup_on_url and norm_url in seen_urls: continue
-                if title in seen_titles: continue
 
                 seen_urls.add(norm_url)
-                seen_titles.add(title)
 
                 article_date = parse_date_from_text(date_text or "", fallback=range_end)
 

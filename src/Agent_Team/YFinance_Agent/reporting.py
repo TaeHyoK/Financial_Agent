@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from shared.subdata import financial_subdata, market_subdata, news_subdata, evidence_catalog_for_llm, secondary_context_for_llm
+from shared.subdata_guidance import (
+    context_guidance, context_issue_schema, context_ref_schema,
+    flatten_context_issues, validate_context_refs, CONTEXT_POLICY_VERSION,
+)
+
+import copy
 import json
 import math
 import os
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +25,7 @@ from shared.evidence_contracts import (
     validate_evidence_catalog,
     validate_secondary_context_assessments,
 )
+from shared.domain_llm import domain_request, call_domain_response
 from shared.llm_clients import compact_json, execute_with_telemetry
 
 from valuation import build_valuation_snapshot, unavailable_direct_valuation
@@ -31,7 +39,7 @@ DEFAULT_DART_JSON: Path | None = None
 DEFAULT_NEWS_JSON: Path | None = None
 DEFAULT_REPORT_MD = DEFAULT_OUTPUT_DIR / "yfinance_analyst_report.md"
 DEFAULT_REPORT_JSON = DEFAULT_OUTPUT_DIR / "yfinance_analyst_report.json"
-DEFAULT_OPENAI_MODEL = "gpt-5.4"
+DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
 SECONDARY_FINANCIAL_METRICS = (
     "revenue",
     "revenue_growth",
@@ -69,29 +77,45 @@ def generate_analyst_report(
     """Create Markdown and JSON reports with YFinance as the primary dataset."""
 
     market = load_market_dataset(market_json)
-    dart = {} if primary_data_only else _load_json(dart_json)
+    # Common valuation is a deterministic downstream handoff, not the market
+    # LLM's secondary context. Removing subdata must not remove its denominators.
+    valuation_dart = _load_json(dart_json) if dart_json.is_file() or not primary_data_only else {}
+    dart = {} if primary_data_only else valuation_dart
     news = {} if primary_data_only else _load_json(news_json)
     company = company_name or _news_company_name(news) or _infer_company_name(news_json) or "분석 대상 기업"
 
+    manifest_path = market_json.parent / "manifest.json"
+    market_manifest = _load_json(manifest_path) if manifest_path.exists() else {}
+    direct_valuation = _load_json(valuation_json) if valuation_json is not None and valuation_json.exists() else {}
+    boundary_text = market_manifest.get("selected_date") or direct_valuation.get("selected_date")
+    boundary = pd.Timestamp(boundary_text).date() if boundary_text else market["date"].max().date() + timedelta(days=1)
+    if direct_valuation.get("selected_date") and pd.Timestamp(direct_valuation["selected_date"]).date() != boundary:
+        raise ValueError("Market and valuation inputs use different selected dates.")
+    market = market[market["date"].dt.date < boundary].copy()
+    requested_start = (market_manifest.get("date_range") or {}).get("start")
+    requested_end = (market_manifest.get("date_range") or {}).get("end")
+    if requested_start:
+        market = market[market["date"] >= pd.Timestamp(requested_start)]
+    if requested_end:
+        market = market[market["date"] <= pd.Timestamp(requested_end)]
+    if market.empty:
+        raise ValueError("No market observations remain before the selected-date cutoff.")
+    analysis_boundary = boundary.isoformat()
+    market.attrs["selected_date"] = analysis_boundary
     market_summary = build_market_summary(market)
-    market_date = datetime.strptime(market_summary["latest_snapshot"]["date"], "%Y-%m-%d").date()
-    direct_valuation = (
-        _load_json(valuation_json)
-        if valuation_json is not None and valuation_json.exists()
-        else unavailable_direct_valuation(
-            ticker=ticker or "unknown",
-            selected_date=market_date,
+    if not direct_valuation:
+        direct_valuation = unavailable_direct_valuation(
+            ticker=ticker or "unknown", selected_date=boundary,
             reason="valuation_snapshot_file_not_available",
         )
-    )
     valuation_snapshot = build_valuation_snapshot(
-        market_summary=market_summary,
-        dart_payload=dart,
-        direct_valuation=direct_valuation,
+        market_summary=market_summary, dart_payload=valuation_dart, direct_valuation=direct_valuation,
+        market_frame=market,
     )
     monthly = build_monthly_market_table(market)
     primary_evidence_catalog = build_market_primary_evidence_catalog(market_summary)
-    primary_evidence_catalog.update(build_daily_market_evidence_catalog(market))
+    primary_evidence_catalog.update(build_daily_market_evidence_catalog(market, max_rows=20))
+    primary_evidence_catalog.update(build_monthly_market_evidence_catalog(market))
     secondary_context = {
         "financial": build_dart_secondary_context(dart),
         "news": build_news_secondary_context(news, source_path=news_json),
@@ -107,11 +131,12 @@ def generate_analyst_report(
                 "시장 판단과 문맥은 YFinance 전용 데이터만 사용합니다."
                 if primary_data_only
                 else (
-                    "시장 판단은 YFinance 근거만 사용하고, 뉴스 주간 요약과 DART 자료는 "
+                    "시장 판단은 YFinance 근거만 사용하고, 월별 개별 뉴스와 DART 자료는 "
                     "표현 강도와 한계 점검용 보조 문맥으로만 사용합니다."
                 )
             ),
             "primary_data_only": primary_data_only,
+            "valuation_policy": "common_calculation_for_downstream_only; excluded_from_market_llm_packet",
         },
         "market_summary": market_summary,
         "monthly_market_news": monthly,
@@ -121,7 +146,7 @@ def generate_analyst_report(
     }
     agent_report = generate_agent_json_report_with_llm(payload, ticker=ticker, model=model)
     selected_date = str(
-        direct_valuation.get("selected_date")
+        analysis_boundary
         or valuation_snapshot.get("selected_date")
         or ""
     )
@@ -141,6 +166,62 @@ def generate_analyst_report(
         file.write("\n")
 
     return ReportPaths(markdown=report_md, json=report_json)
+
+
+def build_market_request(payload: dict[str, Any], *, ticker: str | None = None, model: str) -> dict[str, Any]:
+    model_name = model
+    evidence = build_llm_evidence_packet(payload, ticker=ticker)
+    evidence["primary_market_evidence"] = evidence_catalog_for_llm(evidence["primary_market_evidence"])
+    evidence["secondary_context"] = secondary_context_for_llm(evidence["secondary_context"])
+    evidence["context_contract"].pop("context_policy_version", None)
+    secondary_catalog = _combined_secondary_catalog(payload.get("secondary_context") or {})
+    required_domains = sorted(
+        domain
+        for domain, context in (payload.get("secondary_context") or {}).items()
+        if domain in {"financial", "news"}
+        and isinstance(context, dict)
+        and context.get("status") == "available"
+    )
+    secondary_ids_by_domain = {
+        domain: sorted(
+            evidence_id
+            for evidence_id, item in secondary_catalog.items()
+            if isinstance(item, dict) and item.get("domain") == domain
+        )
+        for domain in required_domains
+    }
+    request_payload = {
+        "model": model_name,
+        "input": [
+            {
+                "role": "system",
+                "content": (
+                    "You are Y-Finance Agent, a stock price and market data analyst. "
+                    "Write in Korean. Ground market measurements in primary_market_evidence. "
+                    "Use financial and news secondary_context to inform the interpretation, "
+                    "persistence and risks of market observations, without changing source facts. "
+                    "Compare article dates with the matching market observations; month groups are not event timestamps or earnings periods. "
+                    "Use recent daily observations only for their actual dates. Describe association, not causality. "
+                    "Assess the one-year trend, 3/6/12-month relative performance, drawdowns, volatility and 120/200-day trends. "
+                    "Never claim that a news or financial item caused a price movement. "
+                    "Do not infer operating performance, news impact, or accounting outcomes from price data. "
+                    "Do not provide buy, sell, hold, target price, portfolio allocation, or personalized investment advice. "
+                    "Do not include any score field. Return only JSON matching the schema."
+                ) + context_guidance("market"),
+            },
+            {
+                "role": "user",
+                "content": compact_json(evidence),
+            },
+        ],
+        "text": {
+            "format": yfinance_agent_json_schema(
+                primary_evidence_ids=sorted((payload.get("primary_evidence_catalog") or {}).keys()),
+                secondary_evidence_ids_by_domain=secondary_ids_by_domain,
+            )
+        },
+    }
+    return domain_request(request_payload, domain="market")
 
 
 def generate_agent_json_report_with_llm(
@@ -180,54 +261,20 @@ def generate_agent_json_report_with_llm(
         )
         for domain in required_domains
     }
-    client = OpenAI()
-    request_payload = {
-        "model": model_name,
-        "input": [
-            {
-                "role": "system",
-                "content": (
-                    "You are Y-Finance Agent, a stock price and market data analyst. "
-                    "Write in Korean. Use only primary_market_evidence for market conclusions. "
-                    "Use financial and news secondary_context only to assess whether it corroborates, "
-                    "contradicts, is neutral to, or is insufficient for a primary market observation. "
-                    "Match each dated news summary to the same trading date or the next trading session, "
-                    "and compare it with the dated daily market evidence. Describe temporal market response, not causality. "
-                    "Secondary context is framing_and_limitation_only and cannot change primary evidence status. "
-                    "Never claim that a news or financial item caused a price movement. "
-                    "Do not infer operating performance, news impact, or accounting outcomes from price data. "
-                    "Do not provide buy, sell, hold, target price, portfolio allocation, or personalized investment advice. "
-                    "Do not include any score field. Return only JSON matching the schema."
-                ),
-            },
-            {
-                "role": "user",
-                "content": compact_json(evidence),
-            },
-        ],
-        "text": {
-            "format": yfinance_agent_json_schema(
-                primary_evidence_ids=sorted((payload.get("primary_evidence_catalog") or {}).keys()),
-                secondary_evidence_ids_by_domain=secondary_ids_by_domain,
-            )
-        },
-    }
-    response = execute_with_telemetry(
-        lambda: client.responses.create(**request_payload),
-        request_payload=request_payload,
-        model=model_name,
-        step="yfinance:analyst_report",
-        usage_getter=lambda result: getattr(result, "usage", None),
-    )
+    request_payload = build_market_request(payload, ticker=ticker, model=model_name)
+    response = call_domain_response(request_payload, step="yfinance:analyst_report")
     report = _parse_response_json(response)
+    return validate_market_analysis(report, payload)
+
+
+def validate_market_analysis(report: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    report = json.loads(json.dumps(report, ensure_ascii=False))
+    secondary_catalog = _combined_secondary_catalog(payload.get("secondary_context") or {})
+    required_domains = sorted(domain for domain, context in (payload.get("secondary_context") or {}).items()
+                              if domain in {"financial", "news"} and isinstance(context, dict)
+                              and context.get("status") == "available")
     assessments_by_domain = report.pop("secondary_context_assessment_by_domain", None)
-    if not isinstance(assessments_by_domain, dict):
-        raise ValueError("YFinance output must contain secondary_context_assessment_by_domain.")
-    report["secondary_context_assessment"] = [
-        assessments_by_domain[domain]
-        for domain in required_domains
-        if isinstance(assessments_by_domain.get(domain), dict)
-    ]
+    report["secondary_context_assessment"] = flatten_context_issues(assessments_by_domain, required_domains)
     _assert_required_report_keys(report)
     _assert_no_score(report)
     report["secondary_context_assessment"] = validate_secondary_context_assessments(
@@ -235,8 +282,10 @@ def generate_agent_json_report_with_llm(
         primary_evidence_ids=(payload.get("primary_evidence_catalog") or {}).keys(),
         secondary_catalog=secondary_catalog,
         allowed_source_domains={"financial", "news"},
-        required_source_domains=required_domains,
     )
+    validate_context_refs(report.get("main_view") or {}, report["secondary_context_assessment"])
+    report["context_policy_version"] = CONTEXT_POLICY_VERSION
+    report["secondary_context"] = copy.deepcopy(payload.get("secondary_context") or {})
     return report
 
 
@@ -256,6 +305,8 @@ def build_llm_evidence_packet(payload: dict[str, Any], *, ticker: str | None = N
             "usage": SECONDARY_CONTEXT_USAGE,
             "causal_assertions_allowed": False,
             "may_change_primary_evidence_status": False,
+            "may_change_interpretation": True,
+            "context_policy_version": CONTEXT_POLICY_VERSION,
         },
     }
 
@@ -275,7 +326,7 @@ def build_market_primary_evidence_catalog(
         catalog[evidence_id] = {
             "evidence_id": evidence_id,
             "domain": "market",
-            "origin_type": "raw_source",
+            "origin_type": "raw_source" if metric in {"stock_close", "stock_adjusted_close", "kospi_close", "fx_close", "stock_dividends", "stock_splits"} else "deterministic_derived",
             "source_ref": f"market_full_dataset.latest.{metric}",
             "source_date": source_date,
             "period": "",
@@ -319,14 +370,9 @@ def build_market_primary_evidence_catalog(
 def build_daily_market_evidence_catalog(
     frame: pd.DataFrame,
     *,
-    max_rows: int | None = None,
+    max_rows: int | None = 20,
 ) -> dict[str, dict[str, Any]]:
-    """Build market observations across the full requested analysis window.
-
-    The market dataset is already clipped to the same configured date range as
-    News collection. ``max_rows`` remains an explicit compatibility override,
-    but the agent no longer drops the earlier part of a 90-day window by default.
-    """
+    """Keep recent daily context bounded; monthly observations cover the full year."""
 
     data = frame.sort_values("date").copy()
     stock_price_column = _stock_analysis_price_column(data)
@@ -368,104 +414,11 @@ def build_daily_market_evidence_catalog(
 
 
 def build_dart_secondary_context(payload: dict[str, Any]) -> dict[str, Any]:
-    """Build a compact financial fact catalog without generated interpretation."""
-
-    metrics = payload.get("metrics_by_key") or {}
-    catalog: dict[str, dict[str, Any]] = {}
-    for metric_key in SECONDARY_FINANCIAL_METRICS:
-        metric = metrics.get(metric_key)
-        if not isinstance(metric, dict):
-            continue
-        values = metric.get("values_by_period") or {}
-        current = values.get("current_fiscal_year") or {}
-        previous = values.get("same_period_previous_year") or {}
-        comparison = _first_usable_comparison(metric.get("comparisons") or {})
-        value = current.get("value")
-        if not _is_finite_number(value) and comparison:
-            value = comparison.get("value")
-        if not _is_finite_number(value):
-            continue
-        current_period = current.get("period") if isinstance(current.get("period"), dict) else {}
-        evidence_id = canonical_evidence_id("financial", metric_key)
-        entry: dict[str, Any] = {
-            "evidence_id": evidence_id,
-            "domain": "financial",
-            "origin_type": "deterministic_derived" if metric.get("metric_type") == "comparison" else "raw_source",
-            "source_ref": f"dart_lightweight.metrics_by_key.{metric_key}",
-            "source_date": str(current_period.get("period_end") or payload.get("as_of_date") or ""),
-            "period": str(current_period.get("basis") or ""),
-            "metric": metric_key,
-            "value": value,
-            "unit": metric.get("unit"),
-        }
-        if _is_finite_number(previous.get("value")):
-            entry["previous_value"] = previous.get("value")
-        if comparison and _is_finite_number(comparison.get("value")):
-            entry["comparison_value"] = comparison.get("value")
-            entry["comparison_basis"] = "_vs_".join(
-                value
-                for value in (
-                    str(comparison.get("current_basis") or ""),
-                    str(comparison.get("previous_basis") or ""),
-                )
-                if value
-            )
-        catalog[evidence_id] = entry
-    validate_evidence_catalog(catalog, allowed_domains={"financial"})
-    return {
-        "status": "available" if catalog else "unavailable",
-        "evidence_catalog": catalog,
-    }
+    return financial_subdata(payload)
 
 
-def build_news_secondary_context(
-    payload: dict[str, Any],
-    *,
-    source_path: Path,
-) -> dict[str, Any]:
-    """Load weekly News summaries directly, without News Agent claims."""
-
-    del source_path  # Kept in the public signature for CLI compatibility.
-    periods = _news_period_summary_items(payload)[:30]
-    catalog: dict[str, dict[str, Any]] = {}
-    for period in periods:
-        period_key = str(period.get("period") or "").strip()
-        source_date = _weekly_period_start(period_key)
-        period_summary = str(period.get("period_summary") or "").strip()
-        if not period_key or not period_summary:
-            continue
-        evidence_id = canonical_evidence_id("news", f"weekly_{period_key}")
-        catalog[evidence_id] = {
-            "evidence_id": evidence_id,
-            "domain": "news",
-            "origin_type": "model_summarized",
-            "source_ref": f"news_periods.{period_key.replace('-', '_')}",
-            "source_date": source_date,
-            "period": period_key,
-            "metric": "weekly_news_context",
-            "text": period_summary,
-            "issues": [
-                {
-                    key: issue.get(key)
-                    for key in ("issue", "mention_count", "importance")
-                    if issue.get(key) not in (None, "", [], {})
-                }
-                for issue in period.get("issues") or []
-                if isinstance(issue, dict) and str(issue.get("issue") or "").strip()
-            ],
-            "source_event_ids": [
-                str(event_id)
-                for event_id in period.get("source_event_ids") or []
-                if str(event_id).strip()
-            ],
-        }
-    validate_evidence_catalog(catalog, allowed_domains={"news"})
-    return {
-        "status": "available" if catalog else "unavailable",
-        "input_type": "weekly_news_summaries",
-        "period_count": len(catalog),
-        "evidence_catalog": catalog,
-    }
+def build_news_secondary_context(payload: dict[str, Any], *, source_path: Path) -> dict[str, Any]:
+    return news_subdata(payload)
 
 
 def _weekly_period_start(period: str) -> str:
@@ -532,9 +485,11 @@ def _news_company_name(payload: dict[str, Any]) -> str | None:
 def _market_metric_unit(metric: str) -> str:
     if metric in {"stock_close", "kospi_close", "fx_close"}:
         return "price"
-    if "rsi" in metric or "volume_ratio" in metric:
+    if "volume_ratio" in metric:
+        return "times"
+    if "rsi" in metric:
         return "index"
-    if any(token in metric for token in ("return", "strength", "volatility", "drawdown", "to_ma", "obv", "bb_width")):
+    if any(token in metric for token in ("return", "strength", "volatility", "drawdown", "to_ma", "obv", "bb_width", "change_20d", "position_52w")):
         return "ratio"
     return "number"
 
@@ -553,7 +508,7 @@ def yfinance_agent_json_schema(
     str_array = {"type": "array", "items": {"type": "string"}}
     feature_value = {"anyOf": [{"type": "number"}, {"type": "string"}]}
     price_features = _features_schema(
-        ["stock_close_to_ma20", "stock_close_to_ma60", "stock_ma5_to_ma20"],
+        ["stock_return_1m", "stock_return_3m", "stock_return_6m", "stock_return_12m", "stock_close_to_ma120", "stock_close_to_ma200", "stock_ma120_change_20d", "stock_ma200_change_20d"],
         feature_value,
     )
     momentum_features = _features_schema(
@@ -561,11 +516,11 @@ def yfinance_agent_json_schema(
         feature_value,
     )
     volume_features = _features_schema(
-        ["stock_bb_width_20", "stock_volatility_20", "stock_volume_ratio_20", "stock_obv_trend"],
+        ["stock_volatility_1y", "stock_max_drawdown_1y", "stock_current_drawdown_1y", "stock_volume_ratio_5_60", "stock_position_52w"],
         feature_value,
     )
     relative_features = _features_schema(
-        ["stock_excess_return_5d", "stock_excess_return_20d", "stock_relative_strength_60"],
+        ["stock_excess_return_1m", "stock_excess_return_3m", "stock_excess_return_6m", "stock_excess_return_12m"],
         feature_value,
     )
     fx_features = _features_schema(
@@ -590,8 +545,9 @@ def yfinance_agent_json_schema(
                         "summary": {"type": "string"},
                         "direction": {"type": "string"},
                         "primary_basis": str_array,
+                        "context_ids": context_ref_schema(),
                     },
-                    "required": ["summary", "direction", "primary_basis"],
+                    "required": ["summary", "direction", "primary_basis", "context_ids"],
                     "additionalProperties": False,
                 },
                 "time_horizon_view": {
@@ -605,7 +561,7 @@ def yfinance_agent_json_schema(
                                 "stance": {"type": "string"},
                                 "reasoning": {"type": "string"},
                                 "key_features": str_array,
-                                "data_limitation": {"type": "string"},
+                                "data_limitation": {"type": "string", "description": "시장 해석의 방향·강도·범위를 실질적으로 제한하는 사항이 없으면 빈 문자열"},
                             },
                             "required": ["stance", "reasoning", "key_features", "data_limitation"],
                             "additionalProperties": False,
@@ -665,6 +621,10 @@ def yfinance_agent_json_schema(
             "additionalProperties": False,
         },
     }
+    order = ("agent_name", "role", "target_company", "ticker", "as_of_date",
+             "detailed_analysis", "secondary_context_assessment_by_domain", "time_horizon_view", "main_view")
+    report["schema"]["properties"] = {key: report["schema"]["properties"][key] for key in order}
+    report["schema"]["required"] = list(order)
     return report
 
 
@@ -703,41 +663,12 @@ def _horizon_schema() -> dict[str, Any]:
 
 
 def _secondary_context_assessment_schema(
-    *,
-    domain: str,
-    primary_evidence_ids: list[str],
-    secondary_evidence_ids: list[str],
+    *, domain: str, primary_evidence_ids: list[str], secondary_evidence_ids: list[str],
 ) -> dict[str, Any]:
-    primary_item: dict[str, Any] = {"type": "string"}
-    if primary_evidence_ids:
-        primary_item["enum"] = primary_evidence_ids
-    secondary_item: dict[str, Any] = {"type": "string"}
-    if secondary_evidence_ids:
-        secondary_item["enum"] = secondary_evidence_ids
-    return {
-        "type": "object",
-        "properties": {
-            "context_id": {"type": "string", "enum": [f"{domain}_context"]},
-            "source_domain": {"type": "string", "enum": [domain]},
-            "effect": {"type": "string", "enum": sorted(SECONDARY_CONTEXT_EFFECTS)},
-            "statement": {"type": "string"},
-            "primary_evidence_ids": {"type": "array", "items": primary_item},
-            "secondary_evidence_ids": {"type": "array", "items": secondary_item},
-            "usage": {"type": "string", "enum": [SECONDARY_CONTEXT_USAGE]},
-            "limitation": {"type": "string"},
-        },
-        "required": [
-            "context_id",
-            "source_domain",
-            "effect",
-            "statement",
-            "primary_evidence_ids",
-            "secondary_evidence_ids",
-            "usage",
-            "limitation",
-        ],
-        "additionalProperties": False,
-    }
+    return context_issue_schema(
+        domain=domain, primary_ids=primary_evidence_ids,
+        secondary_ids=secondary_evidence_ids, effects=SECONDARY_CONTEXT_EFFECTS,
+    )
 
 
 def _parse_response_json(response: Any) -> dict[str, Any]:
@@ -919,6 +850,9 @@ def build_market_summary(frame: pd.DataFrame) -> dict[str, Any]:
         "fx_volatility_20": _number(latest.get("fx_volatility_20")),
     }
 
+    for key in latest.index:
+        if key.startswith(("stock_", "kospi_", "fx_")):
+            latest_snapshot.setdefault(key, _number(latest.get(key)))
     return {
         "period": {
             "start": _date_str(start["date"]),
@@ -934,16 +868,16 @@ def build_market_summary(frame: pd.DataFrame) -> dict[str, Any]:
             "end_close": _number(latest["stock_close"]),
             "start_adjusted_close": _number(start.get("stock_adjusted_close")),
             "end_adjusted_close": _number(latest.get("stock_adjusted_close")),
-            "return_price_basis": "adjusted_close",
+            "return_price_basis": "provider_split_adjusted_close_excluding_cash_dividends",
             "high_close": {
                 "date": _date_str(frame.loc[high_idx, "date"]),
                 "value": _number(frame.loc[high_idx, stock_price_column]),
-                "price_basis": "adjusted_close",
+                "price_basis": "provider_split_adjusted_close_excluding_cash_dividends",
             },
             "low_close": {
                 "date": _date_str(frame.loc[low_idx, "date"]),
                 "value": _number(frame.loc[low_idx, stock_price_column]),
-                "price_basis": "adjusted_close",
+                "price_basis": "provider_split_adjusted_close_excluding_cash_dividends",
             },
             "max_drawdown": drawdown,
         },
@@ -980,7 +914,7 @@ def build_monthly_market_table(frame: pd.DataFrame) -> list[dict[str, Any]]:
                 "fx_return": fx_return,
                 "end_stock_close": _number(last.get("stock_close")),
                 "end_stock_adjusted_close": _number(last.get("stock_adjusted_close")),
-                "return_price_basis": "adjusted_close",
+                "return_price_basis": "provider_split_adjusted_close_excluding_cash_dividends",
                 "end_rsi_14": _number(last.get("stock_rsi_14")),
                 "end_volume_ratio_20": _number(last.get("stock_volume_ratio_20")),
                 "end_stock_return_20d": _number(last.get("stock_return_20d")),
@@ -990,8 +924,6 @@ def build_monthly_market_table(frame: pd.DataFrame) -> list[dict[str, Any]]:
 
 
 def _stock_analysis_price_column(frame: pd.DataFrame) -> str:
-    if "stock_adjusted_close" in frame.columns and frame["stock_adjusted_close"].notna().any():
-        return "stock_adjusted_close"
     return "stock_close"
 
 
@@ -1093,3 +1025,40 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, pd.Timestamp):
         return _date_str(value)
     return value
+
+
+def build_monthly_market_evidence_catalog(frame: pd.DataFrame) -> dict[str, dict[str, Any]]:
+    """Keep all twelve monthly periods, including explicit missing observations."""
+    from shared.time_windows import monthly_windows
+
+    end = (pd.Timestamp(frame.attrs["selected_date"]).date() if frame.attrs.get("selected_date")
+           else pd.Timestamp(frame["date"].max()).date() + timedelta(days=1))
+    data = frame.copy()
+    data["date"] = pd.to_datetime(data["date"])
+    data = data.sort_values("date")
+    catalog = {}
+    for window in monthly_windows(end):
+        start, stop = pd.Timestamp(window["period_start"]), pd.Timestamp(window["period_end"])
+        rows = data[(data["date"] >= start) & (data["date"] <= stop)]
+        value = dict(stock_return=None, kospi_return=None, excess_return=None,
+                     start_price_date=None, end_price_date=None, baseline_status="unavailable")
+        if not rows.empty:
+            prior = data[data["date"] < start].tail(1)
+            first, last = (prior.iloc[0] if not prior.empty else rows.iloc[0]), rows.iloc[-1]
+            stock_return = _safe_ratio(last["stock_close"], first["stock_close"])
+            market_return = _safe_ratio(last["kospi_close"], first["kospi_close"])
+            value.update(
+                stock_return=stock_return, kospi_return=market_return,
+                excess_return=stock_return - market_return if stock_return is not None and market_return is not None else None,
+                start_price_date=_date_str(first["date"]), end_price_date=_date_str(last["date"]),
+                baseline_status="prior_close" if not prior.empty else "first_available_close_in_period",
+            )
+        key = canonical_evidence_id("market", "month_" + window["period_start"])
+        catalog[key] = {
+            "evidence_id": key, "domain": "market", "origin_type": "deterministic_derived",
+            "source_ref": "market_full_dataset.monthly." + window["period_start"].replace("-", "_"),
+            "source_date": value["end_price_date"] or "",
+            **window, "metric": "monthly_market_observation",
+            "status": "available" if not rows.empty else "unavailable", "value": value, "unit": "ratio",
+        }
+    return catalog

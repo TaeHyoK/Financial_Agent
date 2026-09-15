@@ -31,7 +31,7 @@ from . import AGENT_DIR
 CONTEXT_VERSION = "peer_comparison_context_v1"
 OUTPUT_VERSION = "peer_comparison_analysis_v1"
 CACHE_VERSION = "2"
-DEFAULT_MODEL = "gpt-5.4"
+DEFAULT_MODEL = "gpt-5.4-mini"
 PROMPT_PATH = AGENT_DIR / "prompts" / "comparison_agent.md"
 DEFAULT_ENV_FILE = AGENT_DIR.parents[2] / "configs" / ".env"
 
@@ -201,6 +201,7 @@ def build_comparison_context(
                 domain="news",
                 observation={
                     "analysis_blocks": news_output.get("analysis_blocks"),
+                    "overall_assessment": news_output.get("overall_assessment"),
                     "cross_domain_assessments": news_output.get("secondary_context_assessment"),
                 },
             )

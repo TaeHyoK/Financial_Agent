@@ -18,6 +18,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from indicators import add_technical_indicators
+from Agent_Team.YFinance_Agent.annual_features import annual_features
+from shared.subdata import MARKET_METRICS, market_subdata
 from valuation import collect_historical_valuation, unavailable_direct_valuation
 
 
@@ -61,6 +63,7 @@ OUTPUT_COLUMNS = [
     "stock_relative_strength_60",
 ]
 
+OUTPUT_COLUMNS += list(MARKET_METRICS) + ["stock_position_52w", "stock_close_to_ma120", "stock_close_to_ma200", "stock_ma120_change_20d", "stock_ma200_change_20d"]
 
 @dataclass(frozen=True)
 class PipelineInput:
@@ -181,6 +184,7 @@ def run_pipeline(
 
     write_dataframe_outputs(full, csv_path=full_csv, json_path=full_json)
     write_dataframe_outputs(summary.frame, csv_path=summary_csv, json_path=summary_json)
+    _write_json_payload(output_dir / "market_subdata.json", market_subdata(_json_records(summary.frame)))
     try:
         valuation = collect_historical_valuation(
             pipeline_input.ticker,
@@ -326,12 +330,12 @@ def build_full_dataset(
     for action_column in ("dividends", "stock_splits"):
         if action_column not in stock_input:
             stock_input[action_column] = 0.0
-    stock_input["analysis_close"] = stock_input["adj_close"]
+    stock_input["analysis_close"] = stock_input["close"]
     stock_features = add_technical_indicators(stock_input, close_col="analysis_close")
     kospi_input = frames["kospi"].reindex(calculation_index).ffill()
     if "adj_close" not in kospi_input:
         kospi_input["adj_close"] = kospi_input["close"]
-    kospi_input["analysis_close"] = kospi_input["adj_close"]
+    kospi_input["analysis_close"] = kospi_input["close"]
     kospi_features = add_technical_indicators(kospi_input, close_col="analysis_close")
     fx_features = add_technical_indicators(frames["fx_usdkrw"].reindex(calculation_index).ffill())
 
@@ -386,6 +390,14 @@ def build_full_dataset(
     kospi_strength = 1.0 + kospi_output["return_60d"]
     full["stock_relative_strength_60"] = stock_strength / kospi_strength.replace(0, pd.NA) - 1.0
 
+    stock_annual = annual_features(stock_input).loc[stock_output.index]
+    benchmark_annual = annual_features(kospi_input).loc[stock_output.index]
+    for months in (1, 3, 6, 12):
+        full[f"stock_return_{months}m"] = stock_annual[f"return_{months}m"]
+        full[f"kospi_return_{months}m"] = benchmark_annual[f"return_{months}m"]
+        full[f"stock_excess_return_{months}m"] = full[f"stock_return_{months}m"] - full[f"kospi_return_{months}m"]
+    for metric in ("volatility_1y", "max_drawdown_1y", "current_drawdown_1y", "volume_ratio_5_60", "position_52w", "close_to_ma120", "close_to_ma200", "ma120_change_20d", "ma200_change_20d"):
+        full[f"stock_{metric}"] = stock_annual[metric]
     result = full.reset_index(drop=True)[OUTPUT_COLUMNS]
     result.attrs["stock_adjusted_close_source"] = frames["stock"].attrs.get(
         "adjusted_close_source",
@@ -461,7 +473,7 @@ def write_manifest(
         "row_count": int(len(full)),
         "price_basis": {
             "valuation_and_display": "raw_close",
-            "returns_and_technical_indicators": "adjusted_close",
+            "returns_and_technical_indicators": "provider_split_adjusted_close_excluding_cash_dividends",
             "adjusted_close_source": full.attrs.get("stock_adjusted_close_source", "unknown"),
         },
         "corporate_actions": {

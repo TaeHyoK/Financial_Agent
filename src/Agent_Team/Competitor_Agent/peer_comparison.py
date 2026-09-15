@@ -205,6 +205,8 @@ def _build_company_metric_row(*, identity: RunIdentity, output_root: Path, peer_
             "balance_sheet_basis": balance.get("period_basis") or capital.get("period_basis") or liquidity.get("period_basis"),
         },
         "market_metrics": {
+            **{f"stock_return_{m}m_pct": _ratio_to_pct(market.get(f"stock_return_{m}m")) for m in (1, 3, 6, 12)},
+            **{f"stock_excess_return_{m}m_pct": _ratio_to_pct(market.get(f"stock_excess_return_{m}m")) for m in (1, 3, 6, 12)},
             "market_date": market.get("date"),
             "stock_return_5d_pct": _ratio_to_pct(market.get("stock_return_5d")),
             "stock_return_20d_pct": _ratio_to_pct(market.get("stock_return_20d")),
@@ -313,11 +315,15 @@ def _valuation_metrics(report: dict[str, Any]) -> dict[str, Any]:
     market_cap = calculated_value("market_cap")
     return {
         "calculated_as_of_date": calculated.get("as_of_date"),
+        "calculation_basis": calculated.get("calculation_basis"),
+        "statement_scope_basis": calculated.get("statement_scope"),
+        "limitations_basis": calculated.get("data_limits") or [],
         "market_cap_100m_krw": market_cap / 100_000_000 if market_cap is not None else None,
         "trailing_pe": calculated_value("trailing_pe"),
         "price_to_book": calculated_value("price_to_book"),
         "price_to_sales": calculated_value("price_to_sales"),
         "direct_valuation_date": direct_latest.get("valuation_date"),
+        "provider_values_basis": "reference_only_not_point_in_time_verified",
         "enterprise_value_100m_krw": (
             direct_value("enterprise_value") / 100_000_000
             if direct_value("enterprise_value") is not None

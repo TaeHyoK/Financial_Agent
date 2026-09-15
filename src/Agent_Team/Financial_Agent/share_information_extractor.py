@@ -87,11 +87,25 @@ def _parse_share_table(matrix: list[list[str]]) -> dict[str, Any] | None:
     if outstanding is None and issued is not None and treasury is not None:
         outstanding = issued - treasury
 
+    common_column = next((col for col in range(len(matrix[0]))
+                          if any("보통주" in _normalized_label(_cell(row, col)) for row in matrix[:2])), None)
+    common_values = {}
+    if common_column is not None:
+        common_priorities = {}
+        for row in matrix[2:]:
+            match = _field_for_label(_normalized_label(" ".join(row[:2])))
+            if match and match[1] > common_priorities.get(match[0], -1):
+                common_values[match[0]] = _parse_integer(_cell(row, common_column))
+                common_priorities[match[0]] = match[1]
+    common_issued = common_values.get("issued_shares")
+
     return {
         "unit": "shares",
         "issued_shares": issued,
         "treasury_shares": treasury,
         "shares_outstanding": outstanding,
+        "common_issued_shares": common_issued,
+        "share_class": "common_only" if common_issued is not None and common_issued == issued else "multiple_or_unknown",
         "disclosed_values": disclosed,
         "validation": {
             "issued_minus_treasury_equals_outstanding": (

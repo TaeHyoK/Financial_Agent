@@ -6,6 +6,7 @@ from typing import Any
 
 
 SUPPORTED_INVESTMENT_HORIZONS = (
+    "12개월",
     "6~12개월",
     "1개월",
     "3개월",
@@ -28,14 +29,14 @@ REPORT_SECTIONS: list[dict[str, Any]] = [
         "title": "Investment Call & Thesis",
         "display_title": "투자 판단 요약",
         "items": [
-            ("section_analysis", "현재 대응과 판단 근거", "text"),
+            ("section_analysis", "투자 의견과 핵심 논거", "text"),
         ],
     },
     {
         "key": "business_market_context",
         "id": "business-market-context",
         "title": "Business & Market Context",
-        "display_title": "실적 변화와 가격 평가",
+        "display_title": "최근 실적과 가격 평가",
         "items": [
             ("section_analysis", "손익·현금흐름과 시장 가격", "text"),
         ],
@@ -53,9 +54,9 @@ REPORT_SECTIONS: list[dict[str, Any]] = [
         "key": "catalysts_execution",
         "id": "catalysts-execution",
         "title": "Catalysts & Execution",
-        "display_title": "주요 사건과 판단 영향",
+        "display_title": "향후 12개월 전망",
         "items": [
-            ("section_analysis", "사업 사건과 실행 가능성", "text"),
+            ("section_analysis", "성장 동인과 전망의 전제", "text"),
         ],
     },
     {
@@ -105,12 +106,15 @@ TABLE_ITEM_KEYS = {
     "risk_monitoring_table",
 }
 
-TEXT_PARAGRAPH_LIMITS = {
-    "investment_call_thesis": 2,
-    "business_market_context": 3,
-    "catalysts_execution": 2,
-    "data_limits": 2,
-}
+
+def has_data_limit_content(report_payload: dict[str, Any]) -> bool:
+    """Whether an optional data-limits section has any authored reader text."""
+    sections = report_payload.get("sections") or {}
+    item = (sections.get("data_limits") or {}).get("section_analysis") or {}
+    if isinstance(item, str):
+        return bool(item.strip())
+    return any(str(value or "").strip()
+               for key in ("paragraphs", "bullets") for value in item.get(key) or [])
 
 
 def investment_horizon_heading(horizon: Any) -> str:

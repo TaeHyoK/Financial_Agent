@@ -42,7 +42,7 @@ REQUIRED_STRATEGY_INPUT_FILES = (
     "strategy_compact_packet_v2.json",
     "strategy_packet_provenance_v2.json",
 )
-WRITER_NORMALIZATION_VERSION = "11"
+WRITER_NORMALIZATION_VERSION = "12"
 WRITER_RUNTIME_VERSION = "4"
 
 
@@ -630,8 +630,6 @@ def _prepare_chart_manifest_assets(
                 "caption": f"{chart_observation} {investment_interpretation}",
             }
         )
-    if len(assets) > 2:
-        raise RuntimeError("Final report may contain at most two charts.")
     return assets
 
 

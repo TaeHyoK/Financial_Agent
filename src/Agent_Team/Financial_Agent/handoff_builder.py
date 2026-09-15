@@ -52,6 +52,18 @@ _SAFE_ALIAS_KEYS = {
     "부채총계": "total_liabilities",
     "자본총계": "total_equity",
     "자본합계": "total_equity",
+    "지배기업의소유주에게귀속되는자본": "parent_equity",
+    "지배기업소유주지분": "parent_equity",
+    "지배기업의소유주지분": "parent_equity",
+    "지배기업의소유지분": "parent_equity",
+    "지배기업의소유주순이익": "parent_net_income",
+    "반기연결순이익": "net_income",
+    "분기연결순이익": "net_income",
+    "당기연결순이익": "net_income",
+    "지배기업소유주에게귀속되는당기순이익손실": "parent_net_income",
+    "지배기업의소유주에게귀속되는당기순이익손실": "parent_net_income",
+    "지배기업소유주에게귀속되는당기순이익": "parent_net_income",
+    "지배기업의소유주에게귀속되는당기순이익": "parent_net_income",
     "현금및현금성자산": "cash_and_cash_equivalents",
     "기초현금및현금성자산": "beginning_cash_and_cash_equivalents",
     "기말현금및현금성자산": "ending_cash_and_cash_equivalents",
@@ -158,6 +170,26 @@ def build_trend_canonical(
         selected_date=selected_date,
         theoretical_target=theoretical_target,
     )
+    scopes = {
+        role: next((table.get("statement_scope", "unknown")
+                    for key in STATEMENT_NAMES
+                    for table in master.get(role, {}).get(key, {}).get("tables", [])), "unknown")
+        for role in resolved
+    }
+    context = canonical["collection_context"]
+    context["statement_scope"] = scopes.get("primary", "unknown")
+    context["statement_scopes_by_report"] = scopes
+    for report in context["reports_used"]:
+        report["statement_scope"] = scopes.get(report["source_role"], "unknown")
+    context["latest_available_filing"]["statement_scope"] = scopes.get("primary", "unknown")
+    context["annual_history_coverage"] = {
+        key: {"requested_years": annual_history_limit,
+              "observed_years": sorted({p.get("fiscal_year") for table in canonical[key]["tables"]
+                                        for p in table.get("periods", {}).values()
+                                        if p.get("period_type") == "ANNUAL" and p.get("fiscal_year")}),
+              "source": "disclosed_comparative_columns_and_available_prior_filings"}
+        for key in ("4-1", "4-2", "4-4")
+    }
     return canonical
 
 
@@ -205,10 +237,13 @@ def _build_trend_period_statement(
             if source["items"]:
                 period_sources.append(source)
 
-        annual_role = "annual_history" if "annual_history" in resolved else "primary"
-        annual_report = resolved.get(annual_role)
-        annual_table = table_group.get(annual_role)
-        if annual_report and annual_table is not None and annual_history_limit:
+        annual_roles = _annual_roles(resolved)
+        latest_year = resolved[annual_roles[0]][0].fiscal_year if annual_roles else 0
+        for annual_role in annual_roles:
+            annual_report = resolved[annual_role]
+            annual_table = table_group.get(annual_role)
+            if annual_table is None or not annual_history_limit:
+                continue
             annual_target, annual_filing = annual_report
             excluded_years = {
                 int(source["metadata"]["fiscal_year"])
@@ -216,15 +251,23 @@ def _build_trend_period_statement(
                 if source.get("metadata", {}).get("period_type") == "ANNUAL"
                 and source.get("metadata", {}).get("fiscal_year") is not None
             }
-            period_sources.extend(
-                _annual_history_sources(
+            extra = _annual_history_sources(
                     annual_table,
                     annual_target,
                     annual_filing,
                     excluded_years=excluded_years,
                     limit=annual_history_limit,
+                    statement_key=statement_key,
                 )
-            )
+            for source in extra:
+                year = source["metadata"]["fiscal_year"]
+                if year in excluded_years or not latest_year - annual_history_limit < year <= latest_year:
+                    continue
+                offset = sum(s["period_key"].startswith("previous_") for s in period_sources)
+                source["period_key"] = _historical_period_key(offset)
+                source["metadata"]["source_role"] = annual_role
+                period_sources.append(source)
+                excluded_years.add(year)
 
         periods = {source["period_key"]: source["metadata"] for source in period_sources}
         items_by_key, item_order = _canonical_multi_period_items(period_sources)
@@ -273,15 +316,20 @@ def _build_trend_equity_statement(
                 filing,
                 source_role=role,
             )
+            metadata["statement_scope"] = table.get("statement_scope", "unknown")
             period_blocks[period_key] = _equity_block(
                 table,
                 basis=_basis_for_single_statement("4-3", target),
                 period_meta=metadata,
             )
 
-        annual_role = "annual_history" if "annual_history" in resolved else "primary"
-        annual_report = resolved.get(annual_role)
-        if annual_report and annual_history_limit:
+        annual_roles = _annual_roles(resolved)
+        latest_year = resolved[annual_roles[0]][0].fiscal_year if annual_roles else 0
+        annual_offset = 0
+        for annual_role in annual_roles:
+            annual_report = resolved[annual_role]
+            if not annual_history_limit:
+                continue
             annual_target, annual_filing = annual_report
             annual_section = _section(master, annual_role, "4-3")
             excluded_years = {
@@ -289,22 +337,23 @@ def _build_trend_equity_statement(
                 for block in period_blocks.values()
                 if block.get("period_type") == "ANNUAL"
             }
-            annual_offset = 0
             for fiscal_year in range(annual_target.fiscal_year, annual_target.fiscal_year - 4, -1):
-                if fiscal_year in excluded_years or annual_offset >= annual_history_limit:
+                if fiscal_year in excluded_years or not latest_year - annual_history_limit < fiscal_year <= latest_year:
                     continue
                 isolated = isolate_previous_fiscal_year(annual_section, "4-3", fiscal_year)
                 annual_table = _table_at_or_none(isolated.get("tables", []), table_index - 1)
                 metadata = _filing_period_metadata(
                     _annual_period_metadata(fiscal_year, basis="FULL_YEAR"),
                     annual_filing,
-                    source_role="annual_history",
+                    source_role=annual_role,
                 )
+                metadata["statement_scope"] = (annual_table or {}).get("statement_scope", "unknown")
                 block = _equity_block(annual_table, basis="FULL_YEAR", period_meta=metadata)
                 if not block["row_order"]:
                     continue
                 period_blocks[_historical_period_key(annual_offset)] = block
                 annual_offset += 1
+                excluded_years.add(fiscal_year)
 
         _merge_all_period_column_aliases(period_blocks)
         tables.append(
@@ -425,9 +474,10 @@ def _target_period_source(
     statement_key: str,
     source_role: str,
 ) -> dict[str, Any]:
-    period = _single_period_table(table, target_year=target.fiscal_year)
+    period = _single_period_table(table, target_year=target.fiscal_year, statement_key=statement_key)
     basis = _basis_for_single_statement(statement_key, target)
     metadata = _metadata_from_period_items(_target_period_metadata(target, basis), period)
+    metadata["statement_scope"] = (table or {}).get("statement_scope", "unknown")
     return {
         "period_key": period_key,
         "metadata": _filing_period_metadata(metadata, filing, source_role=source_role),
@@ -442,6 +492,7 @@ def _annual_history_sources(
     *,
     excluded_years: set[int],
     limit: int,
+    statement_key: str = "",
 ) -> list[dict[str, Any]]:
     if table is None or limit <= 0:
         return []
@@ -460,14 +511,16 @@ def _annual_history_sources(
             continue
         items: list[dict[str, Any]] = []
         used_keys: set[str] = set()
+        attribution_context = ""
         for row in matrix[header_count:]:
             display_name = _display_label(row[0] if row else "")
+            base_key, attribution_context = _statement_item_key(display_name, statement_key, attribution_context)
             if not display_name:
                 continue
             value = _cell(row, col)
             if value == "":
                 continue
-            item_key = _dedupe_key(_stable_key(display_name, namespace="item"), used_keys)
+            item_key = _dedupe_key(base_key, used_keys)
             items.append(
                 {
                     "key": item_key,
@@ -483,6 +536,7 @@ def _annual_history_sources(
             _annual_period_metadata(fiscal_year, basis="FULL_YEAR"),
             _period_label(descriptors[col]),
         )
+        metadata["statement_scope"] = table.get("statement_scope", "unknown")
         sources.append(
             {
                 "period_key": period_key,
@@ -495,8 +549,14 @@ def _annual_history_sources(
     return sources
 
 
+def _annual_roles(resolved: dict[str, tuple[TargetReport, Filing]]) -> list[str]:
+    return sorted((role for role, (target, _) in resolved.items() if not target.is_periodic),
+                  key=lambda role: resolved[role][0].fiscal_year, reverse=True)
+
+
 def _aligned_table_groups(sections: dict[str, SectionJson]) -> list[dict[str, dict[str, Any] | None]]:
     role_order = ["primary", "same_period_previous", "annual_history"]
+    role_order.extend(role for role in sections if role not in role_order)
     groups: list[dict[str, dict[str, Any] | None]] = []
     primary_tables = sections.get("primary", {}).get("tables", [])
     groups.extend({"primary": table} for table in primary_tables)
@@ -761,7 +821,7 @@ def _build_equity_master_statement(
     return {"statement_name": STATEMENT_NAMES["4-3"], "tables": tables}
 
 
-def _single_period_table(table: dict[str, Any] | None, target_year: int | None) -> PeriodItems:
+def _single_period_table(table: dict[str, Any] | None, target_year: int | None, *, statement_key: str = "") -> PeriodItems:
     if table is None:
         return PeriodItems(label="", fiscal_year=None, period_type="", period_end="", items=[])
 
@@ -777,14 +837,15 @@ def _single_period_table(table: dict[str, Any] | None, target_year: int | None) 
 
     items: list[dict[str, Any]] = []
     used_keys: set[str] = set()
+    attribution_context = ""
     for row in matrix[header_count:]:
         display_name = _display_label(row[0] if row else "")
+        base_key, attribution_context = _statement_item_key(display_name, statement_key, attribution_context)
         if not display_name:
             continue
         value = _cell(row, data_col)
         if value == "":
             continue
-        base_key = _stable_key(display_name, namespace="item")
         item_key = _dedupe_key(base_key, used_keys)
         items.append(
             {
@@ -1367,6 +1428,27 @@ def _period_block_label(dates: list[date]) -> str:
     if start == end:
         return _format_date(start)
     return f"{_format_date(start)}~{_format_date(end)}"
+
+
+def _statement_item_key(label: str, statement_key: str, context: str) -> tuple[str, str]:
+    """Disambiguate identical owner labels in profit and comprehensive-income rows."""
+    key = _stable_key(label, namespace="item")
+    if statement_key != "4-2":
+        return key, context
+    compact = _canonical_match_label(label)
+    parent = compact.startswith("지배기업")
+    if "포괄" in compact:
+        context = "comprehensive"
+    elif ("순이익" in compact or "순손실" in compact) and not any(x in compact for x in ("주당", "차감전", "세전")):
+        context = "net_income"
+    if parent and not "주당" in compact:
+        if "포괄" in compact or context == "comprehensive":
+            key = "parent_comprehensive_income"
+        elif "순이익" in compact or "순손실" in compact or context == "net_income":
+            key = "parent_net_income"
+        else:
+            key = "unclassified_parent_attribution"
+    return key, context
 
 
 def _stable_key(label: str, *, namespace: Literal["item", "row", "column"]) -> str:

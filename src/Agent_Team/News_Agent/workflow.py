@@ -352,6 +352,8 @@ class NewsWorkflow:
                     "metadata_path": str(report.metadata_path),
                 },
                 "news_collection": {
+                    "candidate_preparation_path": news_result.get("candidate_preparation_path"),
+                    "raw_news_attempts_path": news_result.get("raw_news_attempts_path"),
                     "collected_unique_count": news_result.get("collected_unique_count"),
                     "raw_news_count_before_total_cap": news_result.get(
                         "raw_news_count_before_total_cap"
@@ -362,10 +364,8 @@ class NewsWorkflow:
                     ),
                     "news_event_count": news_result.get("news_event_count"),
                     "event_top_k": news_result.get("event_top_k"),
-                    "weekly_embedding_candidates": news_result.get(
-                        "weekly_embedding_candidates"
-                    ),
-                    "weekly_rerank_top_k": news_result.get("weekly_rerank_top_k"),
+                    "weekly_top_k": news_result.get("weekly_top_k"),
+                    "reranking_enabled": news_result.get("reranking_enabled"),
                     "weekly_selected_event_count": news_result.get(
                         "weekly_selected_event_count"
                     ),

@@ -25,6 +25,7 @@ class RunPaths:
     run_key: str
     company_name: str
     selected_date: str
+    news_granularity: str = "month"
 
     @property
     def company_dir(self) -> Path:
@@ -48,7 +49,7 @@ class RunPaths:
 
     @property
     def news_context_export_week_dir(self) -> Path:
-        return self.news_context_export_dir / "week"
+        return self.news_context_export_dir / self.news_granularity
 
     @property
     def news_report_context(self) -> Path:
@@ -145,6 +146,10 @@ class RunPaths:
         return self.news_context_export_week_dir / "llm_period_summaries.json"
 
     @property
+    def news_articles(self) -> Path:
+        return self.news_context_export_week_dir / "selected_articles.json"
+
+    @property
     def news_company_top20(self) -> Path:
         return self.news_context_export_week_dir / "recent_raw_input.json"
 
@@ -221,7 +226,7 @@ class RunPaths:
             path.mkdir(parents=True, exist_ok=True)
 
 
-def resolve_run_paths(run_config: RunConfig, output_root: str | Path | None = None) -> RunPaths:
+def resolve_run_paths(run_config: RunConfig, output_root: str | Path | None = None, *, news_granularity: str = "month") -> RunPaths:
     root = Path(output_root).expanduser().resolve() if output_root else OUTPUT_ROOT
     return RunPaths(
         project_root=PROJECT_ROOT,
@@ -229,4 +234,5 @@ def resolve_run_paths(run_config: RunConfig, output_root: str | Path | None = No
         run_key=run_config.run_key,
         company_name=run_config.company_name,
         selected_date=run_config.selected_date,
+        news_granularity=news_granularity,
     )

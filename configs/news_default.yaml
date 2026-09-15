@@ -3,18 +3,20 @@ inputs_root: "Output_total/News/inputs"
 
 news:
   collector: "google_news_rss"
-  collection_days: 90
-  # Search in seven-day ranges, then merge semantic duplicates within each ISO
-  # calendar week.
+  collection_days: 365
+  # Collect all unique-URL snippets first, apply the common company/group filter,
+  # then merge semantic duplicates within each ISO calendar week.
   collection_chunk_days: 7
   query_language: "ko"
   max_results: 200
-  # After seven-day semantic duplicate merging, keep 15 embedding candidates per
-  # ISO week, rerank them, retain 5 per week for summarization, and expose the
-  # global top 20 events as raw News-Agent evidence.
-  weekly_embedding_candidates: 15
-  weekly_rerank_top_k: 5
-  event_top_k: 20
+  # After seven-day semantic duplicate merging, retain the top 3 weighted DART
+  # embedding matches per ISO week. All selected articles go to each domain
+  # agent, grouped by aligned month, without intermediate LLM summaries.
+  weekly_top_k: 3
+  raw_news_policy: monthly_selected_articles_v1
+  monthly_top_k: null
+  # Legacy global mode is used only by an explicit --event-top-k override.
+  event_top_k: null
   # Deprecated compatibility key; event_top_k takes precedence as the final
   # global News-Agent event budget.
   total_max_results: null
@@ -28,6 +30,9 @@ dart:
   document_max_retries: 2
   document_retry_delay_seconds: 0.5
   parser_py_path: null
+  # Legacy extraction/chunking below is used when section_weighting is disabled.
+  # Weighted mode reads six bounded XML sections, including sales and income,
+  # and uses section_weighting.chunk_max_chars without keyword/top-k filtering.
   sections_to_extract:
     - "사업의 개요"
     - "주요 제품 및 서비스"
@@ -51,7 +56,6 @@ dart:
 
 models:
   embedding_model_name: "BAAI/bge-m3"
-  reranker_model_name: "BAAI/bge-reranker-v2-m3"
   device: "cuda"
   batch_size: 32
 
@@ -63,14 +67,22 @@ clustering:
   min_samples: 1
 
 scoring:
-  alpha: 0.75
-  beta: 0.15
-  gamma: 0.10
-  delta: 0.05
+  # Fixed section weights for weekly embedding-based selection (no reranker).
+  # These are design parameters, not empirically optimal weights.
+  section_weighting:
+    enabled: true
+    chunk_max_chars: 400
+    weights:
+      sales: 0.30
+      earnings: 0.20
+      products: 0.15
+      contracts: 0.15
+      materials_facilities: 0.10
+      overview: 0.10
+  # Auxiliary diagnostics; impact_topk controls the matched-chunk preview.
   tau_hours: 48
   mention_transform: "log1p"
   impact_topk: 3
-  rerank_all_chunks: true
 
 outputs:
   format: ["parquet", "jsonl"]

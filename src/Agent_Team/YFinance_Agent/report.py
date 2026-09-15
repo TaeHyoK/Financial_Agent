@@ -56,7 +56,7 @@ def main() -> None:
     parser.add_argument(
         "--model",
         default=None,
-        help="OpenAI model for LLM report generation. Defaults to OPENAI_MODEL or gpt-5.4.",
+        help="OpenAI model for LLM report generation. Defaults to OPENAI_MODEL or gpt-5.4-mini.",
     )
     parser.add_argument(
         "--env-file",

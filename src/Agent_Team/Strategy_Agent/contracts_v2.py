@@ -20,6 +20,8 @@ from shared.evidence_cards import (
 )
 from shared.llm_clients import compact_json, estimate_text_tokens, measure_top_level_fields
 from orchestration.ablation import config_from_mapping
+from .context_links import build_context_links
+from shared.subdata_guidance import CONTEXT_USAGE
 
 
 PACKET_VERSION = "strategy_compact_packet_v2"
@@ -54,6 +56,7 @@ CANONICAL_SECTIONS = frozenset(
     }
 )
 
+# Historical sizing targets, now used only for telemetry advisories.
 CARD_BUDGETS = {
     "financial": 7,
     "news": 8,
@@ -84,7 +87,7 @@ def build_compact_strategy_packet_v2(
     *,
     model: str = "",
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Build the bounded LLM packet, provenance, telemetry, and input summary."""
+    """Build the LLM packet without count-based loss of cited agent evidence."""
 
     reports = _dict(input_bundle.get("target_reports"))
     ablation = config_from_mapping(input_bundle.get("ablation"))
@@ -120,6 +123,8 @@ def build_compact_strategy_packet_v2(
     selected_news, omitted_news = _news_cards(news_report, news_validation, news_catalog)
     for card, raw_ids, source_paths in selected_news:
         add_card(card, raw_ids=raw_ids, source_paths=source_paths)
+        if card["primary_observation"].get("anchor_source"):
+            provenance_rows[card["card_key"]]["anchor_evidence_id"] = raw_ids[0]
 
     yfinance_report = _dict(reports.get("yfinance"))
     for card, raw_ids, source_paths in _market_cards(yfinance_report):
@@ -139,6 +144,10 @@ def build_compact_strategy_packet_v2(
         card, raw_ids, source_paths = peer_analysis_card
         add_card(card, raw_ids=raw_ids, source_paths=source_paths)
 
+    context_links = build_context_links(
+        input_bundle=input_bundle, cards=cards, provenance=provenance_rows,
+        add_card=add_card, card_factory=_card, included_domains=included_domains,
+    )
     _attach_secondary_context(
         cards,
         provenance_rows,
@@ -166,16 +175,14 @@ def build_compact_strategy_packet_v2(
         "evidence_scope": ablation.as_dict(),
         "section_inputs": section_inputs,
         "cards": cards,
+        "context_links": context_links,
         "reader_limitations": reader_limitations,
         "limitation_requirements": limitation_requirements,
         "coverage_summary": {
             "card_counts": _card_counts(cards),
-            "news_total_event_clusters": len(selected_news) + len(omitted_news),
-            "news_selected_event_clusters": len(selected_news),
-            "news_omitted_event_clusters": len(omitted_news),
-            "news_omitted_low_materiality_clusters": sum(
-                item.get("reason") == "lower_priority" for item in omitted_news
-            ),
+            "news_total_claims": len(selected_news) + len(omitted_news),
+            "news_preserved_claims": len(selected_news),
+            "news_omitted_claims": len(omitted_news),
         },
     }
     provenance = {
@@ -203,7 +210,7 @@ def validate_compact_strategy_packet_v2(
     packet: dict[str, Any],
     provenance: dict[str, Any],
 ) -> None:
-    """Validate packet construction, card routing, budgets, and provenance."""
+    """Validate packet construction, card routing, and provenance."""
 
     if packet.get("packet_version") != PACKET_VERSION:
         raise ValueError(f"Unsupported Strategy packet version: {packet.get('packet_version')}")
@@ -215,15 +222,6 @@ def validate_compact_strategy_packet_v2(
             raise ValueError(f"Card map key mismatch: {card_key}")
         validate_self_contained_card(card, allowed_section_names=CANONICAL_SECTIONS)
         _validate_card_semantics(card)
-    counts = _card_counts(cards)
-    for domain, limit in CARD_BUDGETS.items():
-        if counts.get(domain, 0) > limit:
-            if domain != "news" or counts[domain] > NEWS_CRITICAL_OVERFLOW_LIMIT:
-                raise PacketOverflowError(
-                    f"card budget exceeded for {domain}: {counts[domain]} > {limit}"
-                )
-    if len(packet.get("reader_limitations") or []) > READER_LIMITATION_LIMIT:
-        raise PacketOverflowError("reader limitation budget exceeded")
     limitation_rows = _list(packet.get("limitation_requirements"))
     categories: set[str] = set()
     for index, row in enumerate(limitation_rows):
@@ -1239,6 +1237,9 @@ def _financial_cards(report: dict[str, Any]) -> list[tuple[dict[str, Any], list[
                 "operating_profit",
                 "net_income",
                 "operating_cash_flow",
+                "operating_margin",
+                "total_equity",
+                "debt_ratio",
             ),
         }
         for item in _list(trends.get("annual_history"))
@@ -1377,7 +1378,7 @@ def _financial_cards(report: dict[str, Any]) -> list[tuple[dict[str, Any], list[
                 ["financial.revenue_breakdown"],
             )
         )
-    return cards[: CARD_BUDGETS["financial"]]
+    return cards
 
 
 def _market_cards(report: dict[str, Any]) -> list[tuple[dict[str, Any], list[str], list[str]]]:
@@ -1419,7 +1420,7 @@ def _market_cards(report: dict[str, Any]) -> list[tuple[dict[str, Any], list[str
         (
             "market.absolute_trend",
             "절대 가격 추세",
-            ("stock_close", "stock_return_5d", "stock_return_20d", "stock_return_60d", "stock_close_to_ma20", "stock_close_to_ma60"),
+            ("stock_close", "stock_return_1m", "stock_return_3m", "stock_return_6m", "stock_return_12m", "stock_close_to_ma120", "stock_close_to_ma200", "stock_ma120_change_20d", "stock_ma200_change_20d", "stock_return_20d", "stock_return_60d"),
             ("investment_thesis", "market_price_view", "decision_balance"),
             "market_price_performance",
             "time_series",
@@ -1429,7 +1430,7 @@ def _market_cards(report: dict[str, Any]) -> list[tuple[dict[str, Any], list[str
         (
             "market.relative_performance",
             "시장 상대성과",
-            ("stock_excess_return_5d", "stock_excess_return_20d", "stock_relative_strength_60", "stock_period_excess_return"),
+            ("stock_excess_return_1m", "stock_excess_return_3m", "stock_excess_return_6m", "stock_excess_return_12m", "kospi_return_1m", "kospi_return_3m", "kospi_return_6m", "kospi_return_12m", "stock_excess_return_20d", "stock_relative_strength_60"),
             ("investment_thesis", "market_price_view", "risk_view", "decision_balance"),
             "market_price_performance",
             "time_series",
@@ -1438,8 +1439,8 @@ def _market_cards(report: dict[str, Any]) -> list[tuple[dict[str, Any], list[str
         ),
         (
             "market.momentum_volume",
-            "모멘텀과 거래 품질",
-            ("stock_rsi_14", "stock_macd_hist", "stock_macd_hist_change_1d", "stock_volatility_20", "stock_volume_ratio_20"),
+            "연간 변동 위험과 거래량",
+            ("stock_volatility_1y", "stock_max_drawdown_1y", "stock_current_drawdown_1y", "stock_volume_ratio_5_60", "stock_position_52w", "stock_rsi_14", "stock_volatility_20", "stock_volume_ratio_20"),
             ("market_price_view", "risk_view", "decision_balance"),
             "market_technical",
             "point_in_time",
@@ -1485,7 +1486,9 @@ def _valuation_cards(report: dict[str, Any]) -> list[tuple[dict[str, Any], list[
     cards: list[tuple[dict[str, Any], list[str], list[str]]] = []
     calculated = _dict(snapshot.get("calculated_from_close_and_dart"))
     calculated_metrics = _dict(calculated.get("metrics"))
-    if calculated.get("status") == "available" and calculated_metrics:
+    if calculated.get("status") in {"available", "partial"} and calculated_metrics:
+        calculated_metrics = {key: row for key, row in calculated_metrics.items()
+                              if _dict(row).get("status") == "ok" and _finite(_dict(row).get("value"))}
         blockers = []
         for key, metric in calculated_metrics.items():
             row = _dict(metric)
@@ -1499,13 +1502,15 @@ def _valuation_cards(report: dict[str, Any]) -> list[tuple[dict[str, Any], list[
                     "valuation.selected_date",
                     domain="valuation",
                     card_type="selected_date_calculated",
-                    label="선택일 계산 밸류에이션",
+                    label="공시 주식 수 기준 가치평가 추정",
                     allowed_sections=("investment_thesis", "valuation_view", "risk_view", "decision_balance"),
                     evidence_family="valuation",
                     observation_basis="point_in_time",
                     observation={
                         "as_of_date": calculated.get("as_of_date"),
-                        "method": "selected_date_close_and_point_in_time_dart_inputs",
+                        "method": calculated.get("calculation_basis", "disclosed_share_count_estimate"),
+                        "statement_scope": calculated.get("statement_scope"),
+                        "data_limits": calculated.get("data_limits", []),
                         "metrics": copy.deepcopy(calculated_metrics),
                         "inputs": _compact_valuation_inputs(_dict(calculated.get("inputs"))),
                     },
@@ -1544,13 +1549,13 @@ def _valuation_cards(report: dict[str, Any]) -> list[tuple[dict[str, Any], list[
                         "date_policy": direct.get("date_policy"),
                     },
                     eligibility="reference_only",
-                    reader_limitations=["제공자 표시값은 선택일 계산값과 날짜가 달라 primary valuation으로 사용하지 않는다."],
+                    reader_limitations=["제공업체의 과거 배수는 기준일 당시 공개된 값임이 보장되지 않으므로 주된 가치평가 근거로 사용하지 않는다."],
                 ),
                 [],
                 ["yfinance.valuation_snapshot.direct_yfinance.latest_period"],
             )
         )
-    return cards[: CARD_BUDGETS["valuation"]]
+    return cards
 
 
 def build_peer_pair_cards(
@@ -1605,9 +1610,11 @@ def build_peer_pair_cards(
             "시장 성과 비교",
             "market_relative",
             (
-                ("market_metrics.stock_return_20d_pct", "%", "higher", "peer_relative"),
+                ("market_metrics.stock_return_3m_pct", "%", "higher", "peer_relative"),
+                ("market_metrics.stock_return_6m_pct", "%", "higher", "peer_relative"),
+                ("market_metrics.stock_return_12m_pct", "%", "higher", "peer_relative"),
                 ("market_metrics.stock_return_60d_pct", "%", "higher", "peer_relative"),
-                ("market_metrics.stock_excess_return_20d_pct", "%", "higher", "market_relative"),
+                ("market_metrics.stock_excess_return_12m_pct", "%", "higher", "market_relative"),
                 ("market_metrics.stock_relative_strength_60_pct", "%", "higher", "market_relative"),
             ),
             "market_date",
@@ -1718,7 +1725,7 @@ def build_peer_pair_cards(
                 [f"peer_comparison.metrics.{metric_path}" for metric_path, *_ in metric_specs],
             )
         )
-    return results[: CARD_BUDGETS["peer"]]
+    return results
 
 
 def build_peer_analysis_card(
@@ -1829,7 +1836,13 @@ def _news_cards(
             evidence_use = str(validation_row.get("evidence_use") or "context_only")
             if evidence_use == "exclude":
                 continue
-            raw_ids = _dedupe_strings(item.get("evidence_ids") or validation_row.get("evidence_ids") or [])
+            anchor_id = str(item.get("anchor_evidence_id") or "")
+            if anchor_id and anchor_id not in catalog:
+                raise ValueError(f"Unknown news anchor evidence ID: {anchor_id}")
+            raw_ids = _dedupe_strings([
+                *([anchor_id] if anchor_id else []),
+                *(item.get("evidence_ids") or validation_row.get("evidence_ids") or []),
+            ])
             raw_ids = [value for value in raw_ids if value in catalog]
             if not raw_ids:
                 continue
@@ -1838,6 +1851,7 @@ def _news_cards(
                     "source_key": source_key,
                     "section": section,
                     "claim": str(item.get("claim") or "").strip(),
+                    "anchor_evidence_id": anchor_id,
                     "evidence_ids": raw_ids,
                     "evidence_use": evidence_use,
                     "event_status": _metadata(item, validation_row, "event_status", "insufficient"),
@@ -1847,8 +1861,9 @@ def _news_cards(
                     "limitations": _dedupe_strings(validation_row.get("limitations") or []),
                 }
             )
-    components = _connected_news_components(candidates)
-    cards = [_news_component_card(component, catalog) for component in components]
+    # Preserve each analytical claim, including different interpretations of
+    # the same article. A shared source does not make two claims one event.
+    cards = [_news_claim_card(candidate, catalog) for candidate in candidates]
     seen_keys: dict[str, int] = {}
     for card, _raw_ids, _source_paths in cards:
         base_key = str(card["card_key"])
@@ -1856,72 +1871,53 @@ def _news_cards(
         if seen_keys[base_key] > 1:
             card["card_key"] = f"{base_key}.{seen_keys[base_key]}"
     cards.sort(key=lambda value: _news_card_priority(value[0]), reverse=True)
-    critical = [item for item in cards if _is_critical_news_card(item[0])]
-    if len(critical) > NEWS_CRITICAL_OVERFLOW_LIMIT:
-        raise PacketOverflowError(
-            f"news critical event cards exceed {NEWS_CRITICAL_OVERFLOW_LIMIT}: {len(critical)}"
-        )
-    if len(critical) > CARD_BUDGETS["news"]:
-        limit = NEWS_CRITICAL_OVERFLOW_LIMIT
-    else:
-        limit = max(NEWS_DEFAULT_CARD_LIMIT, len(critical))
-    selected = list(cards[:limit])
-    _preserve_news_counterevidence(selected, cards, limit)
-    selected_keys = {item[0]["card_key"] for item in selected}
-    omitted = [
-        {
-            "card_key": card["card_key"],
-            "event_date": _dict(card.get("primary_observation")).get("event_date"),
-            "source_roles": _dict(card.get("primary_observation")).get("source_roles"),
-            "reason": "lower_priority",
-        }
-        for card, _ids, _paths in cards
-        if card["card_key"] not in selected_keys
-    ]
-    return selected, omitted
+    # These are citations already selected by the News Agent, not the raw
+    # collection pool. Do not perform a second count-based news selection here.
+    return cards, []
 
 
-def _connected_news_components(candidates: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
-    components: list[list[dict[str, Any]]] = []
-    remaining = list(candidates)
-    while remaining:
-        component = [remaining.pop(0)]
-        evidence_ids = set(component[0]["evidence_ids"])
-        changed = True
-        while changed:
-            changed = False
-            for candidate in list(remaining):
-                if evidence_ids.intersection(candidate["evidence_ids"]):
-                    remaining.remove(candidate)
-                    component.append(candidate)
-                    evidence_ids.update(candidate["evidence_ids"])
-                    changed = True
-        components.append(component)
-    return components
-
-
-def _news_component_card(
-    component: list[dict[str, Any]],
+def _news_claim_card(
+    main: dict[str, Any],
     catalog: dict[str, Any],
 ) -> tuple[dict[str, Any], list[str], list[str]]:
-    raw_ids = _dedupe_strings(
-        evidence_id
-        for candidate in component
-        for evidence_id in candidate["evidence_ids"]
-    )
+    raw_ids = _dedupe_strings(main["evidence_ids"])
     evidence_rows = [_dict(catalog.get(evidence_id)) for evidence_id in raw_ids]
     evidence_rows = [item for item in evidence_rows if item]
-    main = max(component, key=_news_candidate_priority)
+    period_rows = [row for row in evidence_rows if row.get("source_type") == "monthly_news_context"
+                   or row.get("metric") == "monthly_news_context"]
+    event_rows = [row for row in evidence_rows if row not in period_rows]
+    anchor = _dict(catalog.get(main.get("anchor_evidence_id")))
+    summary_only = anchor in period_rows if anchor else bool(period_rows) and not event_rows
+    source_periods = sorted({str(row.get("period") or "") for row in period_rows if row.get("period")})
     dates = sorted(
         str(item.get("source_date") or item.get("time") or "")
-        for item in evidence_rows
+        for item in ([anchor] if anchor and not summary_only else event_rows if not summary_only else [])
         if str(item.get("source_date") or item.get("time") or "")
     )
-    event_date = dates[-1] if dates else "unknown_date"
+    event_date = dates[-1] if dates else None
     excerpts = _dedupe_strings(
         str(item.get("snippet") or item.get("text") or item.get("title") or "").strip()
         for item in evidence_rows
-    )[:2]
+    )
+    # Keep each cited source's date attached to its own text. The anchor date
+    # describes only the representative article, not all events in the claim.
+    cited_sources = []
+    for row in evidence_rows:
+        if row in period_rows:
+            cited_sources.append({
+                "source_type": "monthly_news_context",
+                "period": row.get("period"),
+                "title": str(row.get("title") or ""),
+                "summary": str(row.get("snippet") or row.get("text") or row.get("title") or "").strip(),
+            })
+        else:
+            cited_sources.append({
+                "source_type": "article",
+                "source_date": row.get("source_date") or row.get("time") or None,
+                "title": str(row.get("title") or ""),
+                "snippet": str(row.get("snippet") or row.get("text") or row.get("title") or "").strip(),
+                **({"event_timeline": copy.deepcopy(row["event_timeline"])} if row.get("event_timeline") else {}),
+            })
     coverage_rows = [_dict(item.get("coverage")) for item in evidence_rows]
     publisher_names = {
         str(name)
@@ -1942,9 +1938,6 @@ def _news_component_card(
         "primary_source_present": any(bool(item.get("primary_source_present")) for item in coverage_rows),
         "coverage_quality": "verified" if coverage_rows and all(item.get("coverage_quality") == "verified" for item in coverage_rows) else "partial",
     }
-    # One event can appear in both a signal and an uncertainty block. The
-    # uncertainty usually limits its financial interpretation; it does not
-    # reverse the better-grounded event classification selected above.
     statuses = {
         key: str(main.get(key) or "")
         for key in (
@@ -1955,8 +1948,14 @@ def _news_component_card(
         )
     }
     event_materiality = _news_event_materiality(statuses, coverage)
-    source_roles = sorted({str(item["source_key"]) for item in component})
+    if summary_only:
+        event_materiality = "operational_context"
+        coverage.update(article_count=None, unique_publisher_count=None, deduplicated_article_count=None,
+                        primary_source_present=False, coverage_quality="summarized")
+    source_roles = [str(main["source_key"])]
     blockers = []
+    if summary_only:
+        blockers.append({"code": "news_monthly_summary", "reason": "period_context_without_direct_event_date"})
     if statuses["company_specificity"] in {"industry_context", "insufficient", "mixed"}:
         blockers.append({"code": "news_company_specificity_not_direct", "reason": statuses["company_specificity"]})
     if statuses["event_status"] in {"reported_expectation", "allegation", "insufficient", "mixed"}:
@@ -1967,21 +1966,18 @@ def _news_component_card(
     eligibility = "eligible" if role == "primary" else "reference_only"
     limitations = _dedupe_strings(
         [
-            *[text for item in component for text in item.get("limitations") or []],
-            *(
-                ["기사에서 재무 기여의 시점이나 규모가 확인되지 않았다."]
-                if statuses["financial_link_status"] == "not_observed"
-                else []
-            ),
+            *(["월별 뉴스 흐름의 요약이며 요약 종료일은 개별 사건의 발생일이 아니다."] if summary_only else []),
+            *(main.get("limitations") or []),
         ]
-    )[:2]
+    )
     title = str(main.get("claim") or evidence_rows[0].get("title") or "뉴스 사건")
-    card_key = f"news.{event_date.replace('-', '_')}.{_semantic_slug(title)}"
+    date_key = event_date or ("period_" + "_".join(source_periods) if source_periods else "unknown_date")
+    card_key = f"news.{_semantic_slug(date_key)}.{_semantic_slug(title)}"
     return (
         _card(
             card_key,
             domain="news",
-            card_type="event",
+            card_type="period_summary" if summary_only else "event",
             label=title[:36],
             allowed_sections=(
                 "investment_thesis",
@@ -1991,7 +1987,7 @@ def _news_component_card(
                 "decision_balance",
             ),
             evidence_family=f"corporate_event:{_semantic_slug(title)}",
-            observation_basis="event",
+            observation_basis="period_snapshot" if summary_only else "event",
             decision_use=(
                 "factor_eligible"
                 if event_materiality in {"confirmed_financial", "probable_financial"}
@@ -2000,8 +1996,17 @@ def _news_component_card(
             role=role,
             observation={
                 "event_date": event_date,
+                "date_precision": "period" if summary_only else "publication_date",
+                "source_periods": source_periods,
+                "evidence_origin": "model_summarized" if summary_only else "raw_source_with_period_context" if period_rows else "raw_source",
                 "event_summary": title,
                 "representative_excerpts": excerpts,
+                "cited_sources": cited_sources,
+                **({"anchor_source": {
+                    "source_type": "monthly_news_context" if anchor in period_rows else "article",
+                    "title": str(anchor.get("title") or ""),
+                    "source_date": anchor.get("source_date") or anchor.get("time"),
+                }} if anchor else {}),
                 **statuses,
                 "event_materiality": event_materiality,
                 "coverage": coverage,
@@ -2032,6 +2037,9 @@ def _attach_secondary_context(
         for assessment in assessments:
             if not isinstance(assessment, dict) or not str(assessment.get("statement") or "").strip():
                 continue
+            if assessment.get("usage") == CONTEXT_USAGE:
+                # New interpretations have exact multi-card links in context_links.
+                continue
             source_domain = _canonical_domain(str(assessment.get("source_domain") or ""))
             if included_source_domains is not None and source_domain not in included_source_domains:
                 continue
@@ -2041,7 +2049,7 @@ def _attach_secondary_context(
                 for card_key in domain_cards
                 if primary_ids.intersection(provenance.get(card_key, {}).get("source_evidence_ids") or [])
             ]
-            card_key = matching[0] if matching else (domain_cards[0] if domain_cards else "")
+            card_key = matching[0] if matching else ""
             if not card_key:
                 continue
             context = {
@@ -2083,8 +2091,6 @@ def _reader_limitations(
             continue
         seen.add(normalized)
         result.append(row)
-        if len(result) >= READER_LIMITATION_LIMIT:
-            break
     return result
 
 
@@ -2172,20 +2178,6 @@ def _limitation_requirements(
             }
         )
 
-    news_keys = [
-        card_key
-        for card_key, card in cards.items()
-        if card.get("domain") == "news"
-        and _dict(card.get("primary_observation")).get("financial_link_status") == "not_observed"
-    ]
-    if news_keys:
-        requirements.append(
-            {
-                "category": "news_financial_link",
-                "basis_card_keys": news_keys[:2],
-                "facts": {"unlinked_event_count": len(news_keys)},
-            }
-        )
     return requirements
 
 
@@ -2264,7 +2256,7 @@ def _card(
         card["comparison_label"] = comparison_label
     if comparison_entities:
         card["comparison_entities"] = copy.deepcopy(dict(comparison_entities))
-    normalized_limitations = _dedupe_strings(reader_limitations)[:2]
+    normalized_limitations = _dedupe_strings(reader_limitations)
     normalized_blockers = [copy.deepcopy(item) for item in machine_blockers]
     if normalized_limitations:
         card["reader_limitations"] = normalized_limitations
@@ -2372,12 +2364,18 @@ def _peer_basis(
 
 def _packet_telemetry(packet: dict[str, Any], *, model: str) -> dict[str, Any]:
     serialized = compact_json(packet)
+    counts = _card_counts(_dict(packet.get("cards")))
     return {
         "packet_version": PACKET_VERSION,
         "serialized_bytes": len(serialized.encode("utf-8")),
         "estimated_input_tokens": estimate_text_tokens(serialized, model=model),
         "top_level_fields": measure_top_level_fields(packet, model=model),
-        "card_counts": _card_counts(_dict(packet.get("cards"))),
+        "card_counts": counts,
+        "advisories": [
+            f"{domain} card count exceeds historical sizing target: {count} > {CARD_BUDGETS[domain]}; all preserved"
+            for domain, count in counts.items()
+            if domain in CARD_BUDGETS and count > CARD_BUDGETS[domain]
+        ],
         "overflow": False,
     }
 
@@ -2407,15 +2405,6 @@ def _card_counts(cards: dict[str, Any]) -> dict[str, int]:
 
 def _canonical_domain(value: str) -> str:
     return {"yfinance": "market"}.get(value, value)
-
-
-def _news_candidate_priority(candidate: dict[str, Any]) -> tuple[int, int, int, int]:
-    return (
-        {"observed": 3, "plausible_unquantified": 2, "mixed": 1, "not_established": 0}.get(candidate.get("materiality_status"), 0),
-        {"product_direct": 4, "direct": 3, "mixed": 1, "industry_context": 0, "insufficient": 0}.get(candidate.get("company_specificity"), 0),
-        {"occurred": 3, "announced": 2, "reported_expectation": 1, "allegation": 0, "mixed": 0, "insufficient": 0}.get(candidate.get("event_status"), 0),
-        candidate.get("evidence_use") == "strong",
-    )
 
 
 def _news_event_materiality(
@@ -2450,7 +2439,8 @@ def _news_card_priority(card: dict[str, Any]) -> tuple[int, int, int, str]:
 def _is_critical_news_card(card: dict[str, Any]) -> bool:
     observation = _dict(card.get("primary_observation"))
     return (
-        observation.get("company_specificity") in {"direct", "product_direct"}
+        observation.get("evidence_origin") != "model_summarized"
+        and observation.get("company_specificity") in {"direct", "product_direct"}
         and observation.get("event_status") in {"occurred", "announced"}
         and observation.get("materiality_status") == "observed"
     )

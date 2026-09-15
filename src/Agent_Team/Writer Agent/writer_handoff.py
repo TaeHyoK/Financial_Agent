@@ -459,8 +459,6 @@ def _build_writer_editorial_packet_v5(
     overlap = sorted(set(decision_keys) & set(context_keys))
     if overlap:
         raise ValueError(f"Writer decision and report-context cards overlap: {overlap}")
-    if "peer.agent_analysis" in decision_keys:
-        raise ValueError("peer.agent_analysis cannot be a Writer decision-basis card.")
 
     decision_by_key = {str(item["card_key"]): item for item in decision_rows}
     context_by_key = {str(item["card_key"]): item for item in context_rows}
@@ -502,6 +500,11 @@ def _build_writer_editorial_packet_v5(
                 evidence_tier="limitation_context",
             )
 
+    if strategy_decision.get("schema_revision") == "12m_v3":
+        for card in cards.values():
+            card.pop("strategy_role", None)
+            card.pop("decision_use", None)
+
     def linked_keys(field: str) -> list[str]:
         return [
             key
@@ -514,20 +517,6 @@ def _build_writer_editorial_packet_v5(
         for item in _list(strategy_decision.get("report_insights"))
         if isinstance(item, dict)
     ]
-    insight_keys = {
-        insight_type: _dedupe(
-            key
-            for item in insight_rows
-            if item.get("insight_type") == insight_type
-            for key in _text_list(item.get("card_keys"))
-            if key in cards
-        )
-        for insight_type in (
-            "performance_and_financial_position",
-            "price_and_valuation",
-            "events_and_execution",
-        )
-    }
     risk_rows = [
         copy.deepcopy(item)
         for item in _list(strategy_decision.get("key_risks"))
@@ -539,36 +528,21 @@ def _build_writer_editorial_packet_v5(
         for key in _text_list(item.get("card_keys"))
         if key in cards
     )
-    thesis_keys = _dedupe(
-        [
-            *linked_keys("thesis"),
-            *linked_keys("existing_position_response"),
-            *linked_keys("new_entry_response"),
-            *linked_keys("price_assessment"),
-            *linked_keys("counterview"),
-        ]
-    )
-    business_keys = _dedupe(
-        [
-            *insight_keys["performance_and_financial_position"],
-            *insight_keys["price_and_valuation"],
-        ]
-    )
-    event_keys = _dedupe(
-        [
-            *insight_keys["events_and_execution"],
-            *[key for key in selected_keys if _dict(cards.get(key)).get("domain") == "news"],
-        ]
-    )
+    thesis_keys = _dedupe([*linked_keys("thesis"), *linked_keys("decision_rationale")])
     data_limit_keys = _dedupe([*linked_keys("decision_limitation"), *limitation_keys])
     required_by_component = {
         "investment_call_thesis": thesis_keys or decision_keys,
-        "business_market_context": business_keys,
+        "business_market_context": [],
         "key_evidence_table": decision_keys,
-        "catalysts_execution": event_keys,
+        "catalysts_execution": [],
         "risk_monitoring_matrix": risk_keys,
         "data_limits": data_limit_keys,
     }
+    # Source preservation is not a requirement to repeat every citation in prose.
+    # Core rationale, table rows and explicit scope notes remain mandatory.
+    available_by_component = copy.deepcopy(required_by_component)
+    for component in ("investment_call_thesis", "business_market_context", "catalysts_execution"):
+        available_by_component[component] = list(selected_keys)
 
     risk_factors = []
     for item in risk_rows:
@@ -619,12 +593,15 @@ def _build_writer_editorial_packet_v5(
             "ticker": target.get("ticker"),
             "selected_date": target.get("as_of_date") or target.get("selected_date"),
         },
+        "schema_revision": strategy_decision.get("schema_revision"),
         "decision": {
+            "opinion": brief["recommendation"],
+            "headline": brief["headline"],
             "judgment": _dict(brief.get("thesis")).get("text"),
-            "existing_position_response": _dict(
-                brief.get("existing_position_response")
+            "earnings_review": _dict(
+                brief.get("earnings_review")
             ).get("text"),
-            "new_entry_response": _dict(brief.get("new_entry_response")).get("text"),
+            "outlook": _dict(brief.get("outlook")).get("text"),
             "investment_horizon": brief.get("horizon"),
             "data_coverage": brief.get("evidence_sufficiency"),
             "decision_confidence": brief.get("decision_confidence"),
@@ -632,12 +609,14 @@ def _build_writer_editorial_packet_v5(
         "recommendation_bridge": {
             "thesis": _dict(brief.get("thesis")).get("text"),
             "thesis_card_keys": linked_keys("thesis"),
-            "existing_position_response": _dict(
-                brief.get("existing_position_response")
+            "decision_rationale": _dict(brief.get("decision_rationale")).get("text"),
+            "decision_rationale_card_keys": linked_keys("decision_rationale"),
+            "earnings_review": _dict(
+                brief.get("earnings_review")
             ).get("text"),
-            "existing_position_card_keys": linked_keys("existing_position_response"),
-            "new_entry_response": _dict(brief.get("new_entry_response")).get("text"),
-            "new_entry_card_keys": linked_keys("new_entry_response"),
+            "earnings_review_card_keys": linked_keys("earnings_review"),
+            "outlook": _dict(brief.get("outlook")).get("text"),
+            "outlook_card_keys": linked_keys("outlook"),
             "price_context": _dict(brief.get("price_assessment")).get("text"),
             "price_context_card_keys": linked_keys("price_assessment"),
             "counterview": _dict(brief.get("counterview")).get("text"),
@@ -653,6 +632,7 @@ def _build_writer_editorial_packet_v5(
         },
         "report_insights": insight_rows,
         "required_card_keys_by_component": required_by_component,
+        "available_card_keys_by_component": available_by_component,
         "cards": cards,
         "peer_findings": [],
         "target_peer_context": peer_contexts,
@@ -703,8 +683,9 @@ def _select_v5_limitations(
         elif category == "valuation_input_date_mix":
             include = "valuation" in selected_domains
         elif category == "news_financial_link":
-            include = bool(selected_basis)
-            basis = selected_basis
+            # Legacy packets may still contain this automatic requirement.
+            # Unquantified impact alone does not require an analytical caveat.
+            include = False
         elif category == "single_peer_scope":
             # 비교기업 수는 실험 설계의 범위이며 공개 보고서의 판단 한계로 쓰지 않는다.
             include = False
@@ -714,8 +695,6 @@ def _select_v5_limitations(
         if not include:
             continue
         facts = copy.deepcopy(_dict(raw.get("facts")))
-        if category == "news_financial_link":
-            facts = {"selected_event_count": len(basis)}
         result.append(
             {
                 "category": category,
@@ -783,6 +762,17 @@ def _writer_card_v5(
     for key in ("comparison_label", "comparison_entities", "reader_limitations"):
         if key in source:
             card[key] = copy.deepcopy(source[key])
+    if source.get("domain") == "news":
+        # Reader display omits stock caveats, but the LLM still needs the
+        # original status/date/origin facts to preserve epistemic boundaries.
+        raw_observation = _dict(source.get("primary_observation"))
+        card["source_metadata"] = {
+            key: copy.deepcopy(raw_observation[key])
+            for key in ("financial_link_status", "event_status", "company_specificity",
+                        "materiality_status", "evidence_origin", "source_periods",
+                        "date_precision", "event_date", "source_scope", "coverage")
+            if key in raw_observation
+        }
     if reader_observation:
         card["reader_observation"] = reader_observation
     if source.get("secondary_context"):
@@ -917,8 +907,11 @@ def validate_writer_editorial_packet(
     if label_free:
         if not str(decision.get("judgment") or "").strip():
             raise ValueError("writer editorial decision.judgment is required for label-free Strategy.")
-        if "opinion" in decision:
-            raise ValueError("label-free Writer decision cannot contain opinion.")
+        if packet.get("schema_revision") in {"12m_v1", "12m_v2", "12m_v3"}:
+            if decision.get("opinion") not in FINAL_RECOMMENDATIONS:
+                raise ValueError("Annual Writer decision requires Buy/Hold/Sell.")
+        elif "opinion" in decision:
+            raise ValueError("legacy label-free Writer decision cannot contain opinion.")
     elif decision.get("opinion") not in FINAL_RECOMMENDATIONS:
         raise ValueError("writer editorial decision.opinion must be Buy/Hold/Sell.")
     if not str(decision.get("investment_horizon") or "").strip():
@@ -928,6 +921,13 @@ def validate_writer_editorial_packet(
     if decision.get("decision_confidence") not in {"high", "medium", "low"}:
         raise ValueError("writer editorial decision.decision_confidence is invalid.")
     bridge = _require_dict(packet.get("recommendation_bridge"), "recommendation_bridge")
+    if packet.get("schema_revision") in {"12m_v2", "12m_v3"}:
+        if not str(bridge.get("decision_rationale") or "").strip():
+            raise ValueError("Writer requires the Strategy decision rationale.")
+        rationale_keys = _text_list(bridge.get("decision_rationale_card_keys"))
+        thesis_keys = _text_list(_dict(packet.get("required_card_keys_by_component")).get("investment_call_thesis"))
+        if not rationale_keys or not set(rationale_keys) <= set(thesis_keys):
+            raise ValueError("Decision rationale references must reach the thesis component.")
     if bridge.get("decision_confidence") != decision.get("decision_confidence"):
         raise ValueError("Writer recommendation bridge confidence mismatch.")
     cards = _require_dict(packet.get("cards"), "cards")
@@ -940,6 +940,15 @@ def validate_writer_editorial_packet(
         unknown = sorted(set(_text_list(card_keys)) - set(cards))
         if unknown:
             raise ValueError(f"Unknown Writer card key(s) for {component}: {unknown}")
+    if "available_card_keys_by_component" in packet:
+        available = _require_dict(packet.get("available_card_keys_by_component"), "available_card_keys_by_component")
+        if set(available) != set(required):
+            raise ValueError("Writer available component routing is incomplete.")
+        for component, keys in available.items():
+            if not isinstance(keys, list) or not set(keys) <= set(cards):
+                raise ValueError(f"Invalid available Writer cards for {component}")
+            if not set(required[component]) <= set(keys):
+                raise ValueError(f"Required Writer cards are not available for {component}")
     for card_key, card in cards.items():
         if not isinstance(card, dict) or card.get("card_key") != card_key:
             raise ValueError(f"Writer card map key mismatch: {card_key}")
@@ -948,7 +957,7 @@ def validate_writer_editorial_packet(
         if not str(card.get("strategy_interpretation") or "").strip():
             raise ValueError(f"Writer card Strategy interpretation is required: {card_key}")
         if strategy_v5:
-            if card.get("strategy_role") not in {
+            if packet.get("schema_revision") != "12m_v3" and card.get("strategy_role") not in {
                 "supports_decision",
                 "opposes_decision",
                 "limits_confidence",
@@ -1076,12 +1085,16 @@ def _writer_reader_text(packet: dict[str, Any]) -> dict[str, Any]:
 
     bridge = _dict(packet.get("recommendation_bridge"))
     return {
+        "headline": _dict(packet.get("decision")).get("headline"),
         "recommendation_bridge": {
             key: bridge.get(key)
             for key in (
                 "thesis",
+                "decision_rationale",
                 "existing_position_response",
                 "new_entry_response",
+                "earnings_review",
+                "outlook",
                 "price_context",
                 "counterview",
                 "current_price_rationale",
@@ -1179,14 +1192,31 @@ def _reader_observation(
 ) -> dict[str, Any]:
     card_key = str(source.get("card_key") or "")
     observation = _dict(source.get("primary_observation"))
+    if source.get("card_type") == "context_source" and source.get("domain") == "news":
+        return {
+            "요약 기간": " · ".join(observation.get("source_periods") or []),
+            "자료 내용": observation.get("event_summary") or observation.get("text"),
+            "자료 유형": "월별 뉴스 요약" if observation.get("evidence_origin") == "model_summarized" else "뉴스 자료",
+        }
     if card_key == "peer.agent_analysis":
         entities = _dict(source.get("comparison_entities"))
         return {
             "대상 기업": entities.get("target_company"),
             "비교 기업": entities.get("peer_companies") or [],
             "종합 비교": observation.get("comparison_brief"),
+            "비교 내용": [
+                {"확인된 차이": point.get("finding"), "대상기업에 대한 의미": point.get("target_implication")}
+                for point in observation.get("comparison_points") or [] if isinstance(point, dict)
+            ],
+            "자료 유형": "하위 분석에 근거한 비교 해석",
         }
     if str(source.get("domain") or "") == "news" or card_key.startswith("news."):
+        if observation.get("evidence_origin") == "model_summarized":
+            return {
+                "요약 기간": " · ".join(observation.get("source_periods") or []),
+                "기간 뉴스 흐름": observation.get("event_summary") or source.get("label"),
+                "자료 유형": "월별 뉴스 요약",
+            }
         coverage = _dict(observation.get("coverage"))
         article_count = coverage.get("deduplicated_article_count") or coverage.get("article_count")
         publisher_count = coverage.get("unique_publisher_count")
@@ -1195,20 +1225,10 @@ def _reader_observation(
             coverage_parts.append(f"중복 제거 후 {article_count}건")
         if publisher_count is not None:
             coverage_parts.append(f"{publisher_count}개 매체")
-        financial_link = {
-            "observed": "기사에서 재무적 연계가 확인됨",
-            "not_observed": "기사에서 재무적 영향의 규모와 시점이 확인되지 않음",
-            "not_applicable": "재무적 영향과 직접 관련 없는 사건",
-            "mixed": "기사별 재무적 영향의 확인 범위가 서로 다름",
-        }.get(
-            str(observation.get("financial_link_status") or ""),
-            "기사에서 재무적 영향이 확인되지 않음",
-        )
         return {
-            "발생일": observation.get("event_date"),
+            "보도일": observation.get("event_date"),
             "사건 요약": observation.get("event_summary") or source.get("label"),
-            "보도 범위": " · ".join(coverage_parts) if coverage_parts else "보도 건수 확인 불가",
-            "재무적 영향": financial_link,
+            "보도 범위": " · ".join(coverage_parts),
         }
     if card_key == "financial.same_period_trend":
         result = {
@@ -1236,6 +1256,9 @@ def _reader_observation(
     if card_key == "financial.annual_trend":
         return {
             _period_display(_dict(item.get("period"))): {
+                "영업이익률": _ratio_percent(_dict(item.get("values")).get("operating_margin")),
+                "자본총계": _krw_100m(_dict(item.get("values")).get("total_equity"), source_unit=financial_source_unit),
+                "부채비율": _ratio_percent(_dict(item.get("values")).get("debt_ratio")),
                 "매출": _krw_100m(
                     _dict(item.get("values")).get("revenue"),
                     source_unit=financial_source_unit,
@@ -1316,6 +1339,9 @@ def _reader_observation(
         return {
             "기준일": observation.get("as_of_date"),
             "종가": _price_display(metrics.get("stock_close")),
+            **{f"{m}개월 수익률": _ratio_percent(metrics[f"stock_return_{m}m"]) for m in (1, 3, 6, 12) if f"stock_return_{m}m" in metrics},
+            **{f"{d}일 이동평균 대비": _ratio_percent(metrics[f"stock_close_to_ma{d}"]) for d in (120, 200) if f"stock_close_to_ma{d}" in metrics},
+            **{f"{d}일 이동평균의 최근 20거래일 변화": _ratio_percent(metrics[f"stock_ma{d}_change_20d"]) for d in (120, 200) if f"stock_ma{d}_change_20d" in metrics},
             "5거래일 수익률": _ratio_percent(metrics.get("stock_return_5d")),
             "20거래일 수익률": _ratio_percent(metrics.get("stock_return_20d")),
             "60거래일 수익률": _ratio_percent(metrics.get("stock_return_60d")),
@@ -1326,6 +1352,8 @@ def _reader_observation(
         metrics = _dict(observation.get("metrics"))
         return {
             "기준일": observation.get("as_of_date"),
+            **{label: _ratio_percent(metrics[key]) for key, label in {"stock_volatility_1y": "1년 연율화 변동성", "stock_max_drawdown_1y": "1년 최대 낙폭", "stock_current_drawdown_1y": "1년 고점 대비 하락률", "stock_position_52w": "1년 가격 범위 내 위치"}.items() if key in metrics},
+            **({"최근 5일 / 60일 평균 거래량": _times_display(metrics["stock_volume_ratio_5_60"])} if "stock_volume_ratio_5_60" in metrics else {}),
             "14일 RSI": _number_display(metrics.get("stock_rsi_14")),
             "MACD 히스토그램": _number_display(metrics.get("stock_macd_hist")),
             "MACD 히스토그램 전일 대비 변화": _number_display(
@@ -1357,6 +1385,8 @@ def _reader_observation(
             or "시장지수"
         )
         labels = {
+            **{f"stock_excess_return_{m}m": f"{m}개월 {benchmark_name} 대비 초과수익률(%p)" for m in (1, 3, 6, 12)},
+            **{f"kospi_return_{m}m": f"{m}개월 {benchmark_name} 수익률" for m in (1, 3, 6, 12)},
             "stock_excess_return_5d": f"5일 {benchmark_name} 대비 초과수익률",
             "stock_excess_return_20d": f"20일 {benchmark_name} 대비 초과수익률",
             "stock_relative_strength_60": f"60일 {benchmark_name} 상대강도",
@@ -1365,7 +1395,7 @@ def _reader_observation(
         return {
             "기준일": observation.get("as_of_date"),
             "지표": {
-                labels.get(key, key): _ratio_percent(value)
+                labels.get(key, key): (_signed_percentage_point(value) if "excess_return" in key else _ratio_percent(value))
                 for key, value in _dict(observation.get("metrics")).items()
             },
         }
@@ -1382,6 +1412,8 @@ def _reader_observation(
             "current_ratio_pct": "유동비율",
             "cash_ratio_pct": "현금비율",
             "equity_ratio_pct": "자기자본비율",
+            **{f"stock_return_{m}m_pct": f"{m}개월 주가수익률" for m in (1, 3, 6, 12)},
+            **{f"stock_excess_return_{m}m_pct": f"{m}개월 시장 초과수익률" for m in (1, 3, 6, 12)},
             "stock_return_20d_pct": "20일 주가수익률",
             "stock_return_60d_pct": "60일 주가수익률",
             "stock_excess_return_20d_pct": "20일 시장 초과수익률",

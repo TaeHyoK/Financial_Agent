@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import copy
 import difflib
 import json
@@ -14,6 +15,8 @@ from typing import Any, Literal
 
 from tqdm.auto import tqdm
 from shared.llm_clients import execute_with_telemetry
+from shared.time_windows import monthly_windows
+from shared.news_selection import MONTHLY_NEWS_POLICY, MONTHLY_NEWS_LABEL, ANNUAL_NEWS_LIMIT, validate_monthly_news
 
 from .io.storage import save_json
 
@@ -34,13 +37,10 @@ DESCRIPTION = {
 }
 
 SUMMARY_OUTPUT_DESCRIPTION = {
-    "period": "요약 대상 기간입니다. 운영 기본값은 ISO 주 단위입니다.",
-    "period_summary": "해당 기간의 뉴스 흐름을 2~4문장으로 요약한 내용입니다.",
-    "issues": "해당 기간의 핵심 이슈 목록입니다.",
-    "issue": "핵심 이슈명입니다.",
-    "mention_count": "해당 이슈로 병합된 원본 이벤트들의 mention_count 합계입니다.",
-    "importance": "high, medium, low 중 하나입니다.",
-    "rationale": "해당 이슈가 중요하다고 판단한 간단한 이유입니다.",
+    "period": "요약 대상 기간입니다. 운영 기본값은 기준일에 맞춘 월 구간 12개입니다.",
+    "issues": "서로 구분되는 사건별 요약 목록입니다. 재무·시장 분석의 보조자료로 전달됩니다.",
+    "summary": "사건의 주체·날짜·실적 대상 기간·수치·진행 상태를 보존한 설명입니다.",
+    "source_event_ids": "이 설명의 근거로 실제 사용한 해당 기간 입력 event_id의 문자열 목록입니다.",
 }
 
 
@@ -273,14 +273,11 @@ def _build_llm_summary_request(summary_prompt_input: dict[str, Any], llm_model: 
         "granularity": summary_prompt_input.get("metadata", {}).get("granularity", ""),
         "periods": [
             {
-                "period": "YYYY-Www",
-                "period_summary": "string",
+                "period": "copy the exact input period key",
                 "issues": [
                     {
-                        "issue": "string",
-                        "mention_count": 0,
-                        "importance": "high | medium | low",
-                        "rationale": "string",
+                        "summary": "string",
+                        "source_event_ids": ["copy an input event_id from this period"],
                     }
                 ],
             }
@@ -294,7 +291,17 @@ def _build_llm_summary_request(summary_prompt_input: dict[str, Any], llm_model: 
             "collect_date": metadata.get("collect_date", ""),
             "granularity": metadata.get("granularity", ""),
         },
-        "periods": summary_prompt_input.get("periods", []),
+        # Ranking is an upstream selection mechanism, not an instruction about
+        # which facts the summary model should consider important.
+        # Detailed coverage and counts stay in source artifacts, not the summary request.
+        "periods": [
+            {**{key: value for key, value in period.items() if key != "event_count"}, "events": [
+                {key: value for key, value in event.items()
+                 if key not in {"relevance_rank", "final_score", "scores", "ablation_selection", "coverage", "mention_count"}}
+                for event in sorted(period.get("events", []), key=lambda row: (str(row.get("time") or ""), str(row.get("event_id") or "")))
+            ]}
+            for period in summary_prompt_input.get("periods", [])
+        ],
         "expected_output_schema": expected_output_schema,
     }
     return {
@@ -310,7 +317,7 @@ def _build_llm_summary_request(summary_prompt_input: dict[str, Any], llm_model: 
                 "role": "system",
                 "content": (
                     "당신은 한국 상장사 뉴스 분석 보조자입니다. "
-                    "company_profile과 기간별 뉴스 이벤트를 바탕으로 각 기간의 핵심 이슈를 병합해 요약하세요. "
+                    "company_profile과 기간별 뉴스 이벤트를 바탕으로 독립 사건을 구분해 요약하고 실제 사용한 기사 ID를 기록하세요. "
                     "반드시 유효한 JSON만 출력하고, 입력에 없는 사실을 추가하지 마세요."
                 ),
             },
@@ -319,15 +326,16 @@ def _build_llm_summary_request(summary_prompt_input: dict[str, Any], llm_model: 
                 "content": json.dumps(
                     {
                         "instructions": [
-                            "period별로 2~4문장의 period_summary를 작성합니다.",
-                            "events가 비어 있는 period도 생략하지 말고 period_summary에 수집된 뉴스가 없다고 기록하며 issues는 빈 배열로 둡니다.",
-                            "제목과 snippet이 같은 사건을 다루면 하나의 issue로 병합합니다.",
+                            "각 period의 issues에 사건별 summary와 source_event_ids를 작성합니다. 별도의 월 전체 서술을 반복하지 않습니다. 각 summary는 다른 항목 없이도 이해할 수 있게 사실·시점·금액·진행 상태를 보존합니다. 출처에 없는 전망이나 인과관계를 만들지 않습니다.",
+                            "입력의 모든 period를 정확히 한 번씩 반환합니다. events가 비어 있거나 근거로 사용할 수 있는 사건이 없으면 issues는 빈 배열로 둡니다. 관행적인 한계 문구로 사건 설명을 대신하지 않습니다.",
+                            "같은 발표나 사건의 반복 보도만 하나의 issue로 정리합니다. 같은 회사·제품이라는 이유만으로 계약·허가·출시·실적·안전성 사건을 합치지 않습니다. 연결된 사건은 시간순으로 구분합니다.",
                             "event_timeline이 있으면 날짜별 제목을 시간순 사건 진행으로 반영하되, 제목에 없는 변화나 인과관계를 추가하지 않습니다.",
-                            "issue별 mention_count는 병합된 원본 이벤트들의 mention_count 합계로 계산합니다.",
-                            "각 period의 issues는 최대 5개만 남깁니다.",
-                            "importance는 final_score, mention_count, company_profile과의 사업 관련성을 함께 고려해 high/medium/low 중 하나로 지정합니다.",
+                            "issues의 항목 수와 글자 수에 고정 제한은 없습니다. 분석에 필요한 독립 사건은 보존하되 반복 보도와 비핵심 설명은 줄입니다. 기사 발행일, 사건 발생일, 실적 대상 기간을 구분하고 월 구간을 사건 날짜로 해석하지 않습니다.",
+                            "각 실적 문장에는 주체를 원문에 명시된 기업명으로 적습니다. 수치 바로 앞에 해당 기업명을 명시하고 앞 문장의 기업명이나 문장 뒤의 '그룹 기여' 표현으로 대신하지 않습니다. 계약·투자도 당사자를 보존합니다. 대상기업·지주회사·그룹·계열사의 수치와 연결·별도 기준을 바꾸지 않습니다. 제목에서 기업명이 축약됐더라도 스니펫에 수치의 주체가 명시되어 있으면 이를 따릅니다. 기업명이 비슷하다는 이유로 같은 기업으로 취급하거나 입력에 없는 지배관계를 추정하지 않습니다.",
+                            "원문에 대상기업의 사업 변화가 그룹 실적에 기여했다고 명시되어 있으면 그 변화와 기여를 사실 중심으로 설명합니다. 그룹 실적만으로 대상기업의 성장이나 기여 원인을 추정하지 않습니다. 확인된 기여를 '대상기업 실적으로 사용할 수 없다' 같은 검토 문구로 대체하지 않으며, 주체가 불분명한 수치는 임의 귀속하지 않고 확인 가능한 사건과 의미를 남깁니다. 산업 사건도 확인되는 연결 범위에서 활용합니다.",
+                            "언론사 소개·서비스 안내·주변 기사 문구는 사건의 근거가 아니며, 유효한 내용이 없으면 사실을 보충하지 않습니다.",
                             "단순 주가 등락보다 실적, 수요, 공급, 투자, 고객사, 제품/기술, 규제 이슈를 우선합니다.",
-                            "출력에는 event_id를 포함하지 않습니다.",
+                            "source_event_ids에는 해당 summary의 사실을 뒷받침하는 같은 period의 event_id만 입력 그대로 복사합니다. 실제 사용한 근거는 개수 제한 없이 남기되, 읽었다는 이유만으로 해당 월의 기사 전체를 붙이지 않습니다. 같은 기사가 서로 다른 사건을 뒷받침하면 여러 항목에서 인용할 수 있으며, 같은 ID를 인용했다는 이유로 사건을 합치지 않습니다.",
                         ],
                         **user_payload,
                     },
@@ -415,7 +423,8 @@ def _write_period_llm_requests(request_payload: dict[str, Any], output_dir: Path
         shutil.rmtree(output_dir)
     paths: list[str] = []
     for period, period_request in _build_period_llm_requests(request_payload):
-        request_path = output_dir / f"{period}.json"
+        safe_period = period.replace("/", "_")
+        request_path = output_dir / f"{safe_period}.json"
         save_json(period_request, request_path)
         paths.append(str(request_path))
     return paths
@@ -496,31 +505,44 @@ def _attach_source_event_ids(
     parsed_output: Any,
     request_payload: dict[str, Any],
 ) -> None:
-    """Attach deterministic source links without asking the summary model to copy IDs."""
+    """Validate cited IDs; keep input provenance separate from model-used sources.
+
+    Checks only structure and source membership, not importance or semantic support.
+    """
 
     if not isinstance(parsed_output, dict):
-        return
-    try:
-        input_payload = _load_llm_user_payload(request_payload)
-    except ValueError:
-        return
-    source_ids_by_period = {
-        str(period.get("period") or ""): [
-            f"NEWS_RAW_{period.get('period')}_{event.get('event_id')}"
-            for event in period.get("events") or []
-            if isinstance(event, dict) and event.get("event_id")
-        ]
-        for period in input_payload.get("periods") or []
-        if isinstance(period, dict) and period.get("period")
-    }
+        raise ValueError("News summary must be a JSON object")
+    input_payload = _load_llm_user_payload(request_payload)
+    source_periods = {p["period"]: p for p in input_payload.get("periods") or []}
     output_periods = parsed_output.get("periods")
     if not isinstance(output_periods, list):
-        output_periods = [parsed_output] if parsed_output.get("period") else []
+        raise ValueError("News summary must contain a periods list")
     for period in output_periods:
         if not isinstance(period, dict):
-            continue
+            raise ValueError("News summary period must be an object")
         period_key = str(period.get("period") or "")
-        period["source_event_ids"] = source_ids_by_period.get(period_key, [])
+        if period_key not in source_periods:
+            raise ValueError(f"Unknown summary period: {period_key}")
+        input_ids = [str(event['event_id']) for event in source_periods[period_key].get('events', [])]
+        issues = period.get('issues')
+        if not isinstance(issues, list):
+            raise ValueError(f"News summary must contain an issues list: {period_key}")
+        used_ids = []
+        for issue in issues:
+            if not isinstance(issue, dict) or not isinstance(issue.get('summary'), str) or not issue['summary'].strip():
+                raise ValueError(f"Empty news issue summary: {period_key}")
+            ids = issue.get('source_event_ids')
+            if not isinstance(ids, list) or not ids or any(not isinstance(key, str) or key not in input_ids for key in ids):
+                raise ValueError(f"News issue cites missing or out-of-period source IDs: {period_key}")
+            used_ids.extend(ids)
+        period['input_event_ids'] = input_ids
+        period['source_event_ids'] = list(dict.fromkeys(used_ids))
+        for key in ("period_start", "period_end"):
+            if key in source_periods[period_key]:
+                period[key] = source_periods[period_key][key]
+    actual = [p.get("period") for p in output_periods if isinstance(p, dict)]
+    if len(actual) != len(set(actual)) or set(actual) != set(source_periods):
+        raise ValueError("News summaries must cover every requested period exactly once.")
 
 
 def _run_llm_summary(
@@ -543,6 +565,7 @@ def _run_llm_summary(
                 "execution_mode": "single_request",
             },
             "model": request_payload["model"],
+            "source_request_sha256": summary_request_hash(request_payload),
             "usage": result["usage"],
             "output": result["output"],
         },
@@ -558,6 +581,7 @@ def _split_summary_payload(request_payload: dict[str, Any], period_results: list
             "execution_mode": "split_by_period",
         },
         "model": request_payload["model"],
+        "source_request_sha256": summary_request_hash(request_payload),
         "usage": {
             "total": _aggregate_usage(period_results),
             "by_period": [
@@ -648,6 +672,11 @@ def execute_llm_summary_request(
     split_by_period: bool = False,
 ) -> str:
     request_path = Path(llm_request_path)
+    from shared.news_articles import ARTICLE_NEWS_POLICY
+    manifest = _load_json_if_exists(request_path.parent / "context_export_manifest.json")
+    if ((manifest.get("metadata") or {}).get("raw_news_policy") == ARTICLE_NEWS_POLICY
+            and (manifest.get("metadata") or {}).get("news_subdata_policy") != "monthly_summary_v1"):
+        raise ValueError("Article-only export must not execute a stale summary request")
     request_payload = json.loads(request_path.read_text(encoding="utf-8"))
     result_path = Path(output_path) if output_path else request_path.with_name("llm_period_summaries.json")
     if split_by_period:
@@ -667,15 +696,29 @@ def execute_llm_summary_request(
     return str(result_path)
 
 
+def summary_request_hash(request: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(
+        {key: request.get(key) for key in ("model", "messages", "temperature", "response_format")},
+        ensure_ascii=False, sort_keys=True,
+    ).encode()).hexdigest()
+
+
+def article_summary_input(packet: dict[str, Any], report: dict[str, Any], report_path: Path) -> dict[str, Any]:
+    """Summarize exactly the selected articles, for financial/market subdata only."""
+    return {"metadata": {**packet["metadata"], "news_subdata_policy": "monthly_summary_v1"},
+            "company_profile": _load_company_profile(report, report_path),
+            "periods": packet["periods"]}
+
+
 def build_context_exports(
     *,
     report_context_path: str | Path,
     output_dir: str | Path | None = None,
-    granularity: Granularity = "week",
-    period_count: int = 14,
-    raw_period_count: int = 14,
+    granularity: Granularity = "month",
+    period_count: int = 12,
+    raw_period_count: int = 12,
     min_mention_count: int = 1,
-    llm_model: str = "gpt-5.4",
+    llm_model: str = "gpt-5.4-mini",
     run_llm: bool = False,
     split_by_period: bool = False,
     api_key_env: str = "OPENAI_API_KEY",
@@ -685,20 +728,57 @@ def build_context_exports(
     report = json.loads(report_path.read_text(encoding="utf-8"))
     company_name = str((report.get("company") or {}).get("company_name") or "company")
     collect_date = str(report.get("collect_date") or "unknown")
+    from shared.news_articles import ARTICLE_NEWS_POLICY, build_article_packet
+    if (report.get("news_selection") or {}).get("raw_news_policy") == ARTICLE_NEWS_POLICY:
+        if granularity != "month":
+            raise ValueError("Selected-article export requires monthly grouping")
+        packet = build_article_packet(report, period_count=period_count)
+        output_path = Path(output_dir) if output_dir else report_path.parent / "context_exports" / "month"
+        raw_path = output_path / "selected_articles.json"
+        manifest_path = output_path / "context_export_manifest.json"
+        periods = [row["period"] for row in packet["periods"]]
+        summary_input = article_summary_input(packet, report, report_path)
+        request = _build_llm_summary_request(summary_input, llm_model)
+        summary_path = output_path / "summary_prompt_input.json"
+        request_path = output_path / "llm_summary_request.json"
+        result_path = output_path / "llm_period_summaries.json"
+        manifest = {"metadata": summary_input["metadata"], "selected_periods": periods,
+                    "summary_periods_for_news_agent": [], "raw_periods_for_news_agent": periods,
+                    "summary_periods_for_subdata": periods,
+                    "company_related_news_count": len(packet["events"]),
+                    "llm": {"run_llm": run_llm, "model": llm_model, "split_by_period": split_by_period},
+                    "output_paths": {"news_articles_path": str(raw_path), "manifest_path": str(manifest_path),
+                                     "summary_prompt_input_path": str(summary_path),
+                                     "llm_summary_request_path": str(request_path),
+                                     "llm_period_summaries_path": str(result_path)}}
+        save_json(packet, raw_path)
+        save_json(summary_input, summary_path)
+        save_json(request, request_path)
+        if split_by_period:
+            _write_period_llm_requests(request, output_path / "period_requests")
+        save_json(manifest, manifest_path)
+        if run_llm:
+            execute_llm_summary_request(llm_request_path=request_path, output_path=result_path,
+                api_key_env=api_key_env, env_path=env_path, split_by_period=split_by_period)
+        return manifest["output_paths"]
     company_profile = _load_company_profile(report, report_path)
 
-    summary_event_rows = list(
-        report.get("news_events_weekly")
-        or report.get("news_events_all")
-        or report.get("news_events_final")
-        or report.get("news_events_topk")
-        or []
-    )
+    # An explicitly empty selection must not fall back to the unselected pool.
+    summary_event_rows = list(next(
+        (report[key] for key in ("news_events_weekly", "news_events_all", "news_events_final", "news_events_topk")
+         if isinstance(report.get(key), list)), []
+    ))
     selected_event_rows = list(
         report.get("news_events_final") or report.get("news_events_topk") or []
-    )[
-        :NEWS_AGENT_TOP_K
-    ]
+    )
+    monthly_policy = (report.get("news_selection") or {}).get("raw_news_policy") == MONTHLY_NEWS_POLICY
+    if monthly_policy:
+        validate_monthly_news(selected_event_rows, end_exclusive=date.fromisoformat(collect_date[:10]) + timedelta(days=1),
+            time_of=lambda e: (e.get("representative") or {}).get("time", ""), id_of=lambda e: e.get("event_id", ""))
+    else:
+        selected_event_rows = selected_event_rows[:NEWS_AGENT_TOP_K]
+    raw_label = MONTHLY_NEWS_LABEL if monthly_policy else "기업 관련 뉴스 상위 20건"
+    raw_limit = ANNUAL_NEWS_LIMIT if monthly_policy else NEWS_AGENT_TOP_K
     grouped = _group_events(
         summary_event_rows,
         granularity=granularity,
@@ -710,13 +790,26 @@ def build_context_exports(
         granularity=granularity,
         period_count=period_count,
     )
+    period_metadata = {}
+    if granularity == "month":
+        windows = monthly_windows(date.fromisoformat(collect_date[:10]) + timedelta(days=1), period_count)
+        period_metadata = {w["period"]: w for w in windows}
+        all_compact = [event for events in grouped.values() for event in events]
+        grouped = {w["period"]: [e for e in all_compact if w["period_start"] <= str(e.get("time") or "")[:10] <= w["period_end"]] for w in windows}
+        selected_periods = [w["period"] for w in windows]
     summary_periods_for_news_agent = list(selected_periods)
     top_news_events = [
         compact
         for compact in (_compact_event(event) for event in selected_event_rows)
         if compact is not None
     ]
-    if top_news_events and all(
+    if granularity == "month":
+        for event in top_news_events:
+            event["period"] = next((key for key, w in period_metadata.items() if w["period_start"] <= str(event.get("time") or "")[:10] <= w["period_end"]), "")
+        top_news_events = [event for event in top_news_events if event.get("period")]
+    if monthly_policy:
+        top_news_events.sort(key=lambda e: (str(e.get("time") or ""), str(e.get("event_id") or "")))
+    elif top_news_events and all(
         int(event.get("relevance_rank") or 0) > 0 for event in top_news_events
     ):
         top_news_events.sort(key=lambda event: int(event["relevance_rank"]))
@@ -724,14 +817,14 @@ def build_context_exports(
         dict.fromkeys(
             period
             for event in top_news_events
-            if (period := _period_key(str(event.get("time") or ""), granularity))
+            if (period := event.get("period") or _period_key(str(event.get("time") or ""), granularity))
         )
     )
     top_news_grouped: dict[str, list[dict[str, Any]]] = {
         period: [] for period in top_news_periods
     }
     for event in top_news_events:
-        period = _period_key(str(event.get("time") or ""), granularity)
+        period = event.get("period") or _period_key(str(event.get("time") or ""), granularity)
         if period in top_news_grouped:
             top_news_grouped[period].append(event)
 
@@ -751,7 +844,9 @@ def build_context_exports(
         "granularity": granularity,
         "period_count": period_count,
         "raw_period_count": raw_period_count,
-        "company_news_top_k": NEWS_AGENT_TOP_K,
+        "company_news_top_k": raw_limit,
+        "raw_news_policy": MONTHLY_NEWS_POLICY if monthly_policy else "global_top_k_legacy",
+        "monthly_top_k": 2 if monthly_policy else None,
         "min_mention_count": min_mention_count,
         "filter_rule": f"mention_count >= {min_mention_count}",
     }
@@ -762,7 +857,7 @@ def build_context_exports(
         "metadata": base_metadata,
         "task": "각 period의 events를 바탕으로 해당 기간의 핵심 뉴스 흐름을 요약합니다.",
         "periods": [
-            _period_payload(period, grouped.get(period, []))
+            {**_period_payload(period, grouped.get(period, [])), **period_metadata.get(period, {})}
             for period in selected_periods
         ],
     }
@@ -772,10 +867,10 @@ def build_context_exports(
         "company_profile": company_profile,
         "metadata": {
             **base_metadata,
-            "usage": "뉴스 에이전트에 제공할 기업 관련 뉴스 상위 20건 입력입니다.",
+            "usage": f"뉴스 에이전트에 제공할 {raw_label} 입력입니다.",
         },
-        "selection": "기업 관련 뉴스 상위 20건",
-        "top_k": NEWS_AGENT_TOP_K,
+        "selection": raw_label,
+        "top_k": raw_limit,
         "events": top_news_events,
         "periods": [
             _period_payload(period, top_news_grouped[period])
@@ -794,19 +889,19 @@ def build_context_exports(
 
     manifest = {
         "description": {
-            "summary_prompt_input_path": "요청한 기간의 LLM 주간 요약을 만들기 위한 입력 파일입니다.",
+            "summary_prompt_input_path": "요청한 기간의 LLM 월별 요약을 만들기 위한 입력 파일입니다.",
             "llm_summary_request_path": "summary_prompt_input.json을 기반으로 만든 LLM 호출 직전 messages payload입니다.",
             "llm_period_summaries_path": "LLM 실행 결과입니다. --run-llm을 지정한 경우에만 생성됩니다.",
             "period_requests_dir": "--split-by-period 지정 시 period별 LLM request 파일이 저장되는 디렉터리입니다.",
-            "recent_raw_input_path": "뉴스 에이전트에 제공할 기업 관련 뉴스 상위 20건 입력 파일입니다.",
-            "summary_periods_for_news_agent": "뉴스 에이전트에 제공할 주간 요약 기간입니다.",
-            "raw_periods_for_news_agent": "기업 관련 뉴스 상위 20건이 포함된 기간입니다.",
+            "recent_raw_input_path": f"뉴스 에이전트에 제공할 {raw_label} 입력 파일입니다.",
+            "summary_periods_for_news_agent": "뉴스 에이전트에 제공할 월별 요약 기간입니다.",
+            "raw_periods_for_news_agent": f"{raw_label}이 포함된 기간입니다.",
         },
         "metadata": base_metadata,
         "selected_periods": selected_periods,
         "summary_periods_for_news_agent": summary_periods_for_news_agent,
         "raw_periods_for_news_agent": top_news_periods,
-        "company_related_news_top_k": NEWS_AGENT_TOP_K,
+        "company_related_news_top_k": raw_limit,
         "company_related_news_count": len(top_news_events),
         "total_events_after_filter": sum(
             len(grouped.get(period, [])) for period in selected_periods
@@ -865,11 +960,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--llm-request", default=None, help="Run an existing llm_summary_request.json without rebuilding exports")
     parser.add_argument("--llm-output", default=None, help="Output path for --llm-request. Defaults to llm_period_summaries.json")
     parser.add_argument("--output-dir", default=None, help="Output directory. Defaults to data/artifacts/context_exports/...")
-    parser.add_argument("--granularity", choices=["day", "week", "month"], default="week")
-    parser.add_argument("--period-count", type=int, default=14)
-    parser.add_argument("--raw-period-count", type=int, default=14)
+    parser.add_argument("--granularity", choices=["day", "week", "month"], default="month")
+    parser.add_argument("--period-count", type=int, default=12)
+    parser.add_argument("--raw-period-count", type=int, default=12)
     parser.add_argument("--min-mention-count", type=int, default=1)
-    parser.add_argument("--llm-model", default="gpt-5.4", help="LLM model for --run-llm")
+    parser.add_argument("--llm-model", default="gpt-5.4-mini", help="LLM model for --run-llm")
     parser.add_argument("--run-llm", action="store_true", help="Call OpenAI and save llm_period_summaries.json")
     parser.add_argument(
         "--split-by-period",

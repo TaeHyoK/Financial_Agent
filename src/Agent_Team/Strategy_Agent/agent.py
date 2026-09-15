@@ -61,11 +61,22 @@ BASIS_CARD_VERSION = "1.2"
 DECISION_BASIS_VERSION = "1.0"
 PROMPTS_DIR = AGENT_DIR / "prompts"
 DEFAULT_ENV_FILE = AGENT_DIR.parents[2] / "configs" / ".env"
-DEFAULT_OPENAI_MODEL = "gpt-5.4"
+DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
 DEFAULT_OPENAI_MAX_TOKENS = 20000
 FINAL_RECOMMENDATIONS = {"Buy", "Hold", "Sell"}
-DEFAULT_DECISION_HORIZON_PROFILE = "default"
+DEFAULT_DECISION_HORIZON_PROFILE = "annual"
 DECISION_HORIZON_PROFILES = {
+    "annual": {
+        "horizon": "12개월",
+        "policy": (
+            "- 기준일부터 향후 12개월의 기업 투자 매력을 판단한다. 실적의 지속성, 사업 변화, 가격 수준과 위험을 종합한다.\n"
+            "- 의견 등급의 공통 기준점은 향후 12개월 기대수익률 Buy +15% 이상, Hold -15% 초과~+15% 미만, Sell -15% 이하이다. 증권사 전체의 통일된 기준이 아니라 본 분석의 등급 정의다.\n"
+            "- 이 구간은 의견을 해석하는 기준점이지 수익률 계산이나 임계값 검증 요구가 아니다. 과거 수익률에 적용하지 않는다. 구간에 맞추기 위해 목표주가나 기대수익률을 만들어내지 않는다.\n"
+            "- 시장 대비 성과는 판단 근거이며, 의견은 지수 대비 상대수익률 이진 분류가 아니다.\n"
+            "- 단기 과열이나 진입 시점만으로 장기 투자 의견을 결정하지 않는다. 목표주가·미래 EPS의 부재만으로 중립을 선택하지 않는다.\n"
+            "- horizon은 정확히 12개월로 반환한다."
+        ),
+    },
     "default": {
         "horizon": "6~12개월",
         "policy": (
@@ -934,19 +945,9 @@ def _run_strategy_agent_v5(
                 },
             )
             raise
-    decision_output = align_strategy_decision_v5_evidence_plan(
-        decision_output,
-        context=context,
-    )
-    _require_runtime_decision_contract(
-        decision_output,
-        expected_version=DECISION_VERSION_V5,
-        required_horizon=str(profile["horizon"]),
-        brief_key="strategy_brief",
-    )
-    validation = validate_strategy_decision_v5(
-        decision_output,
-        context=context,
+    decision_output, validation = preserve_and_validate_strategy_v5(
+        decision_output, context=context, output_dir=output_dir,
+        fingerprint=fingerprint, decision_horizon_profile=decision_horizon_profile,
         required_horizon=str(profile["horizon"]),
     )
     if failure_report_path.exists():
@@ -983,6 +984,37 @@ def _run_strategy_agent_v5(
     _remove_strategy_v3_artifacts(output_dir)
     _remove_strategy_v4_artifacts(output_dir)
     return strategy_report
+
+
+def preserve_and_validate_strategy_v5(
+    output: dict[str, Any], *, context: dict[str, Any], output_dir: Path,
+    fingerprint: str, decision_horizon_profile: str, required_horizon: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Archive the response before any alignment; never lose a paid response."""
+    attempt = datetime.now().strftime("%Y%m%dT%H%M%S%f")
+    raw_path = output_dir / "strategy_response_attempts" / f"{attempt}_{fingerprint[:12]}.json"
+    save_json(raw_path, {"fingerprint": fingerprint, "decision_output": output})
+    try:
+        aligned = align_strategy_decision_v5_evidence_plan(output, context=context)
+        _require_runtime_decision_contract(
+            aligned, expected_version=DECISION_VERSION_V5,
+            required_horizon=required_horizon, brief_key="strategy_brief",
+        )
+        validation = validate_strategy_decision_v5(
+            aligned, context=context, required_horizon=required_horizon,
+        )
+        return aligned, validation
+    except Exception as exc:
+        failure = {
+            "status": "fail", "stage": "decision_alignment_or_validation",
+            "error_type": type(exc).__name__, "message": str(exc),
+            "fingerprint": fingerprint,
+            "decision_horizon_profile": decision_horizon_profile,
+            "required_horizon": required_horizon, "raw_response_path": str(raw_path),
+        }
+        save_json(raw_path.with_suffix(".failure.json"), failure)
+        save_json(output_dir / "strategy_failure_report_v5.json", failure)
+        raise
 
 
 def _require_runtime_decision_contract(
@@ -1499,6 +1531,7 @@ def build_strategy_report_projection_v5(
         "agent_name": "Strategy Agent",
         "output_version": "9.0",
         "contract_version": DECISION_VERSION_V5,
+        "schema_revision": decision_output.get("schema_revision"),
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "target_company_name": target.get("company_name"),
         "target_run_key": target.get("run_key"),
@@ -1514,6 +1547,7 @@ def build_strategy_report_projection_v5(
             context.get("limitation_requirements") or []
         ),
         "data_limitations": deepcopy(context.get("data_limitations") or []),
+        "applicability_notes": deepcopy(context.get("applicability_notes") or {}),
         "coverage_summary": deepcopy(context.get("coverage_summary") or {}),
     }
 
@@ -1528,16 +1562,18 @@ def render_strategy_projection_markdown_v5(report: dict[str, Any]) -> str:
         return str(require_dict(brief.get(key), f"strategy_brief.{key}").get("text") or "")
 
     lines = [
-        f"# {report.get('target_company_name')} 전략 판단",
+        f"# {report.get('target_company_name')}: {brief.get('headline')}",
         "",
         f"판단 기간: {brief.get('horizon')}",
         "",
         "## 결론",
         linked_text("thesis"),
         "",
-        "## 현재 대응",
-        f"- 기존 편입자: {linked_text('existing_position_response')}",
-        f"- 신규 접근자: {linked_text('new_entry_response')}",
+        "## 투자 의견",
+        {"Buy": "매수", "Hold": "중립", "Sell": "매도"}[brief["recommendation"]],
+        "", linked_text("decision_rationale") if brief.get("decision_rationale") else "",
+        "", "## 최근 실적", linked_text("earnings_review"),
+        "", f"## 향후 {brief.get('horizon')} 전망", linked_text("outlook"),
         f"- 가격 판단: {linked_text('price_assessment')}",
         "",
         "## 핵심 분석",
@@ -2172,7 +2208,9 @@ def compact_strategy_valuation(report: dict[str, Any]) -> dict[str, Any]:
         "selected_date": valuation.get("selected_date") or direct.get("selected_date"),
         "market_date": valuation.get("market_date"),
         "latest_period": deepcopy(latest or {}),
-        "data_limits": text_items(direct.get("data_limits")) if isinstance(direct, dict) else [],
+        "calculated_from_close_and_dart": deepcopy(valuation.get("calculated_from_close_and_dart") or {}),
+        "provider_values_role": "reference_only_not_point_in_time_verified",
+        "data_limits": text_items(valuation.get("data_limits")) + (text_items(direct.get("data_limits")) if isinstance(direct, dict) else []),
     }
 
 
@@ -2619,8 +2657,8 @@ def run_decision_agent_v5(
         llm_model=llm_model,
         llm_timeout=llm_timeout,
         system_message=(
-            "You are the lead financial Strategy Agent. Select decision evidence and "
-            "report context separately, then return one grounded Korean JSON object."
+            "당신은 기업 리서치 Strategy Agent다. 제공된 자료를 분석하고 대안 해석을 비교한 뒤 "
+            "투자 의견과 선택 이유를 작성한다. 실제 사용한 근거를 연결한 한국어 JSON 객체 하나를 반환한다."
         ),
         response_format=strategy_decision_response_format_v5(
             context,
@@ -3590,6 +3628,7 @@ def compact_strategy_input_report(report: dict[str, Any], domain: str) -> dict[s
             "strategy_handoff",
             "secondary_context",
             "secondary_context_assessment",
+            "analysis_metadata",
         ):
             if key in report:
                 compact[key] = report.get(key)
@@ -3598,7 +3637,10 @@ def compact_strategy_input_report(report: dict[str, Any], domain: str) -> dict[s
         output = report.get("output") if isinstance(report.get("output"), dict) else report
         compact["output"] = {
             key: output.get(key)
-            for key in ("target_entity", "analysis_blocks", "secondary_context_assessment")
+            for key in (
+                "target_entity", "analysis_blocks", "overall_assessment",
+                "secondary_context", "secondary_context_assessment", "context_policy_version",
+            )
             if key in output
         }
         return compact
@@ -3610,7 +3652,9 @@ def compact_strategy_input_report(report: dict[str, Any], domain: str) -> dict[s
             "valuation_snapshot",
             "primary_evidence_catalog",
             "secondary_context_catalog",
+            "secondary_context",
             "secondary_context_assessment",
+            "context_policy_version",
         ):
             if key in report:
                 compact[key] = report.get(key)
@@ -4965,7 +5009,7 @@ def decision_prompt_v5(
         raise ValueError(
             "decision_agent_v5.md must contain exactly one horizon-policy placeholder."
         )
-    return template.replace(placeholder, str(resolved["policy"]))
+    return template.replace("12개월", str(resolved["horizon"])).replace(placeholder, str(resolved["policy"]))
 
 
 def load_required_json(path: Path, label: str) -> dict[str, Any]:

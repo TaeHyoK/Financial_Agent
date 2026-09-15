@@ -13,6 +13,7 @@ from html_report_spec import (
     REPORT_SECTIONS,
     TABLE_ITEM_KEYS,
     resolve_report_item_title,
+    has_data_limit_content,
 )
 from writer_io import write_text
 
@@ -107,6 +108,8 @@ def build_complete_html(report_payload: dict[str, Any]) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="investment-recommendation" content="{_text(metadata.get('recommendation') or '')}">
+  <meta name="investment-horizon" content="{_text(metadata.get('investment_horizon') or '')}">
   <title>{_text(title)}</title>
   <style>
 {_css()}
@@ -136,9 +139,11 @@ def build_complete_html(report_payload: dict[str, Any]) -> str:
 def _document_header(metadata: dict[str, Any]) -> str:
     company = metadata.get("company_name") or MISSING_VALUE
     base_date = metadata.get("base_date") or MISSING_VALUE
+    headline = metadata.get("report_title") or ""
     return f"""
     <header class="document-header">
       <p class="report-name">{_inline(company)} 투자 리서치</p>
+      <h1>{_inline(headline)}</h1>
       <div class="meta-grid">
         <div><span>기준일</span><strong>{_inline(base_date)}</strong></div>
       </div>
@@ -149,12 +154,15 @@ def _document_header(metadata: dict[str, Any]) -> str:
 def _sidebar_header(metadata: dict[str, Any]) -> str:
     base_date = metadata.get("base_date") or MISSING_VALUE
     horizon = metadata.get("investment_horizon") or MISSING_VALUE
+    opinion = {"Buy": "매수", "Hold": "중립", "Sell": "매도"}.get(metadata.get("recommendation"), "")
+    opinion_html = f'<div><dt>투자의견</dt><dd><strong class="investment-opinion">{opinion}</strong></dd></div>' if opinion else ""
     return f"""
         <div class="sidebar-summary">
           <p class="sidebar-brand">기업분석 리포트</p>
           <dl>
             <div><dt>기준일</dt><dd>{_inline(base_date)}</dd></div>
             <div><dt>투자기간</dt><dd>{_inline(horizon)}</dd></div>
+            {opinion_html}
           </dl>
         </div>
 """
@@ -248,7 +256,7 @@ def _render_report_charts(report_payload: dict[str, Any]) -> str:
               <span class="chart-interpretation">{_text(chart.get('investment_interpretation'))}</span>
             </figcaption>
           </figure>"""
-        for chart in charts[:2]
+        for chart in charts
     )
     return f"""
         <section class="report-chart-section">
@@ -277,6 +285,8 @@ def _render_section(
     metadata: dict[str, Any],
 ) -> str:
     section_payload = _dict(_dict(report_payload.get("sections")).get(section["key"]))
+    if section["key"] == "data_limits" and not has_data_limit_content(report_payload):
+        return ""
     items = "\n".join(
         _render_item(
             section["id"],
@@ -288,9 +298,12 @@ def _render_section(
         for item in section["items"]
     )
     section_class = f"report-section {location}-section"
+    display_title = section.get("display_title") or section["title"]
+    if section["key"] == "catalysts_execution":
+        display_title = f"향후 {metadata.get('investment_horizon') or ''} 전망"
     return f"""
     <section id="{section["id"]}" class="{section_class}">
-      <h1>{index}. {_text(section.get("display_title") or section["title"])}</h1>
+      <h1>{index}. {_text(display_title)}</h1>
 {items}
     </section>
 """

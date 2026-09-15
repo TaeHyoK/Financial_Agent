@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import re
 from typing import Any, Iterable, Mapping
+from .subdata_guidance import CONTEXT_USAGE
 
 
 EVIDENCE_ORIGIN_TYPES = frozenset(
@@ -13,7 +14,7 @@ EVIDENCE_ORIGIN_TYPES = frozenset(
 SECONDARY_CONTEXT_EFFECTS = frozenset(
     {"corroborates", "contradicts", "neutral", "insufficient"}
 )
-SECONDARY_CONTEXT_USAGE = "framing_and_limitation_only"
+SECONDARY_CONTEXT_USAGE = CONTEXT_USAGE
 
 _DOMAIN_PREFIXES = {
     "financial": "DART",
@@ -69,7 +70,7 @@ def validate_secondary_context_assessments(
     allowed_source_domains: Iterable[str],
     required_source_domains: Iterable[str] = (),
 ) -> list[dict[str, Any]]:
-    """Validate that secondary context cannot become primary claim evidence."""
+    """Validate source links without judging or rewriting analytical meaning."""
 
     if not isinstance(assessments, list):
         raise ValueError("secondary_context_assessment must be an array.")
@@ -93,8 +94,10 @@ def validate_secondary_context_assessments(
         effect = str(raw.get("effect") or "")
         if effect not in SECONDARY_CONTEXT_EFFECTS:
             raise ValueError(f"Invalid context effect for {context_id}: {effect}")
-        if raw.get("usage") != SECONDARY_CONTEXT_USAGE:
+        if raw.get("usage") not in {SECONDARY_CONTEXT_USAGE, "framing_and_limitation_only"}:
             raise ValueError(f"Invalid context usage for {context_id}")
+        if raw.get("usage") == SECONDARY_CONTEXT_USAGE and not isinstance(raw.get("judgment_impact"), str):
+            raise ValueError(f"Missing judgment_impact for {context_id}")
 
         primary_refs = _unique_strings(raw.get("primary_evidence_ids"))
         if not primary_refs or any(item not in primary_ids for item in primary_refs):
@@ -122,7 +125,8 @@ def validate_secondary_context_assessments(
                 "statement": statement,
                 "primary_evidence_ids": primary_refs,
                 "secondary_evidence_ids": secondary_refs,
-                "usage": SECONDARY_CONTEXT_USAGE,
+                "usage": raw["usage"],
+                **({"judgment_impact": raw["judgment_impact"]} if "judgment_impact" in raw else {}),
                 "limitation": str(raw.get("limitation") or "").strip(),
             }
         )

@@ -7,7 +7,7 @@ from datetime import date
 from typing import Any, Literal, NotRequired, TypedDict
 
 
-ReportRole = Literal["primary", "secondary", "same_period_previous", "annual_history"]
+ReportRole = Literal["primary", "secondary", "same_period_previous", "annual_history", "annual_history_1", "annual_history_2"]
 PeriodType = Literal["q1", "half", "q3", "annual"]
 
 

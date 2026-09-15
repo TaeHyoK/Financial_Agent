@@ -18,7 +18,7 @@ from .config import normalize_date
 
 DART_CORP_CODE_URL = "https://opendart.fss.or.kr/api/corpCode.xml"
 DEFAULT_RESOLVER_TIMEOUT = 30
-NEWS_WINDOW_DAYS = {"2w": 14, "1m": 30, "3m": 90}
+NEWS_WINDOW_DAYS = {"2w": 14, "1m": 30, "3m": 90, "1y": 365}
 KOREAN_LETTER_NAMES = {
     "a": "에이",
     "b": "비",
@@ -231,6 +231,10 @@ def resolve_naver_market(stock_code: str) -> str:
         return "KOSPI"
     if re.search(r"<img[^>]+(?:btn_kosdaq\.gif|class=[\"']kosdaq[\"'])", html, re.IGNORECASE):
         return "KOSDAQ"
+    # The redirected stock.naver.com page embeds the board in its React payload.
+    boards = set(re.findall(r'"sosokData"\s*:\s*"(KOSPI|KOSDAQ)"', html.replace('\\"', '"')))
+    if len(boards) == 1:
+        return boards.pop()
     return ""
 
 
@@ -276,8 +280,8 @@ def build_resolved_company_config(
     identity: CompanyIdentity,
     *,
     selected_date: str | date,
-    news_window: str = "3m",
-    llm_model: str = "gpt-5.4",
+    news_window: str = "1y",
+    llm_model: str = "gpt-5.4-mini",
     max_retries: int = 1,
 ) -> dict[str, Any]:
     """Build the existing per-company config contract from a resolved identity."""
@@ -308,6 +312,9 @@ def resolve_news_date_range(selected_date: date, news_window: str) -> tuple[date
         raise CompanyResolutionError(
             f"Unsupported news_window {news_window!r}; choose one of {sorted(NEWS_WINDOW_DAYS)}."
         )
+    if normalized == "1y":
+        from shared.time_windows import shift_months
+        return shift_months(selected_date, -12), selected_date - timedelta(days=1)
     days = NEWS_WINDOW_DAYS[normalized]
     return selected_date - timedelta(days=days), selected_date - timedelta(days=1)
 
@@ -384,10 +391,14 @@ def _normalized_company_name_aliases(value: Any) -> set[str]:
 
 
 def _stock_code(value: Any) -> str:
-    digits = re.sub(r"\D", "", str(value or ""))
-    if not digits:
-        return ""
-    return digits.zfill(6) if len(digits) <= 6 else digits
+    # Provider codes can contain letters (e.g. 0010F0). Removing letters
+    # aliases distinct companies to numeric codes such as Yuhan's 000100.
+    code = str(value if value is not None else "").strip().upper()
+    if re.fullmatch(r"[0-9]{1,6}", code):
+        return code.zfill(6)
+    if re.fullmatch(r"[0-9A-Z]{6}", code) and any(ch.isdigit() for ch in code):
+        return code
+    return ""
 
 
 def _as_date(value: str | date) -> date:

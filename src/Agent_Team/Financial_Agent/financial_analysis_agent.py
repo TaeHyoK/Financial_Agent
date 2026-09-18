@@ -21,7 +21,7 @@ from shared.subdata_guidance import (
 from shared.llm_clients import compact_json, execute_with_telemetry
 
 
-DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
+DEFAULT_OPENAI_MODEL = "gpt-5.4"
 FINANCIAL_DIMENSIONS = (
     "revenue_growth",
     "profitability",

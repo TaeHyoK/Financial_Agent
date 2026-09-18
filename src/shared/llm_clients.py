@@ -158,6 +158,7 @@ def normalize_usage(usage: Any) -> dict[str, int]:
         "cached_tokens",
         "cachedContentTokenCount",
     ) or _first_int(usage, "cachedContentTokenCount")
+    cache_write_tokens = _first_int(prompt_details, "cache_write_tokens")
     reasoning_tokens = _first_int(
         completion_details,
         "reasoning_tokens",
@@ -167,6 +168,7 @@ def normalize_usage(usage: Any) -> dict[str, int]:
     return {
         "input_tokens": input_tokens,
         "cached_input_tokens": cached_tokens,
+        "cache_write_input_tokens": cache_write_tokens,
         "output_tokens": output_tokens,
         "reasoning_tokens": reasoning_tokens,
         "total_tokens": total_tokens,

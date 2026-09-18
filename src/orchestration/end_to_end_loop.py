@@ -191,7 +191,7 @@ class AgentTeamOrchestrator:
             return self.args.llm_model
         if self.run_config.llm_model:
             return self.run_config.llm_model
-        return "gpt-5.4-mini"
+        return "gpt-5.4"
 
     def outputs_for_step(self, step_name: str) -> dict[str, str]:
         if step_name == "yfinance_layer_1":
@@ -930,8 +930,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--news-granularity", default=DEFAULT_NEWS_GRANULARITY, choices=["day", "week", "month"])
     parser.add_argument("--news-period-count", type=int, default=None)
     parser.add_argument("--news-raw-period-count", type=int, default=DEFAULT_NEWS_RAW_PERIOD_COUNT)
-    parser.add_argument("--news-llm-model", default=None)
-    parser.add_argument("--news-analysis-model", default=None)
+    parser.add_argument(
+        "--news-llm-model",
+        default="gpt-5.6-luna",
+        help="Model used only for period-level News summaries.",
+    )
+    parser.add_argument(
+        "--news-analysis-model",
+        default=None,
+        help="News analysis model. Defaults to the common analysis model.",
+    )
     parser.add_argument(
         "--news-split-by-period",
         dest="news_split_by_period",

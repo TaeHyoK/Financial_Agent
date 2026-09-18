@@ -31,7 +31,7 @@ from tqdm.auto import tqdm
 from .io.storage import save_json
 
 
-DEFAULT_MODEL = "gpt-5.4-mini"
+DEFAULT_MODEL = "gpt-5.4"
 DEFAULT_GRANULARITY = "month"
 SUMMARY_MONTH_COUNT = 12
 RECENT_RAW_MONTH_COUNT = 3
@@ -189,7 +189,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dart-lightweight", default=None, help="Override DART lightweight JSON path.")
     parser.add_argument("--market-summary", default=None, help="Override YFinance market summary JSON path.")
     parser.add_argument("--output-dir", default=None, help="Override output directory.")
-    parser.add_argument("--model", default=None, help="OpenAI model. Defaults to NEWS_AGENT_LLM_MODEL or gpt-5.4-mini.")
+    parser.add_argument("--model", default=None, help="OpenAI model. Defaults to NEWS_AGENT_LLM_MODEL or gpt-5.4.")
     parser.add_argument("--env-path", default=None, help="Optional .env path loaded after News/.env.")
     parser.add_argument("--timeout-seconds", type=float, default=300.0, help="OpenAI request timeout.")
     parser.add_argument(

@@ -25,7 +25,7 @@ from writer_handoff import (
 )
 
 
-DEFAULT_LLM_MODEL = "gpt-5.4-mini"
+DEFAULT_LLM_MODEL = "gpt-5.4"
 MISSING_VALUE = "데이터 추가 필요"
 WRITER_CACHE_VERSION = "21"
 DETERMINISTIC_WRITER_MODE = "deterministic"

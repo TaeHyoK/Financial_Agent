@@ -86,7 +86,7 @@ strategy_report.md
 
 ```bash
 PYTHONPATH=src python -m Agent_Team.Strategy_Agent.evaluate_recommendation_bias \
-  --llm-model gpt-5.4-mini \
+  --llm-model gpt-5.4 \
   --env-file configs/.env
 ```
 

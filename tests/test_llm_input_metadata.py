@@ -81,6 +81,12 @@ class LLMInputMetadataTests(unittest.TestCase):
         self.assertEqual(period['events'], [{'event_id': 'E1', 'title': '검증그룹 실적 발표'}])
         self.assertEqual(source, before)
 
+    def test_luna_summary_request_uses_default_temperature(self):
+        request = _build_llm_summary_request({'metadata': {}, 'periods': []}, 'gpt-5.6-luna')
+        self.assertNotIn('temperature', request)
+        legacy = _build_llm_summary_request({'metadata': {}, 'periods': []}, 'gpt-5.4-mini')
+        self.assertEqual(legacy['temperature'], 0.2)
+
     def test_all_domain_request_boundaries_share_projection_without_mutating_packets(self):
         contexts = context_fixture()
         expected = secondary_context_for_llm(contexts)

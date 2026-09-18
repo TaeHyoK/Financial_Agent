@@ -31,7 +31,7 @@ from . import AGENT_DIR
 CONTEXT_VERSION = "peer_comparison_context_v1"
 OUTPUT_VERSION = "peer_comparison_analysis_v1"
 CACHE_VERSION = "2"
-DEFAULT_MODEL = "gpt-5.4-mini"
+DEFAULT_MODEL = "gpt-5.4"
 PROMPT_PATH = AGENT_DIR / "prompts" / "comparison_agent.md"
 DEFAULT_ENV_FILE = AGENT_DIR.parents[2] / "configs" / ".env"
 

@@ -39,7 +39,7 @@ DEFAULT_DART_JSON: Path | None = None
 DEFAULT_NEWS_JSON: Path | None = None
 DEFAULT_REPORT_MD = DEFAULT_OUTPUT_DIR / "yfinance_analyst_report.md"
 DEFAULT_REPORT_JSON = DEFAULT_OUTPUT_DIR / "yfinance_analyst_report.json"
-DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
+DEFAULT_OPENAI_MODEL = "gpt-5.4"
 SECONDARY_FINANCIAL_METRICS = (
     "revenue",
     "revenue_growth",

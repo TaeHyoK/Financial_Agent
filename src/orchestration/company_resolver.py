@@ -281,7 +281,7 @@ def build_resolved_company_config(
     *,
     selected_date: str | date,
     news_window: str = "1y",
-    llm_model: str = "gpt-5.4-mini",
+    llm_model: str = "gpt-5.4",
     max_retries: int = 1,
 ) -> dict[str, Any]:
     """Build the existing per-company config contract from a resolved identity."""

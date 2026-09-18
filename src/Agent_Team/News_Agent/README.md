@@ -61,6 +61,8 @@ News Agent는 선정 기사 전체를 날짜·제목·스니펫·기사 ID·진�
 
 월별 요약은 `issues` 배열의 사건별 `summary`와 실제 인용한 `source_event_ids`로 구성합니다. 이 설명과 인용 ID가 재무·시장 보조자료에 그대로 전달됩니다. 같은 기사를 인용한 별개 사건도 합치지 않습니다. 저장 결과의 `input_event_ids`는 월별 입력 전체이며, `source_event_ids`는 실제 인용의 합집합이므로 서로 구분해야 합니다.
 
+통합 실행은 월별 요약에 `gpt-5.6-luna`, 뉴스 분석에 `gpt-5.4`를 사용합니다. 요약은 12개 월 구간을 각각 호출하여 생성합니다. 직접 실행할 때는 `--llm-model gpt-5.6-luna --analysis-model gpt-5.4 --split-by-period`로 같은 구성을 지정할 수 있습니다. 통합 실행의 `--news-summary-model`은 요약에만 적용되며 뉴스 분석 모델을 변경하지 않습니다.
+
 ## Output 경로
 
 통합 후 새 output은 반드시 아래에 생성합니다.

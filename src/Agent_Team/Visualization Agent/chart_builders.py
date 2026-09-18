@@ -445,6 +445,10 @@ def build_peer_profitability_comparison_chart(
     required_columns = ["company_name", "revenue_100m", "contribution_margin_pct", "sga_margin_pct", "eps"]
     _require_columns(peer_profitability_df, required_columns, "peer profitability comparison chart")
     chart_df = peer_profitability_df.copy().reset_index(drop=True)
+    # Matplotlib needs numeric NaN, not object-dtype None. Keep missing values
+    # missing rather than plotting them as zero or inventing an estimate.
+    for column in required_columns[1:]:
+        chart_df[column] = pd.to_numeric(chart_df[column], errors="raise").astype(float)
     if chart_df[["revenue_100m", "contribution_margin_pct", "sga_margin_pct", "eps"]].isna().all(axis=None):
         raise ValueError("Peer profitability comparison chart has no usable numeric data.")
 
@@ -488,9 +492,12 @@ def build_peer_profitability_comparison_chart(
     margin_ax.legend(loc="upper right", frameon=False)
     _style_axis(margin_ax)
 
-    eps_colors = ["#0f766e" if value >= 0 else "#c2410c" for value in chart_df["eps"].fillna(0)]
+    eps_colors = ["#a0aec0" if pd.isna(value) else "#0f766e" if value >= 0 else "#c2410c" for value in chart_df["eps"]]
     eps_bars = eps_ax.bar(x, chart_df["eps"], width=0.46, color=eps_colors, label="주당순이익")
     _label_bars(eps_ax, eps_bars)
+    for index, value in enumerate(chart_df["eps"]):
+        if pd.isna(value):
+            eps_ax.text(index, 0.05, "자료 없음", transform=eps_ax.get_xaxis_transform(), ha="center", fontsize=8, color="#4a5568")
     eps_ax.axhline(0, color="#a0aec0", linewidth=1.0)
     eps_ax.set_title("주당순이익", fontsize=11, loc="left")
     eps_ax.set_ylabel("원")

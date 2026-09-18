@@ -42,7 +42,7 @@ DART_API_KEY=your_dart_api_key_here
 
 ## 실행
 
-현재 개발·테스트 기본 모델은 `gpt-5.4-mini`다. 대상기업·비교기업의 하위 분석과 Strategy·Writer에 같은 모델을 사용한다. 모델 변경 전의 결과는 그대로 보존하며, 다른 모델로 실행한 결과를 같은 실험 조건으로 합산하지 않는다. 실행 명령의 모델 지정이나 환경변수는 기본값을 덮어쓸 수 있다.
+월별 뉴스 요약에는 `gpt-5.6-luna`를 사용하고, 대상기업·비교기업의 하위 분석과 비교 분석, Strategy·Writer에는 `gpt-5.4`를 사용한다. 뉴스 요약은 월별로 한 번씩 총 12회 생성하여 재무·시장 분석의 보조자료로만 제공한다. 뉴스 분석에는 선정 기사 전체를 제공한다. 두 모델은 각각 `--news-summary-model`과 `--llm-model`로 변경할 수 있으며 실행 명세에 기록된다. 제거 실험에서도 같은 단계에는 같은 모델을 사용한다. 기존 결과는 그대로 보존하며, 모델이 다른 결과를 같은 실험 조건으로 합산하지 않는다.
 
 다음 예시는 2025년 10월 31일 장 시작 전 시점의 현대모비스를 분석한다. 뉴스와 시장 분석 기간은 과거 1년, 재무 자료는 3개 연도와 최신 중간보고서, 투자 전망 기간은 향후 12개월이다.
 
@@ -52,7 +52,8 @@ financial-report \
   --selected-date 20251031 \
   --news-window 1y \
   --decision-horizon-profile annual \
-  --llm-model gpt-5.4-mini \
+  --llm-model gpt-5.4 \
+  --news-summary-model gpt-5.6-luna \
   --no-progress
 ```
 
@@ -64,7 +65,8 @@ PYTHONPATH=src python -m orchestration.full_report_pipeline \
   --selected-date 20251031 \
   --news-window 1y \
   --decision-horizon-profile annual \
-  --llm-model gpt-5.4-mini \
+  --llm-model gpt-5.4 \
+  --news-summary-model gpt-5.6-luna \
   --no-progress
 ```
 
@@ -108,13 +110,14 @@ src/
 │   ├── YFinance_Agent/        # 시장 자료와 가치평가 분석
 │   ├── Competitor_Agent/      # 비교기업 선정과 1:1 비교
 │   ├── Strategy_Agent/        # 판단 방향·근거·위험 작성
+│   ├── Unified_Agent/         # One-team 실험의 통합 분석과 후속 단계 연결
 │   ├── Visualization Agent/   # 차트 목록과 선택 차트 생성
 │   └── Writer Agent/          # 최종 HTML 보고서 작성
 ├── orchestration/             # 전체 파이프라인 실행
 └── shared/                    # 공통 근거 계약과 모델 호출
 ```
 
-실험 실행기, 단일 모델 비교 코드, 자동 평가 코드와 과거 실행 결과는 포함하지 않는다. API 키가 포함될 수 있는 `.env`와 실행 결과 디렉터리도 Git 추적 대상에서 제외한다.
+One-team 조건에서 사용하는 통합 분석 구성요소는 `Unified_Agent`에 포함한다. 재무·뉴스·시장 자료를 하나의 분석 요청으로 전달하고, 통합 결과를 비교 분석·Strategy·Writer에 연결한다. 서버별 실험 실행기, 자동 평가 코드와 과거 실행 결과는 포함하지 않는다. API 키가 포함될 수 있는 `.env`와 실행 결과 디렉터리도 Git 추적 대상에서 제외한다.
 
 ## 적용 범위
 

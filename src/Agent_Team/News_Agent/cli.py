@@ -62,7 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--period-count", type=int, default=12, help="Number of periods for LLM summary input")
     parser.add_argument("--raw-period-count", type=int, default=12, help="Periods containing globally selected raw events")
     parser.add_argument("--min-mention-count", type=int, default=1, help="Minimum mention_count for export")
-    parser.add_argument("--llm-model", default="gpt-5.4-mini", help="LLM model for summary execution")
+    parser.add_argument("--llm-model", default="gpt-5.6-luna", help="LLM model for monthly summary execution")
     parser.add_argument("--context-export-dir", default=None, help="Context export root. Defaults to Output_total/News/{run_key}/context_exports.")
     parser.add_argument("--ticker", default=None, help="Ticker for News Agent target_entity.")
     parser.add_argument("--corp-code", default=None, help="DART corp code for News Agent target_entity.")
@@ -75,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Use News evidence only and omit DART/market secondary context.",
     )
     parser.add_argument("--analysis-output-dir", default=None, help="News Agent output dir. Defaults to Output_total/News/{run_key}/output.")
-    parser.add_argument("--analysis-model", default=None, help="News Agent LLM model. Defaults to NEWS_AGENT_LLM_MODEL or gpt-5.4-mini.")
+    parser.add_argument("--analysis-model", default=None, help="News Agent analysis model. Defaults to NEWS_AGENT_LLM_MODEL or gpt-5.4.")
     parser.add_argument("--max-raw-events-per-period", type=int, default=20, help="Compatibility cap for the global News Agent raw-event list.")
     parser.add_argument("--timeout-seconds", type=float, default=300.0, help="OpenAI request timeout for the analysis phase.")
     parser.add_argument(

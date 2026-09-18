@@ -11,7 +11,21 @@ from typing import Any
 NORMAL_RUN_ROLES = ("target", "peer", "final")
 MILLION_TOKENS = 1_000_000
 OPENAI_PRICING_SOURCE = "https://developers.openai.com/api/docs/models/gpt-5.4"
+OPENAI_PRICING_SOURCES = [
+    OPENAI_PRICING_SOURCE,
+    "https://developers.openai.com/api/docs/models/gpt-5.4-mini",
+    "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
+]
 MODEL_PRICING_USD_PER_MILLION = {
+    "gpt-5.6-luna": {
+        "input": 0.20,
+        "cached_input": 0.02,
+        "cache_write_input": 0.25,
+        "output": 1.20,
+        "long_context_threshold": 272_000,
+        "long_context_input_multiplier": 2.0,
+        "long_context_output_multiplier": 1.5,
+    },
     "gpt-5.4": {
         "input": 2.50,
         "cached_input": 0.25,
@@ -30,13 +44,14 @@ MODEL_PRICING_USD_PER_MILLION = {
     },
 }
 EXPECTED_LOGICAL_CALLS_BY_ROLE = {
-    "target": 6,
-    "peer": 6,
-    "final": 2,
+    "target": 15,
+    "peer": 15,
+    "final": 3,
 }
 USAGE_KEYS = (
     "input_tokens",
     "cached_input_tokens",
+    "cache_write_input_tokens",
     "output_tokens",
     "reasoning_tokens",
     "total_tokens",
@@ -149,7 +164,10 @@ def summarize_execution_usage(
         "pipeline_completed": pipeline_completed,
         "cold_cache_call_count_matches": observed == expected_total,
         "usage": totals,
-        "uncached_input_tokens": max(0, totals["input_tokens"] - totals["cached_input_tokens"]),
+        "uncached_input_tokens": max(
+            0,
+            totals["input_tokens"] - totals["cached_input_tokens"] - totals["cache_write_input_tokens"],
+        ),
         "request_budget": {
             "estimated_input_tokens_across_transport_attempts": request_estimate_total,
             "max_estimated_input_tokens": max_estimated_input_tokens,
@@ -165,7 +183,7 @@ def summarize_execution_usage(
 def estimate_api_cost(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Estimate standard OpenAI text-token charges for recorded transports.
 
-    ``input_tokens`` includes cached input, so cached tokens are subtracted
+    ``input_tokens`` includes cache reads and writes; both are subtracted
     before the regular input rate is applied. Reasoning tokens are already a
     subset of output tokens and are not charged a second time.
     """
@@ -178,7 +196,11 @@ def estimate_api_cost(rows: list[dict[str, Any]]) -> dict[str, Any]:
         usage = row.get("usage") if isinstance(row.get("usage"), dict) else {}
         input_tokens = max(0, _integer(usage.get("input_tokens")))
         cached_tokens = min(input_tokens, max(0, _integer(usage.get("cached_input_tokens"))))
-        uncached_tokens = input_tokens - cached_tokens
+        cache_write_tokens = min(
+            input_tokens - cached_tokens,
+            max(0, _integer(usage.get("cache_write_input_tokens"))),
+        )
+        uncached_tokens = input_tokens - cached_tokens - cache_write_tokens
         output_tokens = max(0, _integer(usage.get("output_tokens")))
         if input_tokens == 0 and output_tokens == 0:
             continue
@@ -213,6 +235,12 @@ def estimate_api_cost(rows: list[dict[str, Any]]) -> dict[str, Any]:
             * input_multiplier
             / MILLION_TOKENS
         )
+        cache_write_cost = (
+            cache_write_tokens
+            * float(pricing.get("cache_write_input", pricing["input"]))
+            * input_multiplier
+            / MILLION_TOKENS
+        )
         output_cost = (
             output_tokens
             * float(pricing["output"])
@@ -226,15 +254,18 @@ def estimate_api_cost(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "observed_model_names": [],
                 "uncached_input_tokens": 0,
                 "cached_input_tokens": 0,
+                "cache_write_input_tokens": 0,
                 "output_tokens": 0,
                 "long_context_requests": 0,
                 "pricing_usd_per_million_tokens": {
                     "input": float(pricing["input"]),
                     "cached_input": float(pricing["cached_input"]),
+                    "cache_write_input": float(pricing.get("cache_write_input", pricing["input"])),
                     "output": float(pricing["output"]),
                 },
                 "uncached_input_cost_usd": 0.0,
                 "cached_input_cost_usd": 0.0,
+                "cache_write_input_cost_usd": 0.0,
                 "output_cost_usd": 0.0,
                 "total_cost_usd": 0.0,
             },
@@ -243,17 +274,20 @@ def estimate_api_cost(rows: list[dict[str, Any]]) -> dict[str, Any]:
             model_summary["observed_model_names"].append(raw_model)
         model_summary["uncached_input_tokens"] += uncached_tokens
         model_summary["cached_input_tokens"] += cached_tokens
+        model_summary["cache_write_input_tokens"] += cache_write_tokens
         model_summary["output_tokens"] += output_tokens
         model_summary["long_context_requests"] += int(long_context)
         model_summary["uncached_input_cost_usd"] += uncached_cost
         model_summary["cached_input_cost_usd"] += cached_cost
+        model_summary["cache_write_input_cost_usd"] += cache_write_cost
         model_summary["output_cost_usd"] += output_cost
-        model_summary["total_cost_usd"] += uncached_cost + cached_cost + output_cost
+        model_summary["total_cost_usd"] += uncached_cost + cached_cost + cache_write_cost + output_cost
 
     for model_summary in by_model.values():
         for key in (
             "uncached_input_cost_usd",
             "cached_input_cost_usd",
+            "cache_write_input_cost_usd",
             "output_cost_usd",
             "total_cost_usd",
         ):
@@ -275,8 +309,10 @@ def estimate_api_cost(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "unknown_models": sorted(unknown_models),
         "pricing_basis": "OpenAI standard API text-token rates per 1M tokens",
         "pricing_source": OPENAI_PRICING_SOURCE,
+        "pricing_sources": OPENAI_PRICING_SOURCES,
         "notes": [
             "Cached input is priced separately from uncached input.",
+            "GPT-5.6 Luna cache writes use 1.25 times the uncached input rate.",
             "Reasoning tokens are included in output tokens and are not added twice.",
             "The estimate excludes tool-call fees and regional-processing uplifts.",
         ],
@@ -285,6 +321,8 @@ def estimate_api_cost(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _billing_model(model: str) -> str:
     normalized = str(model or "").strip().lower()
+    if normalized == "gpt-5.6-luna" or normalized.startswith("gpt-5.6-luna-"):
+        return "gpt-5.6-luna"
     if normalized == "gpt-5.4-mini" or normalized.startswith("gpt-5.4-mini-"):
         return "gpt-5.4-mini"
     if normalized == "gpt-5.4" or normalized.startswith("gpt-5.4-202"):

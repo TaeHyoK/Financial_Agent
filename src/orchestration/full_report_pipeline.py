@@ -266,7 +266,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV_FILE)
-    parser.add_argument("--llm-model", default="gpt-5.4-mini")
+    parser.add_argument(
+        "--llm-model",
+        default="gpt-5.4",
+        help="Model used by domain analysis, peer comparison, Strategy, and Writer.",
+    )
+    parser.add_argument(
+        "--news-summary-model",
+        default="gpt-5.6-luna",
+        help="Model used only for the 12 monthly News summaries supplied as subdata.",
+    )
     parser.add_argument("--llm-timeout", type=int, default=300)
     parser.add_argument("--max-retries", type=int, default=1)
     parser.add_argument(
@@ -724,6 +733,11 @@ def build_domain_pipeline_command(
         "--use-llm",
         "--llm-model",
         args.llm_model,
+        "--news-llm-model",
+        args.news_summary_model,
+        "--news-analysis-model",
+        args.llm_model,
+        "--news-split-by-period",
         "--timeout-seconds",
         str(args.llm_timeout),
         "--llm-usage-manifest",
@@ -1526,6 +1540,8 @@ def _base_manifest(
             "decision_horizon": resolved_horizon,
             "final_stage_timeout_seconds": args.final_stage_timeout,
             "llm_model": args.llm_model,
+            "news_summary_model": args.news_summary_model,
+            "news_summary_execution": "one_call_per_month",
             "dry_run": bool(args.dry_run),
             "reuse_domain_data_from": (
                 str(Path(args.reuse_domain_data_from).expanduser().resolve())
@@ -1590,7 +1606,8 @@ def _base_manifest(
 
 
 def _expected_calls(ablation: AblationConfig, *, reused_domain_snapshot: bool = False) -> dict[str, int]:
-    domain_calls = 3 + int(not reused_domain_snapshot and not ablation.primary_data_only)
+    monthly_summary_calls = 12 if not reused_domain_snapshot and not ablation.primary_data_only else 0
+    domain_calls = 3 + monthly_summary_calls
     return {
         "target": domain_calls,
         "peer": domain_calls if ablation.include_competitor else 0,
@@ -1695,13 +1712,15 @@ def _log_final_usage(value: Any) -> None:
     usage = usage_summary.get("usage") if isinstance(usage_summary.get("usage"), dict) else {}
     input_tokens = int(usage.get("input_tokens") or 0)
     cached_tokens = int(usage.get("cached_input_tokens") or 0)
+    cache_write_tokens = int(usage.get("cache_write_input_tokens") or 0)
     output_tokens = int(usage.get("output_tokens") or 0)
     total_tokens = int(usage.get("total_tokens") or input_tokens + output_tokens)
     logger.info(
-        "Total LLM tokens: %s (input %s, cached input %s, output %s)",
+        "Total LLM tokens: %s (input %s, cached input %s, cache-write input %s, output %s)",
         f"{total_tokens:,}",
         f"{input_tokens:,}",
         f"{cached_tokens:,}",
+        f"{cache_write_tokens:,}",
         f"{output_tokens:,}",
     )
 

@@ -75,10 +75,10 @@ python src/Agent_Team/YFinance_Agent/report.py
 
 기본적으로 `configs/.env`를 읽어 `OPENAI_API_KEY`를 사용합니다. 다른 env 파일을 쓰려면 `--env-file`로 지정합니다.
 
-모델은 `--model` 또는 `OPENAI_MODEL`로 지정할 수 있으며, 현재 개발·테스트 기본값은 `gpt-5.4-mini`입니다. 과거 실행 결과의 모델은 당시 기록을 따릅니다.
+모델은 `--model` 또는 `OPENAI_MODEL`로 지정할 수 있으며, 기본값은 `gpt-5.4`입니다. 과거 실행 결과의 모델은 당시 기록을 따릅니다.
 
 ```bash
-python src/Agent_Team/YFinance_Agent/report.py --model gpt-5.4-mini
+python src/Agent_Team/YFinance_Agent/report.py --model gpt-5.4
 ```
 
 보고서는 YFinance `market_full_dataset.json`을 주 분석자료로 사용합니다. 뉴스 에이전트의 주장을 전달받지 않고 최근 1년의 월별 요약 12개와 DART 3개년 재무 추세표를 공통 subdata로 읽습니다. 주 분석 입력은 1·3·6·12개월 지표, 월별 관측치 12개와 최근 20거래일로 제한하며 전체 일별 자료는 파일에 보관합니다. 가격 수익률은 배당을 제외한 공급자 분할조정 종가 기준입니다. 뉴스와 가격의 시간적 대응은 살펴보되 인과관계로 단정하지 않습니다.

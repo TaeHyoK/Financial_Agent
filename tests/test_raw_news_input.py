@@ -251,7 +251,9 @@ def test_expected_calls_include_summary_only_when_generated():
     from types import SimpleNamespace
     from orchestration.full_report_pipeline import _expected_calls
     config = SimpleNamespace(primary_data_only=False, include_competitor=True)
-    assert _expected_calls(config) == {'target': 4, 'peer': 4, 'final': 3}
+    assert _expected_calls(config) == {'target': 15, 'peer': 15, 'final': 3}
     assert _expected_calls(config, reused_domain_snapshot=True) == {'target': 3, 'peer': 3, 'final': 3}
     config.primary_data_only = True
     assert _expected_calls(config) == {'target': 3, 'peer': 3, 'final': 3}
+    config.include_competitor = False
+    assert _expected_calls(config) == {'target': 3, 'peer': 0, 'final': 2}

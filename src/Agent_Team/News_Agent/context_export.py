@@ -266,6 +266,12 @@ def _load_company_profile(report: dict[str, Any], report_path: Path) -> dict[str
     }
 
 
+def _supports_custom_temperature(model: str) -> bool:
+    """Return whether the chat model accepts a non-default temperature."""
+
+    return not str(model).strip().lower().startswith("gpt-5.6")
+
+
 def _build_llm_summary_request(summary_prompt_input: dict[str, Any], llm_model: str) -> dict[str, Any]:
     expected_output_schema = {
         "description": SUMMARY_OUTPUT_DESCRIPTION,
@@ -304,13 +310,12 @@ def _build_llm_summary_request(summary_prompt_input: dict[str, Any], llm_model: 
         ],
         "expected_output_schema": expected_output_schema,
     }
-    return {
+    request = {
         "description": {
             "purpose": "LLM 기간별 뉴스 요약 호출 직전에 사용할 입력 payload입니다.",
             "execution_status": "not_executed",
         },
         "model": llm_model,
-        "temperature": 0.2,
         "response_format": {"type": "json_object"},
         "messages": [
             {
@@ -344,6 +349,9 @@ def _build_llm_summary_request(summary_prompt_input: dict[str, Any], llm_model: 
             },
         ],
     }
+    if _supports_custom_temperature(llm_model):
+        request["temperature"] = 0.2
+    return request
 
 
 def _find_user_message_index(request_payload: dict[str, Any]) -> int:
@@ -473,9 +481,10 @@ def _call_llm_summary(client: Any, request_payload: dict[str, Any]) -> dict[str,
     transport_payload = {
         "model": model,
         "messages": request_payload["messages"],
-        "temperature": float(request_payload.get("temperature", 0.2)),
         "response_format": request_payload.get("response_format", {"type": "json_object"}),
     }
+    if "temperature" in request_payload and _supports_custom_temperature(model):
+        transport_payload["temperature"] = float(request_payload["temperature"])
     response = execute_with_telemetry(
         lambda: client.chat.completions.create(**transport_payload),
         request_payload=transport_payload,
@@ -718,7 +727,7 @@ def build_context_exports(
     period_count: int = 12,
     raw_period_count: int = 12,
     min_mention_count: int = 1,
-    llm_model: str = "gpt-5.4-mini",
+    llm_model: str = "gpt-5.6-luna",
     run_llm: bool = False,
     split_by_period: bool = False,
     api_key_env: str = "OPENAI_API_KEY",
@@ -964,7 +973,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--period-count", type=int, default=12)
     parser.add_argument("--raw-period-count", type=int, default=12)
     parser.add_argument("--min-mention-count", type=int, default=1)
-    parser.add_argument("--llm-model", default="gpt-5.4-mini", help="LLM model for --run-llm")
+    parser.add_argument("--llm-model", default="gpt-5.6-luna", help="LLM model for monthly summaries")
     parser.add_argument("--run-llm", action="store_true", help="Call OpenAI and save llm_period_summaries.json")
     parser.add_argument(
         "--split-by-period",

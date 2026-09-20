@@ -1,6 +1,5 @@
 """Offline monthly allocation audit over saved ranked events; never calls an LLM."""
 import argparse
-from collections import Counter
 import copy
 from datetime import date, timedelta
 import hashlib

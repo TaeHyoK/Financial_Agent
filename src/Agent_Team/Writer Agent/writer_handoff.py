@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import re
 import copy
-from copy import deepcopy
 from typing import Any
 
 from shared.evidence_cards import (
@@ -1166,25 +1165,6 @@ def _writer_card(source: dict[str, Any], assessment: dict[str, Any]) -> dict[str
     return card
 
 
-def reformat_financial_reader_observations(
-    packet: dict[str, Any],
-    *,
-    source_unit: str,
-) -> dict[str, Any]:
-    """Rebuild deterministic financial displays without regenerating LLM prose."""
-
-    _krw_unit_multiplier(source_unit)
-    reformatted = deepcopy(packet)
-    for card_key, card in _dict(reformatted.get("cards")).items():
-        if card_key not in _FINANCIAL_AMOUNT_CARD_KEYS or not isinstance(card, dict):
-            continue
-        card["reader_observation"] = _reader_observation(
-            card,
-            financial_source_unit=source_unit,
-        )
-    return reformatted
-
-
 def _reader_observation(
     source: dict[str, Any],
     *,
@@ -1646,105 +1626,6 @@ def _dedupe(values: Any) -> list[str]:
     return list(dict.fromkeys(str(value) for value in values if str(value).strip()))
 
 
-def build_writer_handoff(
-    *,
-    strategy_report: dict[str, Any],
-    strategy_input_bundle: dict[str, Any],
-    decision_basis_by_section: dict[str, Any],
-) -> dict[str, Any]:
-    """Create the bounded Writer contract without generating analytical prose."""
-
-    target = _dict(strategy_input_bundle.get("target_company"))
-    target_reports = _dict(strategy_input_bundle.get("target_reports"))
-    financial = _dict(target_reports.get("financial"))
-    yfinance = _dict(target_reports.get("yfinance"))
-    financial_trends = _dict(financial.get("financial_trends"))
-    revenue_breakdown = _dict(financial.get("revenue_breakdown"))
-    valuation_snapshot = _dict(yfinance.get("valuation_snapshot"))
-    decision_balance = _dict(strategy_report.get("decision_balance"))
-    recommendation = _dict(strategy_report.get("final_recommendation"))
-    opinion = str(recommendation.get("opinion") or "").strip()
-
-    handoff = {
-        "handoff_version": HANDOFF_VERSION,
-        "target": {
-            "company_name": target.get("company_name") or strategy_report.get("target_company_name"),
-            "run_key": target.get("run_key") or strategy_report.get("target_run_key"),
-            "ticker": target.get("ticker") or financial.get("ticker") or yfinance.get("ticker"),
-            "selected_date": _selected_date(strategy_input_bundle, financial, yfinance),
-        },
-        "decision": {
-            "opinion": opinion,
-            "summary": recommendation.get("summary"),
-            "investment_horizon": recommendation.get("investment_horizon"),
-            "evidence_sufficiency": recommendation.get("evidence_sufficiency"),
-            "evidence_sufficiency_reason": recommendation.get("evidence_sufficiency_reason"),
-            "investment_thesis": deepcopy(_dict(strategy_report.get("investment_thesis"))),
-            "final_rationale": deepcopy(_dict(strategy_report.get("final_rationale"))),
-        },
-        "decisive_positive_evidence": _text_list(decision_balance.get("positive_evidence")),
-        "decisive_negative_evidence": _text_list(decision_balance.get("negative_evidence")),
-        "contrary_evidence": _contrary_evidence(opinion, decision_balance),
-        "business_context": {
-            "strategy_view": deepcopy(_dict(strategy_report.get("business_mix_view"))),
-        },
-        "financial_trend": {
-            "strategy_view": deepcopy(_dict(strategy_report.get("financial_view"))),
-            "latest_available_filing": deepcopy(
-                _dict(_dict(financial.get("collection_context")).get("latest_available_filing"))
-            ),
-            "future_filing_excluded": _dict(financial.get("collection_context")).get("future_filing_excluded"),
-            "current_vs_same_period": deepcopy(_dict(financial_trends.get("current_vs_same_period"))),
-            "annual_history": deepcopy(_list(financial_trends.get("annual_history"))),
-            "ttm": deepcopy(_dict(financial_trends.get("ttm"))),
-        },
-        "revenue_breakdown": {
-            "status": revenue_breakdown.get("status"),
-            "dimension_type": revenue_breakdown.get("dimension_type"),
-            "unit": revenue_breakdown.get("unit"),
-            "current_period": deepcopy(_dict(revenue_breakdown.get("current_period"))),
-            "current_items": deepcopy(_list(revenue_breakdown.get("current_items"))),
-            "source": deepcopy(_dict(revenue_breakdown.get("source"))),
-            "validation": deepcopy(_dict(revenue_breakdown.get("validation"))),
-        },
-        "valuation": {
-            "strategy_view": deepcopy(_dict(strategy_report.get("valuation_view"))),
-            "status": valuation_snapshot.get("status"),
-            "selected_date": valuation_snapshot.get("selected_date"),
-            "calculated_from_close_and_dart": deepcopy(
-                _dict(valuation_snapshot.get("calculated_from_close_and_dart"))
-            ),
-            "provider_direct_latest": deepcopy(
-                _dict(_dict(valuation_snapshot.get("direct_yfinance")).get("latest_period"))
-            ),
-            "provider_direct_date_policy": _dict(valuation_snapshot.get("direct_yfinance")).get("date_policy"),
-            "validation": deepcopy(_dict(valuation_snapshot.get("validation"))),
-            "data_limits": _text_list(valuation_snapshot.get("data_limits")),
-        },
-        "market_context": {
-            "strategy_view": deepcopy(_dict(strategy_report.get("market_price_view"))),
-            "main_view": deepcopy(_dict(yfinance.get("main_view"))),
-            "time_horizon_view": deepcopy(_dict(yfinance.get("time_horizon_view"))),
-            "detailed_analysis": deepcopy(_dict(yfinance.get("detailed_analysis"))),
-        },
-        "peer_comparison": {
-            "strategy_view": deepcopy(_dict(strategy_report.get("peer_competitor_positioning"))),
-            "peer_groups": deepcopy(_dict(_dict(strategy_input_bundle.get("peer_comparison")).get("peer_groups"))),
-            "metrics": deepcopy(_list(_dict(strategy_input_bundle.get("peer_comparison")).get("metrics"))),
-            "comparison_limits": _text_list(
-                _dict(strategy_input_bundle.get("peer_comparison")).get("comparison_limits")
-            ),
-        },
-        "catalysts": _text_list(_dict(strategy_report.get("catalyst_view")).get("observed_catalysts")),
-        "risks": deepcopy(_list(_dict(strategy_report.get("risk_view")).get("observed_risks"))),
-        "data_limits": deepcopy(_dict(strategy_report.get("limitations"))),
-        "evidence_refs": _compact_evidence_refs(decision_basis_by_section),
-    }
-    handoff = _remove_path_metadata(handoff)
-    validate_writer_handoff(handoff)
-    return handoff
-
-
 def validate_writer_handoff(handoff: dict[str, Any]) -> None:
     """Validate the Writer contract and reject path or truncation leakage."""
 
@@ -1784,12 +1665,6 @@ def validate_writer_handoff(handoff: dict[str, Any]) -> None:
         raise ValueError("writer_handoff contains forbidden path, audit-index, or truncation metadata.")
     if re.search(r"(?:^|[\s\"'])/(?:home|Users|tmp)/", serialized):
         raise ValueError("writer_handoff contains an absolute file path.")
-
-
-def handoff_json_size(handoff: dict[str, Any]) -> int:
-    """Return the serialized UTF-8 byte size used for prompt-budget checks."""
-
-    return len(json.dumps(handoff, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
 
 def _selected_date(

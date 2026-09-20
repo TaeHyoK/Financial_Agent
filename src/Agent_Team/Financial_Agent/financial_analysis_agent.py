@@ -18,7 +18,7 @@ from shared.subdata_guidance import (
     context_guidance, context_issue_schema, context_ref_schema,
     flatten_context_issues, validate_context_refs, CONTEXT_POLICY_VERSION,
 )
-from shared.llm_clients import compact_json, execute_with_telemetry
+from shared.llm_clients import compact_json
 
 
 DEFAULT_OPENAI_MODEL = "gpt-5.4"

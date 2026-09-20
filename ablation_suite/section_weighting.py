@@ -6,11 +6,9 @@ No analyst reference, future return or generated report is used in ranking.
 """
 from __future__ import annotations
 
-import copy
 import hashlib
 import math
 import re
-from collections import defaultdict
 from datetime import date
 
 import numpy as np
@@ -18,7 +16,6 @@ from bs4 import BeautifulSoup
 
 WEIGHTS = {"sales": .30, "earnings": .20, "products": .15,
            "contracts": .15, "materials_facilities": .10, "overview": .10}
-EQUAL_WEIGHTS = {key: 1 / len(WEIGHTS) for key in WEIGHTS}
 SECTION_TITLES = {"sales": "매출 및 수주상황", "products": "주요 제품 및 서비스",
                   "contracts": "주요계약 및 연구개발활동",
                   "materials_facilities": "원재료 및 생산설비", "overview": "사업의 개요"}
@@ -114,39 +111,3 @@ def week_key(event):
     d = date.fromisoformat(event["representative"]["time"][:10])
     y, w, _ = d.isocalendar()
     return f"{y}-W{w:02d}"
-
-
-def select_by_week(events, scores, k):
-    if len(events) != len(scores) or k <= 0:
-        raise ValueError("Invalid selection arguments")
-    buckets = defaultdict(list)
-    for i, event in enumerate(events):
-        if not np.isfinite(scores[i]):
-            raise ValueError("Non-finite ranking score")
-        buckets[week_key(event)].append(i)
-    result = []
-    for week in sorted(buckets):
-        result.extend(sorted(buckets[week], key=lambda i: (-float(scores[i]),
-                      -date.fromisoformat(events[i]["representative"]["time"][:10]).toordinal(),
-                      str(events[i]["event_id"])))[:k])
-    return result
-
-
-def make_report_context(original, events, weekly, final, section_scores, weights, profile):
-    out = copy.deepcopy(original)
-    out["news_events_all"] = copy.deepcopy(events)
-    ranked = sorted(weekly, key=lambda i: (-float(aggregate(section_scores, weights)[i]),
-                    str(events[i]["event_id"])))
-    rank = {i: n + 1 for n, i in enumerate(ranked)}
-    total = aggregate(section_scores, weights)
-    for i, event in enumerate(out["news_events_all"]):
-        event.pop("evidence", None)  # Old matched DART chunks do not explain new ranks.
-        event["relevance_rank"] = rank.get(i, 0)
-        event["scores"] = {"final_score": float(total[i]),
-                           "section_scores": {k: float(v[i]) for k, v in section_scores.items()}}
-    out["news_events_weekly"] = [copy.deepcopy(out["news_events_all"][i]) for i in weekly]
-    out["news_events_final"] = [copy.deepcopy(out["news_events_all"][i]) for i in final]
-    out["news_selection"].update({"stage": profile, "metric": "section_weighted_similarity",
-        "section_weights": weights, "weekly_selected_event_count": len(weekly),
-        "selected_event_count": len(final), "article_text_policy": "frozen_title_only_all_conditions"})
-    return out

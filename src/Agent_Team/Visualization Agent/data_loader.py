@@ -23,20 +23,7 @@ REQUIRED_MARKET_COLUMNS = [
     "stock_relative_strength_60",
 ]
 
-OPTIONAL_MARKET_COLUMNS = [
-    "stock_return_5d",
-    "stock_return_20d",
-    "stock_return_60d",
-    "stock_rsi_14",
-    "stock_macd_hist",
-    "stock_volatility_20",
-    "kospi_close",
-    "kospi_return_20d",
-    "fx_close",
-]
-
 REQUIRED_DART_METRICS = ["contribution_margin", "sga_margin"]
-OPTIONAL_DART_METRICS = ["revenue", "contribution_profit", "eps"]
 INCOME_TREND_METRICS = ["revenue", "contribution_profit", "sga"]
 
 

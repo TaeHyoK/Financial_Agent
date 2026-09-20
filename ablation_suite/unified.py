@@ -9,7 +9,7 @@ import sys
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any, Iterator
 
 import pandas as pd
 
@@ -500,26 +500,6 @@ def _call_openai(request: dict[str, Any], *, timeout_seconds: int) -> tuple[dict
     # Timeout and transport retry policy are shared with all Full domains.
     response = call_domain_response(request, step="unified:domain_agent", timeout_seconds=timeout_seconds)
     return json.loads(response.output_text), normalize_usage(response.usage)
-
-
-
-
-
-
-
-
-
-
-def _evidence_ids(context: dict[str, Any], domain: str) -> Iterable[str]:
-    evidence = _dict(_dict(context.get(domain)).get("evidence"))
-    if evidence:
-        return evidence.keys()
-    rows = _dict(context.get(domain)).get("evidence") or []
-    return [
-        str(row.get("evidence_id"))
-        for row in rows
-        if isinstance(row, dict) and row.get("evidence_id")
-    ]
 
 
 @contextmanager

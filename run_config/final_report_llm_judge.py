@@ -190,12 +190,6 @@ def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def append_jsonl(path: Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(value, ensure_ascii=False) + "\n")
-
-
 def generated_path(replicate: str, condition: str, company: str) -> Path:
     if replicate == "r01":
         if condition == "one_team":

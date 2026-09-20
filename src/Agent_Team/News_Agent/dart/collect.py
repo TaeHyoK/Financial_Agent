@@ -243,28 +243,6 @@ def fetch_latest_periodic_xml(
     }
 
 
-def fetch_latest_quarterly_xml(
-    api_key: str,
-    corp_code: str,
-    bgn_de: str,
-    end_de: str,
-    *,
-    list_timeout: int = 20,
-    doc_timeout: int = 30,
-    max_pages: int = 20,
-) -> dict[str, str]:
-    # Backward-compatible alias.
-    return fetch_latest_periodic_xml(
-        api_key=api_key,
-        corp_code=corp_code,
-        bgn_de=bgn_de,
-        end_de=end_de,
-        list_timeout=list_timeout,
-        doc_timeout=doc_timeout,
-        max_pages=max_pages,
-    )
-
-
 def save_xml(xml_text: str, output_path: str) -> None:
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)

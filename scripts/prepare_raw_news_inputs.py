@@ -18,7 +18,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'src'), str(ROOT / 'src/Agent_Team/YFinance_Agent'), '/home/agent2/ABLATION']
 from shared.news_articles import ARTICLE_NEWS_POLICY, article_catalog, articles_for_llm
-from shared.subdata import news_subdata, secondary_context_for_llm
+from shared.subdata import news_subdata
 from shared.llm_clients import measure_request
 from Agent_Team.News_Agent import context_export, analysis_agent
 from Agent_Team.News_Agent.pipelines.run_news_pipeline import _weekly_dense_selection

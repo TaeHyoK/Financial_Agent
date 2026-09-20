@@ -7,7 +7,7 @@ from typing import Any
 
 from shared.evidence_cards import assert_no_opaque_ids
 
-from .contracts_v2 import _dict
+from .packet import _dict
 
 
 CONTEXT_VERSION = "strategy_context_package_v4"
@@ -31,7 +31,7 @@ _HANDOFF_INTERNAL_FIELDS = {
 }
 
 
-def build_strategy_context_package_v4(
+def build_base_strategy_context(
     packet: dict[str, Any],
     *,
     input_bundle: dict[str, Any],
@@ -61,11 +61,11 @@ def build_strategy_context_package_v4(
         if domain in context["domain_handoffs"]:
             context["domain_handoffs"][domain]["cross_domain_assessments"] = copy.deepcopy(linked["assessments"])
             context["domain_handoffs"][domain]["conclusion_card_keys"] = copy.deepcopy(linked["conclusion_card_keys"])
-    validate_strategy_context_package_v4(context)
+    validate_base_strategy_context(context)
     return context
 
 
-def validate_strategy_context_package_v4(context: dict[str, Any]) -> None:
+def validate_base_strategy_context(context: dict[str, Any]) -> None:
     """Validate transport integrity without evaluating investment meaning."""
 
     if context.get("context_version") != CONTEXT_VERSION:

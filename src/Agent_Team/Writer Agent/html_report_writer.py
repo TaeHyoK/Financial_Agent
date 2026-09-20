@@ -18,8 +18,8 @@ from html_report_spec import (
 from shared.evidence_cards import PRODUCT_DISCLOSURE_SCOPE_LABEL
 from shared.llm_clients import compact_json, execute_with_telemetry, is_transient_transport_error
 from writer_handoff import (
+    LEGACY_EDITORIAL_PACKET_VERSION,
     EDITORIAL_PACKET_VERSION,
-    EDITORIAL_PACKET_VERSION_V3,
     validate_writer_editorial_packet,
 )
 
@@ -131,11 +131,11 @@ def normalize_report_payload(
 
     _validate_writer_input(writer_handoff)
     writer_mode = _normalize_writer_mode(writer_mode)
-    is_v2 = _is_v2_writer_packet(writer_handoff)
+    is_editorial_packet = _is_editorial_packet(writer_handoff)
     requested_chart_keys: list[str] | None = None
     chart_selection_details: list[dict[str, Any]] | None = None
     if chart_catalog is not None:
-        if is_v2:
+        if is_editorial_packet:
             chart_catalog = _grounded_chart_catalog_for_writer(
                 chart_catalog,
                 writer_handoff,
@@ -144,7 +144,7 @@ def normalize_report_payload(
             payload.get("requested_chart_keys"),
             chart_catalog=chart_catalog,
         )
-        if is_v2:
+        if is_editorial_packet:
             # Validate internal card links before visible card labels replace identifiers.
             chart_selection_details = _normalize_chart_selection_details(
                 payload.get("chart_selection_details"),
@@ -152,14 +152,14 @@ def normalize_report_payload(
                 writer_handoff=writer_handoff,
                 chart_catalog=chart_catalog,
             )
-    if is_v2:
-        payload = _materialize_data_limit_claims_v2(payload, writer_handoff)
-        payload = _enrich_writer_metadata_v2(payload, writer_handoff)
+    if is_editorial_packet:
+        payload = _materialize_data_limit_claims(payload, writer_handoff)
+        payload = _enrich_writer_metadata(payload, writer_handoff)
         if writer_mode == DETERMINISTIC_WRITER_MODE:
             if not _is_label_free_writer_packet(writer_handoff):
-                payload = _apply_locked_thesis_v2(payload, writer_handoff)
-            payload = _apply_deterministic_evidence_table_v2(payload, writer_handoff)
-            payload = _apply_deterministic_risk_table_v2(payload, writer_handoff)
+                payload = _apply_locked_thesis(payload, writer_handoff)
+            payload = _apply_deterministic_evidence_table(payload, writer_handoff)
+            payload = _apply_deterministic_risk_table(payload, writer_handoff)
         payload = _replace_visible_card_keys(payload, writer_handoff)
     target = _dict(writer_handoff.get("target"))
     decision = _dict(writer_handoff.get("decision"))
@@ -175,7 +175,7 @@ def normalize_report_payload(
             "decision_confidence": decision.get("decision_confidence") or MISSING_VALUE,
             "report_title": decision.get("headline") or (
                 f"{company_name} 투자 리서치"
-                if is_v2
+                if is_editorial_packet
                 else metadata.get("report_title") or f"{company_name} Investment Report"
             ),
         }
@@ -188,11 +188,11 @@ def normalize_report_payload(
         for item_key, _title, item_type in section["items"]:
             raw_item = section_payload.get(item_key)
             normalized_items[item_key] = (
-                _normalize_table(raw_item, preserve_strategy_values=is_v2)
+                _normalize_table(raw_item, preserve_strategy_values=is_editorial_packet)
                 if item_type == "table"
                 else _normalize_text(
                     raw_item,
-                    preserve_claim_units=is_v2,
+                    preserve_claim_units=is_editorial_packet,
                     allow_empty=section["key"] == "data_limits",
                 )
             )
@@ -210,7 +210,7 @@ def normalize_report_payload(
                 if writer_mode == FREE_FORM_WRITER_MODE
                 else "single_call_llm_with_editorial_cards_v2"
             )
-            if contract_version in {EDITORIAL_PACKET_VERSION, EDITORIAL_PACKET_VERSION_V3}
+            if contract_version in {LEGACY_EDITORIAL_PACKET_VERSION, EDITORIAL_PACKET_VERSION}
             else "single_call_llm_with_compact_handoff"
         ),
         "contract_version": contract_version,
@@ -334,11 +334,11 @@ def _build_context(
 
     _validate_writer_input(writer_handoff)
     writer_mode = _normalize_writer_mode(writer_mode)
-    context = _build_context_v2(writer_handoff, writer_mode=writer_mode)
+    context = _build_editorial_context(writer_handoff, writer_mode=writer_mode)
     return _with_chart_selection_context(context, chart_catalog)
 
 
-def _build_context_v2(
+def _build_editorial_context(
     writer_packet: dict[str, Any],
     *,
     writer_mode: str = DETERMINISTIC_WRITER_MODE,
@@ -347,16 +347,16 @@ def _build_context_v2(
     required = _dict(writer_packet.get("required_card_keys_by_component"))
     free_form = writer_mode == FREE_FORM_WRITER_MODE
     label_free = _is_label_free_writer_packet(writer_packet)
-    strategy_v5 = (
+    is_strategy_decision = (
         writer_packet.get("strategy_contract_version") == "strategy_decision_output_v5"
     )
     decision = _dict(writer_packet.get("decision"))
     return {
-        "contract_version": str(writer_packet.get("packet_version") or EDITORIAL_PACKET_VERSION),
+        "contract_version": str(writer_packet.get("packet_version") or LEGACY_EDITORIAL_PACKET_VERSION),
         "label_free_strategy": label_free,
         "writer_mode": writer_mode,
         "task": "Strategy의 분석과 투자 의견을 보존해 한국어 기업 분석보고서를 편집한다.",
-        "output_contract": _output_contract_v2(writer_packet, writer_mode=writer_mode),
+        "output_contract": _output_contract(writer_packet, writer_mode=writer_mode),
         "section_role_guidance": _section_role_guidance(),
         "writing_rules": {
             "strategy_judgment_lock": decision.get("judgment") or decision.get("opinion"),
@@ -371,14 +371,14 @@ def _build_context_v2(
             "evidence_tier_policy": (
                 "핵심 근거 표에는 decision_basis 카드만 사용한다. report_context 카드는 report_insights와 "
                 "해당 섹션의 설명을 구체화할 때만 사용하며 새로운 투자 방향을 만들지 않는다."
-                if strategy_v5
+                if is_strategy_decision
                 else "Strategy가 선택한 카드 역할을 보존한다."
             ),
             "report_insight_policy": (
                 "report_insights를 그대로 반복하지 말고 연결된 카드의 관찰값과 함께 손익·재무상태, "
                 "가격·가치평가, 사건·사업 실행의 관계를 설명한다. 같은 insight_type이어도 독립적인 사건과 "
                 "가정이면 각각의 의미와 근거를 보존한다. 입력에 없는 원인은 추가하지 않는다."
-                if strategy_v5
+                if is_strategy_decision
                 else "해당 섹션에 연결된 카드의 의미를 설명한다."
             ),
             "key_evidence_row_policy": (
@@ -562,8 +562,8 @@ def _with_chart_selection_context(
         f"available_charts의 chart_key 중 중복 없이 최대 {max_selected}개인 문자열 배열"
     )
     if str(context.get("contract_version") or "") in {
+        LEGACY_EDITORIAL_PACKET_VERSION,
         EDITORIAL_PACKET_VERSION,
-        EDITORIAL_PACKET_VERSION_V3,
     }:
         output_contract["chart_selection_details"] = (
             "requested_chart_keys와 같은 순서의 배열. 각 항목은 chart_key, "
@@ -869,7 +869,7 @@ def _section_role_guidance() -> list[dict[str, Any]]:
     return [{"section_key": section["key"], "title": section["title"], **roles[section["key"]]} for section in REPORT_SECTIONS]
 
 
-def _output_contract_v2(
+def _output_contract(
     writer_packet: dict[str, Any],
     *,
     writer_mode: str = DETERMINISTIC_WRITER_MODE,
@@ -1071,7 +1071,7 @@ def writer_report_response_format(
         "json_schema": {
             "name": "writer_report_payload_v2",
             "strict": True,
-            "schema": _writer_report_schema_v2(
+            "schema": _writer_report_schema(
                 writer_handoff,
                 writer_mode=writer_mode,
                 chart_catalog=chart_catalog,
@@ -1080,7 +1080,7 @@ def writer_report_response_format(
     }
 
 
-def _writer_report_schema_v2(
+def _writer_report_schema(
     writer_packet: dict[str, Any],
     *,
     writer_mode: str = DETERMINISTIC_WRITER_MODE,
@@ -1360,12 +1360,12 @@ def _system_prompt(
     writer_mode: str = DETERMINISTIC_WRITER_MODE,
 ) -> str:
     writer_mode = _normalize_writer_mode(writer_mode)
-    if contract_version not in {EDITORIAL_PACKET_VERSION, EDITORIAL_PACKET_VERSION_V3}:
+    if contract_version not in {LEGACY_EDITORIAL_PACKET_VERSION, EDITORIAL_PACKET_VERSION}:
         raise ValueError("writer contract_version must be an editorial packet version")
-    return _system_prompt_v2(writer_mode=writer_mode)
+    return _editorial_system_prompt(writer_mode=writer_mode)
 
 
-def _system_prompt_v2(
+def _editorial_system_prompt(
     *,
     writer_mode: str = DETERMINISTIC_WRITER_MODE,
 ) -> str:
@@ -1439,16 +1439,16 @@ def _system_prompt_v2(
 """.strip()
 
 
-def _is_v2_writer_packet(value: Any) -> bool:
+def _is_editorial_packet(value: Any) -> bool:
     return isinstance(value, dict) and value.get("packet_version") in {
+        LEGACY_EDITORIAL_PACKET_VERSION,
         EDITORIAL_PACKET_VERSION,
-        EDITORIAL_PACKET_VERSION_V3,
     }
 
 
 def _is_label_free_writer_packet(value: Any) -> bool:
     return (
-        _is_v2_writer_packet(value)
+        _is_editorial_packet(value)
         and value.get("strategy_contract_version") in {
             "strategy_decision_output_v4",
             "strategy_decision_output_v5",
@@ -1472,7 +1472,7 @@ def _evidence_display_columns(packet: dict[str, Any]) -> tuple[str, ...]:
 
 
 def _writer_contract_version(value: dict[str, Any]) -> str:
-    return str(value.get("packet_version") or EDITORIAL_PACKET_VERSION)
+    return str(value.get("packet_version") or LEGACY_EDITORIAL_PACKET_VERSION)
 
 
 def _normalize_writer_mode(value: str) -> str:
@@ -1485,12 +1485,12 @@ def _normalize_writer_mode(value: str) -> str:
 
 
 def _validate_writer_input(value: dict[str, Any]) -> None:
-    if not _is_v2_writer_packet(value):
+    if not _is_editorial_packet(value):
         raise ValueError("writer input must be a writer editorial packet")
     validate_writer_editorial_packet(value)
 
 
-def _enrich_writer_metadata_v2(payload: dict[str, Any], writer_packet: dict[str, Any]) -> dict[str, Any]:
+def _enrich_writer_metadata(payload: dict[str, Any], writer_packet: dict[str, Any]) -> dict[str, Any]:
     """Attach hidden card links only when visible locked Strategy meaning is unambiguous."""
 
     enriched = json.loads(json.dumps(payload, ensure_ascii=False))
@@ -1552,7 +1552,7 @@ def _enrich_writer_metadata_v2(payload: dict[str, Any], writer_packet: dict[str,
     return enriched
 
 
-def _apply_locked_thesis_v2(
+def _apply_locked_thesis(
     payload: dict[str, Any],
     writer_packet: dict[str, Any],
 ) -> dict[str, Any]:
@@ -1568,17 +1568,17 @@ def _apply_locked_thesis_v2(
     forward = str(bridge.get("forward_support") or "").strip()
     current = str(bridge.get("current_price_rationale") or "").strip()
     valuation = str(bridge.get("valuation_counterweight") or "").strip()
-    forward = _qualify_partial_product_scope_v2(
+    forward = _qualify_partial_product_scope(
         forward,
         writer_packet,
         bridge.get("forward_support_card_keys"),
     )
-    current = _qualify_partial_product_scope_v2(
+    current = _qualify_partial_product_scope(
         current,
         writer_packet,
         bridge.get("current_price_card_keys"),
     )
-    valuation = _qualify_partial_product_scope_v2(
+    valuation = _qualify_partial_product_scope(
         valuation,
         writer_packet,
         bridge.get("valuation_card_keys"),
@@ -1598,7 +1598,7 @@ def _apply_locked_thesis_v2(
     cards = _dict(writer_packet.get("cards"))
     orphan_keys = [card_key for card_key in required_keys if card_key not in bridge_keys]
     orphan_claims = [
-        _qualify_partial_product_scope_v2(
+        _qualify_partial_product_scope(
             str(_dict(cards.get(card_key)).get("strategy_interpretation") or "").strip(),
             writer_packet,
             [card_key],
@@ -1642,7 +1642,7 @@ def _apply_locked_thesis_v2(
     return normalized
 
 
-def _qualify_partial_product_scope_v2(
+def _qualify_partial_product_scope(
     text: str,
     writer_packet: dict[str, Any],
     card_keys: Any,
@@ -1662,7 +1662,7 @@ def _qualify_partial_product_scope_v2(
     return f"{PRODUCT_DISCLOSURE_SCOPE_LABEL}으로 보면, {text}"
 
 
-def _apply_deterministic_evidence_table_v2(
+def _apply_deterministic_evidence_table(
     payload: dict[str, Any],
     writer_packet: dict[str, Any],
 ) -> dict[str, Any]:
@@ -1707,7 +1707,7 @@ def _apply_deterministic_evidence_table_v2(
             ),
             "확인된 수치·사실": _evidence_observation_text(card_key, card),
             _evidence_interpretation_column(writer_packet): _plain_korean_text(
-                _qualify_partial_product_scope_v2(
+                _qualify_partial_product_scope(
                     str(card.get("strategy_interpretation") or ""),
                     writer_packet,
                     [card_key],
@@ -1736,7 +1736,7 @@ def _apply_deterministic_evidence_table_v2(
     return normalized
 
 
-def _apply_deterministic_risk_table_v2(
+def _apply_deterministic_risk_table(
     payload: dict[str, Any],
     writer_packet: dict[str, Any],
 ) -> dict[str, Any]:
@@ -1774,7 +1774,7 @@ def _apply_deterministic_risk_table_v2(
     return normalized
 
 
-def _materialize_data_limit_claims_v2(
+def _materialize_data_limit_claims(
     payload: dict[str, Any],
     writer_packet: dict[str, Any],
 ) -> dict[str, Any]:
@@ -1790,13 +1790,13 @@ def _materialize_data_limit_claims_v2(
         for item in writer_packet.get("required_limitations") or []
         if isinstance(item, dict) and str(item.get("category") or "").strip()
     ]
-    strategy_v5 = (
+    is_strategy_decision = (
         writer_packet.get("strategy_contract_version") == "strategy_decision_output_v5"
     )
     bridge = _dict(writer_packet.get("recommendation_bridge"))
     strategy_claim = (
         str(bridge.get("residual_uncertainty") or "").strip()
-        if strategy_v5
+        if is_strategy_decision
         else ""
     )
     strategy_claim_keys = _clean_identifiers(
@@ -1811,7 +1811,7 @@ def _materialize_data_limit_claims_v2(
     if limitations and not raw_claims and not strategy_claim:
         return normalized
 
-    assignments = _limitation_card_assignments_v2(writer_packet, limitations)
+    assignments = _limitation_card_assignments(writer_packet, limitations)
     claim_units: list[dict[str, Any]] = [
         copy.deepcopy(unit) for unit in item.get("_claim_units") or []
         if isinstance(unit, dict) and str(unit.get("claim") or "").strip()
@@ -1858,7 +1858,7 @@ def _materialize_data_limit_claims_v2(
     return normalized
 
 
-def _limitation_card_assignments_v2(
+def _limitation_card_assignments(
     writer_packet: dict[str, Any],
     limitations: list[dict[str, Any]],
 ) -> dict[str, list[str]]:

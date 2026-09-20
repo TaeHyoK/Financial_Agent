@@ -149,7 +149,7 @@ python run_config/final_report_llm_judge.py aggregate
 
 브랜치 `cleanup-dead-code-20260921` 에서 dead code 와 v1~v4 잔여 코드를 걷어냈다. 계획과 파일별 분류는 `docs/cleanup_plan_20260921.md` 에 있다.
 
-- 최종 보고서 산출 동작과 프롬프트(`decision_agent_v5.md`, `comparison_agent.md`)는 바꾸지 않았다. 남은 v5 경로 코드는 정리 전과 같고, 테스트 픽스처로 Strategy·Writer 산출물과 캐시 지문이 전후 동일함을 확인했다.
+- 최종 보고서 산출 동작과 프롬프트(`decision_agent_v5.md`, `comparison_agent.md`)는 바꾸지 않았다. 남은 v5 경로 코드는 정리 전과 같고, 테스트 픽스처로 Strategy·Writer 산출물과 캐시 지문이 전후 동일함을 확인했다. (이름 변경 이후: `decision_agent_v5.md` → `decision_agent.md`)
 - LLM Judge(`run_config/final_report_llm_judge.py`)는 리포 내부 모듈을 import 하지 않아 영향이 없다. `validate` 는 여전히 valid / 360 / 360 / 0 이다.
 - `real_report_evaluation/extract.py`·`runner.py` 는 손대지 않았고 `ablation_results/*/protocol.json` 의 해시와 일치한다.
 - 테스트는 257 passed, 19 skipped 로 총계는 9절과 같지만 구성이 다르다. ZIP 을 풀면 Judge 준비 테스트 3개가 돌고, 대신 `tests/test_one_team.py` 의 러너 테스트 3개가 리포 바깥 경로(`../run_config/`)를 찾다가 스킵된다.

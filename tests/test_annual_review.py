@@ -14,7 +14,7 @@ import pandas as pd
 from test_annual_context import ROOT, financial_fixture, market_fixture
 from Agent_Team.Financial_Agent.financial_index_calculator import calculate_financial_index, load_metric_order
 from Agent_Team.Financial_Agent.langgraph_flow import build_financial_trends, build_financial_secondary_context
-from Agent_Team.Strategy_Agent.contracts_v2 import _news_claim_card, _validate_card_semantics
+from Agent_Team.Strategy_Agent.packet import _news_claim_card, _validate_card_semantics
 from Agent_Team.YFinance_Agent.reporting import build_monthly_market_evidence_catalog, build_news_secondary_context
 from Agent_Team.YFinance_Agent import reporting
 from Agent_Team.YFinance_Agent.pipeline import build_full_dataset

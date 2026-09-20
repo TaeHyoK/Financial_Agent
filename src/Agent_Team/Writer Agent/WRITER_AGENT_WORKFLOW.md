@@ -54,7 +54,7 @@ raw evidence ID와 원천 경로는 LLM 입력에서 제외하고 `writer_packet
 ## 처리 순서
 
 ```text
-Strategy v5 산출물 3개 로드
+Strategy 산출물 3개 로드
   -> 생성 가능한 차트 목록 로드
   -> editorial card 합집합과 component routing 생성
   -> provenance content hash 검증

@@ -5,18 +5,18 @@ import unittest
 from pathlib import Path
 from jsonschema import Draft202012Validator, ValidationError
 from test_optional_limits import writer_fixture
-from html_report_writer import _writer_report_schema_v2, normalize_report_payload
-from html_report_writer import _system_prompt_v2, FREE_FORM_WRITER_MODE, DETERMINISTIC_WRITER_MODE
+from html_report_writer import _writer_report_schema, normalize_report_payload
+from html_report_writer import _editorial_system_prompt, FREE_FORM_WRITER_MODE, DETERMINISTIC_WRITER_MODE
 from html_report_validator import _validate_card_key_coverage, _validate_claim_card_grounding
 from test_annual_context import strategy_fixture
 from Agent_Team.Financial_Agent.financial_analysis_agent import financial_analysis_json_schema
 from Agent_Team.YFinance_Agent.reporting import yfinance_agent_json_schema
-from Agent_Team.Strategy_Agent.contracts_v5 import strategy_decision_response_format_v5, validate_strategy_decision_v5
+from Agent_Team.Strategy_Agent.decision import strategy_decision_response_format, validate_strategy_decision
 from Agent_Team.News_Agent.context_export import (
     _build_llm_summary_request, _attach_source_event_ids,
     _load_llm_user_payload, _build_period_llm_requests,
 )
-from Agent_Team.Strategy_Agent.contracts_v5 import align_strategy_decision_v5_evidence_plan
+from Agent_Team.Strategy_Agent.decision import align_strategy_decision_evidence_plan
 from shared.evidence_cards import card_content_sha256
 from writer_handoff import build_writer_editorial_packet, _reader_observation
 from Agent_Team.News_Agent.analysis_agent import build_llm_request as build_news_request
@@ -81,9 +81,9 @@ class EntityAttributionPromptTests(unittest.TestCase):
         self.assertNotIn("subject_entity", json.dumps(body["expected_output_schema"]))
 
     def test_strategy_and_both_writer_modes_preserve_attribution_and_contribution(self):
-        strategy = (Path(__file__).resolve().parents[1] / "src/Agent_Team/Strategy_Agent/prompts/decision_agent_v5.md").read_text()
-        for prompt in (strategy, _system_prompt_v2(writer_mode=FREE_FORM_WRITER_MODE),
-                       _system_prompt_v2(writer_mode=DETERMINISTIC_WRITER_MODE)):
+        strategy = (Path(__file__).resolve().parents[1] / "src/Agent_Team/Strategy_Agent/prompts/decision_agent.md").read_text()
+        for prompt in (strategy, _editorial_system_prompt(writer_mode=FREE_FORM_WRITER_MODE),
+                       _editorial_system_prompt(writer_mode=DETERMINISTIC_WRITER_MODE)):
             self.assertIn("대상기업·지주회사·그룹·계열사", prompt)
             self.assertIn("연결·별도 기준", prompt)
             self.assertIn("기여", prompt)
@@ -99,7 +99,7 @@ class WriterSelectionTests(unittest.TestCase):
         self.assertEqual(handoff["required_card_keys_by_component"][component], [])
         self.assertIn(key, handoff["available_card_keys_by_component"][component])
         item_key = next(iter(raw["sections"][component]))
-        schema = _writer_report_schema_v2(handoff)["properties"]["sections"]["properties"][component]["properties"][item_key]
+        schema = _writer_report_schema(handoff)["properties"]["sections"]["properties"][component]["properties"][item_key]
         for selected in ([], [key]):
             payload = copy.deepcopy(raw)
             item = payload["sections"][component][item_key]
@@ -117,7 +117,7 @@ class WriterSelectionTests(unittest.TestCase):
         item_key = next(iter(raw["sections"][component]))
         item = raw["sections"][component][item_key]
         item["card_keys"] = ["invented"]
-        schema = _writer_report_schema_v2(handoff)["properties"]["sections"]["properties"][component]["properties"][item_key]
+        schema = _writer_report_schema(handoff)["properties"]["sections"]["properties"][component]["properties"][item_key]
         with self.assertRaises(ValidationError):
             Draft202012Validator(schema).validate(item)
         self.assertEqual(_validate_card_key_coverage(raw, handoff, []), "fail")
@@ -140,12 +140,12 @@ class AnalysisOrderTests(unittest.TestCase):
     def test_no_material_alternative_does_not_require_invented_citation(self):
         _, context, decision, _ = strategy_fixture()
         decision["strategy_brief"]["counterview"] = {"text": "제공된 자료에서는 별도의 대안 해석을 뒷받침할 근거가 확인되지 않는다.", "card_keys": []}
-        schema = strategy_decision_response_format_v5(context)["json_schema"]["schema"]
+        schema = strategy_decision_response_format(context)["json_schema"]["schema"]
         Draft202012Validator(schema).validate(decision)
-        validate_strategy_decision_v5(decision, context=context)
+        validate_strategy_decision(decision, context=context)
         decision["strategy_brief"]["counterview"]["card_keys"] = ["invented"]
         with self.assertRaises(ValueError):
-            validate_strategy_decision_v5(decision, context=context)
+            validate_strategy_decision(decision, context=context)
 
 
 class SummaryPreservationTests(unittest.TestCase):
@@ -231,10 +231,10 @@ class QualitativePeerTests(unittest.TestCase):
             "investment_implication": "공급 개시는 실행 가능성에 관한 판단을 보강한다.", "target_peer_context": None})
         decision["strategy_brief"]["outlook"]["card_keys"].append(key)
         decision["evidence_plan"]["coverage_assessment"]["peer"] = {"status": "used", "card_keys": [key], "reason": "사업 진행 차이"}
-        schema = strategy_decision_response_format_v5(context)["json_schema"]["schema"]
+        schema = strategy_decision_response_format(context)["json_schema"]["schema"]
         Draft202012Validator(schema).validate(decision)
-        aligned = align_strategy_decision_v5_evidence_plan(decision, context=context)
-        validate_strategy_decision_v5(aligned, context=context)
+        aligned = align_strategy_decision_evidence_plan(decision, context=context)
+        validate_strategy_decision(aligned, context=context)
         handoff, _ = build_writer_editorial_packet(strategy_packet=packet, strategy_decision=aligned, strategy_provenance=provenance)
         self.assertIn(key, handoff["cards"])
         self.assertEqual(handoff["target_peer_context"], [])
@@ -243,7 +243,7 @@ class QualitativePeerTests(unittest.TestCase):
         bad = copy.deepcopy(aligned)
         bad["evidence_plan"]["decision_basis_cards"][-1]["target_peer_context"] = {"metric_keys": ["invented"]}
         with self.assertRaises(ValueError):
-            validate_strategy_decision_v5(bad, context=context)
+            validate_strategy_decision(bad, context=context)
 
 
 if __name__ == "__main__":

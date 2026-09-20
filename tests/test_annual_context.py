@@ -28,9 +28,9 @@ from Agent_Team.YFinance_Agent.reporting import (
 )
 from Agent_Team.News_Agent import context_export, analysis_agent
 from Agent_Team.Financial_Agent.financial_index_calculator import calculate_financial_index
-from Agent_Team.Strategy_Agent.contracts_v5 import (
-    align_strategy_decision_v5_evidence_plan, validate_strategy_decision_v5,
-    strategy_decision_response_format_v5,
+from Agent_Team.Strategy_Agent.decision import (
+    align_strategy_decision_evidence_plan, validate_strategy_decision,
+    strategy_decision_response_format,
 )
 from writer_handoff import build_writer_editorial_packet
 from html_report_writer import normalize_report_payload
@@ -189,7 +189,7 @@ class AnnualContextTests(unittest.TestCase):
         self.assertAlmostEqual(last["volume_ratio_5_60"], 200 / ((55 * 100 + 5 * 200) / 60))
 
     def test_market_annual_values_reach_strategy_cards_and_reader_labels(self):
-        from Agent_Team.Strategy_Agent.contracts_v2 import _market_cards
+        from Agent_Team.Strategy_Agent.packet import _market_cards
         from Agent_Team.YFinance_Agent.reporting import build_market_summary, build_market_primary_evidence_catalog
         from writer_handoff import _reader_observation
         frames, config = market_fixture()
@@ -257,8 +257,8 @@ class AnnualContextTests(unittest.TestCase):
     def test_strategy_and_writer_preserve_each_explicit_opinion(self):
         for opinion, label in [("Buy", "매수"), ("Hold", "중립"), ("Sell", "매도")]:
             packet, context, decision, provenance = strategy_fixture(opinion)
-            normalized = align_strategy_decision_v5_evidence_plan(decision, context=context)
-            validate_strategy_decision_v5(normalized, context=context, required_horizon="12개월")
+            normalized = align_strategy_decision_evidence_plan(decision, context=context)
+            validate_strategy_decision(normalized, context=context, required_horizon="12개월")
             handoff, _ = build_writer_editorial_packet(strategy_packet=packet, strategy_decision=normalized, strategy_provenance=provenance)
             sections = {}
             for section in REPORT_SECTIONS:
@@ -285,10 +285,10 @@ class AnnualContextTests(unittest.TestCase):
         bad = copy.deepcopy(decision)
         bad.pop("schema_revision")
         with self.assertRaises(ValueError):
-            validate_strategy_decision_v5(bad, context=context)
+            validate_strategy_decision(bad, context=context)
         with self.assertRaises(ValueError):
-            validate_strategy_decision_v5(decision, context=context, required_horizon="1개월")
-        schema = strategy_decision_response_format_v5(context, required_horizon="12개월")["json_schema"]["schema"]
+            validate_strategy_decision(decision, context=context, required_horizon="1개월")
+        schema = strategy_decision_response_format(context, required_horizon="12개월")["json_schema"]["schema"]
         self.assertNotIn("maxItems", schema["properties"]["key_risks"])
         self.assertIn("recommendation", schema["properties"]["strategy_brief"]["required"])
 

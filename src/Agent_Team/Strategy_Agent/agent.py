@@ -23,19 +23,19 @@ from orchestration.ablation import config_from_mapping
 from orchestration.config import agent_output_dir
 
 from . import AGENT_DIR, DEFAULT_TARGET_CONFIG, OUTPUT_ROOT
-from .contracts_v2 import build_compact_strategy_packet_v2
+from .packet import build_compact_strategy_packet
 
-# contracts_v4 must be imported before contracts_v5, which binds
-# build_strategy_context_package_v4 at import time.
-from .contracts_v4 import build_strategy_context_package_v4
-from .contracts_v5 import (
-    CONTEXT_VERSION as CONTEXT_VERSION_V5,
-    DECISION_VERSION as DECISION_VERSION_V5,
-    STRATEGY_CACHE_VERSION as STRATEGY_CACHE_VERSION_V5,
-    align_strategy_decision_v5_evidence_plan,
-    build_strategy_context_package_v5,
-    strategy_decision_response_format_v5,
-    validate_strategy_decision_v5,
+# context must be imported before decision, which binds
+# build_base_strategy_context at import time.
+from .context import build_base_strategy_context
+from .decision import (
+    CONTEXT_VERSION,
+    DECISION_VERSION,
+    STRATEGY_CACHE_VERSION,
+    align_strategy_decision_evidence_plan,
+    build_strategy_context_package,
+    strategy_decision_response_format,
+    validate_strategy_decision,
 )
 
 
@@ -159,51 +159,10 @@ def run_strategy_agent(
     llm_model: str = "auto",
     llm_timeout: int = 120,
     env_file: Path | None = DEFAULT_ENV_FILE,
-    packet_version: str | None = None,
     ablation_config: dict[str, Any] | None = None,
     decision_horizon_profile: str = DEFAULT_DECISION_HORIZON_PROFILE,
 ) -> dict[str, Any]:
-    """Run one Strategy contract without mixing downstream artifacts."""
-
-    version = (packet_version or "v5").strip().lower()
-    if version != "v5":
-        raise ValueError("packet_version must be v5.")
-    return _run_strategy_agent_v5(
-        target_company_name=target_company_name,
-        target_run_key=target_run_key,
-        target_financial_path=target_financial_path,
-        target_news_path=target_news_path,
-        target_yfinance_path=target_yfinance_path,
-        output_dir=output_dir,
-        peer_comparison_path=peer_comparison_path,
-        peer_analysis_path=peer_analysis_path,
-        llm_provider=llm_provider,
-        llm_model=llm_model,
-        llm_timeout=llm_timeout,
-        env_file=env_file,
-        ablation_config=ablation_config,
-        decision_horizon_profile=decision_horizon_profile,
-    )
-
-
-def _run_strategy_agent_v5(
-    *,
-    target_company_name: str,
-    target_run_key: str,
-    target_financial_path: Path,
-    target_news_path: Path,
-    target_yfinance_path: Path,
-    output_dir: Path,
-    peer_comparison_path: Path | None,
-    peer_analysis_path: Path | None,
-    llm_provider: str,
-    llm_model: str,
-    llm_timeout: int,
-    env_file: Path | None,
-    ablation_config: dict[str, Any] | None,
-    decision_horizon_profile: str,
-) -> dict[str, Any]:
-    """Run Strategy v5 with separate decision and report-context evidence."""
+    """Run one Strategy contract with separate decision and report-context evidence."""
 
     if env_file:
         load_env_file(env_file)
@@ -223,21 +182,21 @@ def _run_strategy_agent_v5(
     validate_input_bundle(input_bundle)
     save_json(output_dir / "strategy_input_bundle.json", input_bundle)
     resolved_model = resolve_llm_model(resolve_llm_provider(llm_provider), llm_model)
-    packet, provenance, packet_telemetry, _input_contract = build_compact_strategy_packet_v2(
+    packet, provenance, packet_telemetry, _input_contract = build_compact_strategy_packet(
         input_bundle,
         model=resolved_model,
     )
-    context = build_strategy_context_package_v5(packet, input_bundle=input_bundle)
+    context = build_strategy_context_package(packet, input_bundle=input_bundle)
     strategy_context_mode = str(
         (input_bundle.get("ablation") or {}).get("strategy_context_mode")
         or "compact_cards"
     )
-    generation_payload = build_strategy_generation_payload_v5(
+    generation_payload = build_strategy_generation_payload(
         input_bundle=input_bundle,
         context=context,
         context_mode=strategy_context_mode,
     )
-    generation_prompt = decision_generation_prompt_v5(
+    generation_prompt = decision_generation_prompt(
         decision_horizon_profile,
         context_mode=strategy_context_mode,
     )
@@ -246,8 +205,8 @@ def _run_strategy_agent_v5(
     save_json(output_dir / "strategy_context_package_v5.json", context)
     save_json(output_dir / "strategy_generation_context_v5.json", generation_payload)
     context_telemetry = {
-        "context_version": CONTEXT_VERSION_V5,
-        "decision_contract": DECISION_VERSION_V5,
+        "context_version": CONTEXT_VERSION,
+        "decision_contract": DECISION_VERSION,
         "strategy_context_mode": strategy_context_mode,
         "available_card_count": len(context.get("evidence_cards") or {}),
         "serialized_bytes": len(compact_json(context).encode("utf-8")),
@@ -261,7 +220,7 @@ def _run_strategy_agent_v5(
 
     decision_path = output_dir / "strategy_decision_output_v5.json"
     cache_path = output_dir / "strategy_decision_cache_v5.json"
-    fingerprint = strategy_v5_fingerprint(
+    fingerprint = strategy_fingerprint(
         context,
         llm_provider=llm_provider,
         llm_model=llm_model,
@@ -273,7 +232,7 @@ def _run_strategy_agent_v5(
     failure_report_path = output_dir / "strategy_failure_report_v5.json"
     if decision_output is None:
         try:
-            decision_output = run_decision_agent_v5(
+            decision_output = run_decision_agent(
                 context,
                 llm_provider=llm_provider,
                 llm_model=llm_model,
@@ -296,14 +255,14 @@ def _run_strategy_agent_v5(
                 },
             )
             raise
-    decision_output, validation = preserve_and_validate_strategy_v5(
+    decision_output, validation = preserve_and_validate_strategy(
         decision_output, context=context, output_dir=output_dir,
         fingerprint=fingerprint, decision_horizon_profile=decision_horizon_profile,
         required_horizon=str(profile["horizon"]),
     )
     if failure_report_path.exists():
         failure_report_path.unlink()
-    strategy_report = build_strategy_report_projection_v5(
+    strategy_report = build_strategy_report_projection(
         decision_output,
         input_bundle=input_bundle,
         context=context,
@@ -311,7 +270,7 @@ def _run_strategy_agent_v5(
     save_json(decision_path, decision_output)
     save_json(
         cache_path,
-        {"fingerprint": fingerprint, "contract_version": DECISION_VERSION_V5},
+        {"fingerprint": fingerprint, "contract_version": DECISION_VERSION},
     )
     save_json(
         output_dir / "strategy_decision_profile_v5.json",
@@ -319,7 +278,7 @@ def _run_strategy_agent_v5(
             "profile": decision_horizon_profile,
             "required_horizon": profile["horizon"],
             "prompt_sha256": hashlib.sha256(
-                decision_prompt_v5(decision_horizon_profile).encode("utf-8")
+                decision_prompt(decision_horizon_profile).encode("utf-8")
             ).hexdigest(),
             "integrity_validation": validation,
         },
@@ -328,16 +287,13 @@ def _run_strategy_agent_v5(
     save_json(output_dir / "strategy_report.json", strategy_report)
     save_text(
         output_dir / "strategy_report.md",
-        render_strategy_projection_markdown_v5(strategy_report),
+        render_strategy_projection_markdown(strategy_report),
     )
-    _remove_deprecated_v1_strategy_artifacts(output_dir)
-    _remove_strategy_v2_decision_artifacts(output_dir)
-    _remove_strategy_v3_artifacts(output_dir)
-    _remove_strategy_v4_artifacts(output_dir)
+    _remove_legacy_strategy_artifacts(output_dir)
     return strategy_report
 
 
-def preserve_and_validate_strategy_v5(
+def preserve_and_validate_strategy(
     output: dict[str, Any], *, context: dict[str, Any], output_dir: Path,
     fingerprint: str, decision_horizon_profile: str, required_horizon: str,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -346,12 +302,12 @@ def preserve_and_validate_strategy_v5(
     raw_path = output_dir / "strategy_response_attempts" / f"{attempt}_{fingerprint[:12]}.json"
     save_json(raw_path, {"fingerprint": fingerprint, "decision_output": output})
     try:
-        aligned = align_strategy_decision_v5_evidence_plan(output, context=context)
+        aligned = align_strategy_decision_evidence_plan(output, context=context)
         _require_runtime_decision_contract(
-            aligned, expected_version=DECISION_VERSION_V5,
+            aligned, expected_version=DECISION_VERSION,
             required_horizon=required_horizon, brief_key="strategy_brief",
         )
-        validation = validate_strategy_decision_v5(
+        validation = validate_strategy_decision(
             aligned, context=context, required_horizon=required_horizon,
         )
         return aligned, validation
@@ -390,7 +346,9 @@ def _require_runtime_decision_contract(
         )
 
 
-def _remove_deprecated_v1_strategy_artifacts(output_dir: Path) -> None:
+def _remove_legacy_strategy_artifacts(output_dir: Path) -> None:
+    """Drop artifacts left behind by superseded Strategy contracts."""
+
     for filename in (
         "strategy_content_plan.json",
         "strategy_content_plan_cache.json",
@@ -400,6 +358,29 @@ def _remove_deprecated_v1_strategy_artifacts(output_dir: Path) -> None:
         "strategy_llm_packet.json",
         "decision_basis_by_section.json",
         "decision_basis_card.json",
+        "strategy_generation_context_v2.json",
+        "strategy_decision_output_v2.json",
+        "strategy_decision_cache_v2.json",
+        "strategy_decision_profile_v2.json",
+        "strategy_semantic_validation_v2.json",
+        "strategy_failure_report_v2.json",
+        "strategy_decision_output_v2.failed.json",
+        "strategy_generation_context_v3.json",
+        "strategy_decision_output_v3.json",
+        "strategy_decision_cache_v3.json",
+        "strategy_decision_profile_v3.json",
+        "strategy_semantic_validation_v3.json",
+        "strategy_failure_report_v3.json",
+        "strategy_decision_output_v3.failed.json",
+        "strategy_context_package_v4.json",
+        "strategy_generation_context_v4.json",
+        "strategy_context_telemetry_v4.json",
+        "strategy_decision_output_v4.json",
+        "strategy_decision_cache_v4.json",
+        "strategy_decision_profile_v4.json",
+        "strategy_semantic_validation_v4.json",
+        "strategy_failure_report_v4.json",
+        "strategy_decision_output_v4.failed.json",
     ):
         path = output_dir / filename
         if path.exists():
@@ -422,60 +403,13 @@ def _remove_runtime_validation_artifacts(output_dir: Path) -> None:
             path.unlink()
 
 
-def _remove_strategy_v2_decision_artifacts(output_dir: Path) -> None:
-    for filename in (
-        "strategy_generation_context_v2.json",
-        "strategy_decision_output_v2.json",
-        "strategy_decision_cache_v2.json",
-        "strategy_decision_profile_v2.json",
-        "strategy_semantic_validation_v2.json",
-        "strategy_failure_report_v2.json",
-        "strategy_decision_output_v2.failed.json",
-    ):
-        path = output_dir / filename
-        if path.exists():
-            path.unlink()
-
-
-def _remove_strategy_v3_artifacts(output_dir: Path) -> None:
-    for filename in (
-        "strategy_generation_context_v3.json",
-        "strategy_decision_output_v3.json",
-        "strategy_decision_cache_v3.json",
-        "strategy_decision_profile_v3.json",
-        "strategy_semantic_validation_v3.json",
-        "strategy_failure_report_v3.json",
-        "strategy_decision_output_v3.failed.json",
-    ):
-        path = output_dir / filename
-        if path.exists():
-            path.unlink()
-
-
-def _remove_strategy_v4_artifacts(output_dir: Path) -> None:
-    for filename in (
-        "strategy_context_package_v4.json",
-        "strategy_generation_context_v4.json",
-        "strategy_context_telemetry_v4.json",
-        "strategy_decision_output_v4.json",
-        "strategy_decision_cache_v4.json",
-        "strategy_decision_profile_v4.json",
-        "strategy_semantic_validation_v4.json",
-        "strategy_failure_report_v4.json",
-        "strategy_decision_output_v4.failed.json",
-    ):
-        path = output_dir / filename
-        if path.exists():
-            path.unlink()
-
-
-def build_strategy_report_projection_v5(
+def build_strategy_report_projection(
     decision_output: dict[str, Any],
     *,
     input_bundle: dict[str, Any],
     context: dict[str, Any],
 ) -> dict[str, Any]:
-    """Project the v5 decision and both evidence tiers for downstream Writer use."""
+    """Project the decision and both evidence tiers for downstream Writer use."""
 
     target = require_dict(input_bundle.get("target_company"), "target_company")
     cards = require_dict(context.get("evidence_cards"), "evidence_cards")
@@ -500,7 +434,7 @@ def build_strategy_report_projection_v5(
     return {
         "agent_name": "Strategy Agent",
         "output_version": "9.0",
-        "contract_version": DECISION_VERSION_V5,
+        "contract_version": DECISION_VERSION,
         "schema_revision": decision_output.get("schema_revision"),
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "target_company_name": target.get("company_name"),
@@ -522,8 +456,8 @@ def build_strategy_report_projection_v5(
     }
 
 
-def render_strategy_projection_markdown_v5(report: dict[str, Any]) -> str:
-    """Render the v5 Strategy output without internal evidence identifiers."""
+def render_strategy_projection_markdown(report: dict[str, Any]) -> str:
+    """Render the Strategy output without internal evidence identifiers."""
 
     brief = require_dict(report.get("strategy_brief"), "strategy_brief")
     level_names = {"high": "높음", "medium": "보통", "low": "낮음"}
@@ -580,7 +514,7 @@ def render_strategy_projection_markdown_v5(report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def strategy_v5_fingerprint(
+def strategy_fingerprint(
     context: dict[str, Any],
     *,
     llm_provider: str,
@@ -589,18 +523,18 @@ def strategy_v5_fingerprint(
     generation_payload: dict[str, Any] | None = None,
     generation_prompt: str | None = None,
 ) -> str:
-    """Fingerprint the v5 context, prompt, schema, provider, and model."""
+    """Fingerprint the decision context, prompt, schema, provider, and model."""
 
     profile = resolve_decision_horizon_profile(decision_horizon_profile)
     payload = {
-        "cache_version": STRATEGY_CACHE_VERSION_V5,
-        "contract_version": DECISION_VERSION_V5,
+        "cache_version": STRATEGY_CACHE_VERSION,
+        "contract_version": DECISION_VERSION,
         "context": context,
         "generation_payload": generation_payload
         or {"strategy_context_package_v5": context},
         "decision_horizon_profile": decision_horizon_profile,
-        "prompt": generation_prompt or decision_prompt_v5(decision_horizon_profile),
-        "response_format": strategy_decision_response_format_v5(
+        "prompt": generation_prompt or decision_prompt(decision_horizon_profile),
+        "response_format": strategy_decision_response_format(
             context,
             required_horizon=str(profile["horizon"]),
         ),
@@ -626,7 +560,6 @@ def generate_strategy_report(
     llm_model: str = "auto",
     llm_timeout: int = 120,
     env_file: Path | None = DEFAULT_ENV_FILE,
-    packet_version: str | None = None,
     ablation_config: dict[str, Any] | None = None,
     decision_horizon_profile: str = DEFAULT_DECISION_HORIZON_PROFILE,
 ) -> dict[str, Any]:
@@ -663,18 +596,17 @@ def generate_strategy_report(
         llm_model=llm_model,
         llm_timeout=llm_timeout,
         env_file=env_file,
-        packet_version=packet_version,
         ablation_config=ablation_config,
         decision_horizon_profile=decision_horizon_profile,
     )
     if output_json and output_json != output_dir / "strategy_report.json":
         save_json(output_json, report)
     if output_md and output_md != output_dir / "strategy_report.md":
-        if report.get("contract_version") != DECISION_VERSION_V5:
+        if report.get("contract_version") != DECISION_VERSION:
             raise ValueError(
                 f"Unsupported Strategy contract version: {report.get('contract_version')}"
             )
-        rendered = render_strategy_projection_markdown_v5(report)
+        rendered = render_strategy_projection_markdown(report)
         save_text(output_md, rendered)
     return report
 
@@ -828,7 +760,7 @@ def load_yfinance_evidence_catalog(report: dict[str, Any]) -> dict[str, Any]:
     return catalog
 
 
-def run_decision_agent_v5(
+def run_decision_agent(
     context: dict[str, Any],
     *,
     llm_provider: str,
@@ -838,11 +770,11 @@ def run_decision_agent_v5(
     generation_payload: dict[str, Any] | None = None,
     generation_prompt: str | None = None,
 ) -> dict[str, Any]:
-    """Call the v5 Strategy LLM; semantic judgment remains model-authored."""
+    """Call the Strategy decision LLM; semantic judgment remains model-authored."""
 
     profile = resolve_decision_horizon_profile(decision_horizon_profile)
     output = call_llm_json(
-        prompt=generation_prompt or decision_prompt_v5(decision_horizon_profile),
+        prompt=generation_prompt or decision_prompt(decision_horizon_profile),
         payload=generation_payload or {"strategy_context_package_v5": context},
         llm_provider=llm_provider,
         llm_model=llm_model,
@@ -851,7 +783,7 @@ def run_decision_agent_v5(
             "당신은 기업 리서치 Strategy Agent다. 제공된 자료를 분석하고 대안 해석을 비교한 뒤 "
             "투자 의견과 선택 이유를 작성한다. 실제 사용한 근거를 연결한 한국어 JSON 객체 하나를 반환한다."
         ),
-        response_format=strategy_decision_response_format_v5(
+        response_format=strategy_decision_response_format(
             context,
             required_horizon=str(profile["horizon"]),
         ),
@@ -866,13 +798,13 @@ def run_decision_agent_v5(
     return output
 
 
-def build_strategy_generation_payload_v5(
+def build_strategy_generation_payload(
     *,
     input_bundle: dict[str, Any],
     context: dict[str, Any],
     context_mode: str,
 ) -> dict[str, Any]:
-    """Build the v5 generation payload for production and ablation runs."""
+    """Build the decision generation payload for production and ablation runs."""
 
     payload = {"strategy_context_package_v5": context}
     if context_mode == "compact_cards":
@@ -894,14 +826,14 @@ def build_strategy_generation_payload_v5(
     return payload
 
 
-def decision_generation_prompt_v5(
+def decision_generation_prompt(
     decision_horizon_profile: str,
     *,
     context_mode: str,
 ) -> str:
-    """Render the v5 prompt and optional full-context ablation instruction."""
+    """Render the decision prompt and optional full-context ablation instruction."""
 
-    prompt = decision_prompt_v5(decision_horizon_profile)
+    prompt = decision_prompt(decision_horizon_profile)
     if context_mode == "compact_cards":
         return prompt
     if context_mode != "full_reports":
@@ -1362,17 +1294,17 @@ def resolve_decision_horizon_profile(profile: str) -> dict[str, str]:
     return DECISION_HORIZON_PROFILES[normalized]
 
 
-def decision_prompt_v5(
+def decision_prompt(
     profile: str = DEFAULT_DECISION_HORIZON_PROFILE,
 ) -> str:
-    """Render the Strategy v5 prompt with one horizon policy."""
+    """Render the Strategy decision prompt with one horizon policy."""
 
     resolved = resolve_decision_horizon_profile(profile)
-    template = read_prompt("decision_agent_v5.md")
+    template = read_prompt("decision_agent.md")
     placeholder = "{{DECISION_HORIZON_POLICY}}"
     if template.count(placeholder) != 1:
         raise ValueError(
-            "decision_agent_v5.md must contain exactly one horizon-policy placeholder."
+            "decision_agent.md must contain exactly one horizon-policy placeholder."
         )
     return template.replace("12개월", str(resolved["horizon"])).replace(placeholder, str(resolved["policy"]))
 

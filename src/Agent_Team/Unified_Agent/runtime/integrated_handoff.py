@@ -158,14 +158,14 @@ def patch_cards(module):
 
 
 def patch_strategy_context(module):
-    original = module.build_strategy_context_package_v4
+    original = module.build_base_strategy_context
     def context(packet, *, input_bundle):
         result = original(packet, input_bundle=input_bundle)
         integrated = input_bundle.get("integrated_report")
         if integrated:
             result["domain_handoffs"] = {"integrated": clean(integrated["report"])}
         return result
-    module.build_strategy_context_package_v4 = context
+    module.build_base_strategy_context = context
 
 
 def patch_module(module):
@@ -176,9 +176,9 @@ def patch_module(module):
         patch_comparison(module)
     elif name.endswith("Strategy_Agent.agent"):
         patch_strategy(module)
-    elif name.endswith("Strategy_Agent.contracts_v2"):
+    elif name.endswith("Strategy_Agent.packet"):
         patch_cards(module)
-    elif name.endswith("Strategy_Agent.contracts_v4"):
+    elif name.endswith("Strategy_Agent.context"):
         patch_strategy_context(module)
     elif name == "data_loader":
         patch_fact_loader(module, "load_json_file")

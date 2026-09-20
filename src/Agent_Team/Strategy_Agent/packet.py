@@ -1,4 +1,4 @@
-"""Self-contained Strategy packet v2 and deterministic semantic gates."""
+"""Self-contained Strategy compact packet and deterministic semantic gates."""
 
 from __future__ import annotations
 
@@ -76,7 +76,7 @@ class PacketOverflowError(ValueError):
     """Raised before an LLM call when mandatory card coverage cannot fit."""
 
 
-def build_compact_strategy_packet_v2(
+def build_compact_strategy_packet(
     input_bundle: dict[str, Any],
     *,
     model: str = "",
@@ -196,11 +196,11 @@ def build_compact_strategy_packet_v2(
         "omitted_news_events": omitted_news,
         "telemetry": telemetry,
     }
-    validate_compact_strategy_packet_v2(packet, provenance)
+    validate_compact_strategy_packet(packet, provenance)
     return packet, provenance, telemetry, input_summary
 
 
-def validate_compact_strategy_packet_v2(
+def validate_compact_strategy_packet(
     packet: dict[str, Any],
     provenance: dict[str, Any],
 ) -> None:
@@ -1674,7 +1674,7 @@ __all__ = [
     "PROVENANCE_VERSION",
     "PacketOverflowError",
     "STRATEGY_SECTIONS",
-    "build_compact_strategy_packet_v2",
+    "build_compact_strategy_packet",
     "build_peer_pair_cards",
-    "validate_compact_strategy_packet_v2",
+    "validate_compact_strategy_packet",
 ]

@@ -26,8 +26,8 @@ from html_report_writer import (
 )
 from orchestration.config import DEFAULT_ENV_FILE, agent_output_dir, load_project_env
 from writer_handoff import (
-    EDITORIAL_PACKET_VERSION_V3,
-    WRITER_PROVENANCE_VERSION_V3,
+    EDITORIAL_PACKET_VERSION,
+    WRITER_PROVENANCE_VERSION,
     build_writer_editorial_packet,
     validate_writer_editorial_packet,
 )
@@ -146,13 +146,13 @@ def run_writer_generation(config: WriterAgentConfig | dict[str, Any]) -> dict[st
         "env_file": env_status["env_file"] if env_status.get("env_file_exists") else "",
     }
 
-    is_v3 = writer_handoff.get("packet_version") == EDITORIAL_PACKET_VERSION_V3
+    is_current_packet = writer_handoff.get("packet_version") == EDITORIAL_PACKET_VERSION
     editorial_packet_path = output_dir / (
-        "writer_editorial_packet_v3.json" if is_v3 else "writer_editorial_packet_v2.json"
+        "writer_editorial_packet_v3.json" if is_current_packet else "writer_editorial_packet_v2.json"
     )
     provenance_path = output_dir / (
         "writer_packet_provenance_v3.json"
-        if writer_provenance.get("provenance_version") == WRITER_PROVENANCE_VERSION_V3
+        if writer_provenance.get("provenance_version") == WRITER_PROVENANCE_VERSION
         else "writer_packet_provenance_v2.json"
     )
     source_files_path = output_dir / "source_files.json"
@@ -162,7 +162,7 @@ def run_writer_generation(config: WriterAgentConfig | dict[str, Any]) -> dict[st
     save_json(source_files_path, source_files)
     retired_packets = (
         ("writer_editorial_packet_v2.json", "writer_packet_provenance_v2.json")
-        if is_v3
+        if is_current_packet
         else ("writer_editorial_packet_v3.json", "writer_packet_provenance_v3.json")
     )
     for filename in retired_packets:
@@ -253,7 +253,7 @@ def run_writer_generation(config: WriterAgentConfig | dict[str, Any]) -> dict[st
     for retired_path in (failure_path,):
         if retired_path.exists():
             retired_path.unlink()
-    _remove_deprecated_v1_writer_artifacts(output_dir)
+    _remove_legacy_writer_artifacts(output_dir)
     logger.info("Wrote Writer Agent payload to %s", payload_path)
     return {
         "status": "success",
@@ -370,7 +370,7 @@ def load_cached_writer_outputs(
     return payload, llm_output
 
 
-def _remove_deprecated_v1_writer_artifacts(output_dir: Path) -> None:
+def _remove_legacy_writer_artifacts(output_dir: Path) -> None:
     for filename in ("writer_handoff.json", "writer_execution_cache.json"):
         path = output_dir / filename
         if path.exists():

@@ -21,10 +21,10 @@ from html_report_writer import (
     _evidence_display_columns,
     _evidence_interpretation_column,
     _plain_korean_text,
-    _qualify_partial_product_scope_v2,
+    _qualify_partial_product_scope,
     _strategy_role_label,
 )
-from writer_handoff import EDITORIAL_PACKET_VERSION, EDITORIAL_PACKET_VERSION_V3
+from writer_handoff import LEGACY_EDITORIAL_PACKET_VERSION, EDITORIAL_PACKET_VERSION
 
 
 REQUIRED_TABLE_SECTION_IDS = {
@@ -41,7 +41,7 @@ def validate_html_report(
 ) -> dict[str, Any]:
     """Reject report-integrity violations and report presentation advisories."""
 
-    if not _is_v2_writer_packet(writer_handoff):
+    if not _is_editorial_packet(writer_handoff):
         raise ValueError("writer input must be a writer editorial packet")
     notes: list[str] = []
     hard_checks = {
@@ -471,7 +471,7 @@ def _validate_strategy_presentation_preservation(
             continue
         interpretation = str(card.get("strategy_interpretation") or "")
         expected_visible_interpretation = _plain_korean_text(
-            _qualify_partial_product_scope_v2(
+            _qualify_partial_product_scope(
                 interpretation,
                 writer_handoff,
                 [card_key],
@@ -684,7 +684,7 @@ def _validate_internal_metadata_hidden(
         )
     )
     leaked_card_keys = []
-    if _is_v2_writer_packet(writer_handoff):
+    if _is_editorial_packet(writer_handoff):
         leaked_card_keys = sorted(
             card_key
             for card_key in _dict(writer_handoff.get("cards"))
@@ -882,16 +882,16 @@ def _text_list(value: Any) -> list[str]:
     return [str(item).strip() for item in _list(value) if str(item).strip()]
 
 
-def _is_v2_writer_packet(value: Any) -> bool:
+def _is_editorial_packet(value: Any) -> bool:
     return isinstance(value, dict) and value.get("packet_version") in {
+        LEGACY_EDITORIAL_PACKET_VERSION,
         EDITORIAL_PACKET_VERSION,
-        EDITORIAL_PACKET_VERSION_V3,
     }
 
 
 def _is_label_free_writer_packet(value: Any) -> bool:
     return (
-        _is_v2_writer_packet(value)
+        _is_editorial_packet(value)
         and value.get("strategy_contract_version") in {
             "strategy_decision_output_v4",
             "strategy_decision_output_v5",

@@ -9,12 +9,12 @@ from unittest.mock import patch
 
 from test_annual_context import strategy_fixture
 from shared.evidence_cards import card_content_sha256
-from Agent_Team.Strategy_Agent.contracts_v5 import (
-    align_strategy_decision_v5_evidence_plan, validate_strategy_decision_v5,
-    strategy_decision_response_format_v5,
+from Agent_Team.Strategy_Agent.decision import (
+    align_strategy_decision_evidence_plan, validate_strategy_decision,
+    strategy_decision_response_format,
 )
-from Agent_Team.Strategy_Agent.agent import preserve_and_validate_strategy_v5
-from Agent_Team.Strategy_Agent.contracts_v2 import _news_cards, _reader_limitations
+from Agent_Team.Strategy_Agent.agent import preserve_and_validate_strategy
+from Agent_Team.Strategy_Agent.packet import _news_cards, _reader_limitations
 from writer_handoff import build_writer_editorial_packet
 from html_report_writer import (
     _normalize_text, _ensure_claim_units_visible, writer_report_response_format,
@@ -61,14 +61,14 @@ class EvidencePreservationTests(unittest.TestCase):
         for count in (15, 30, 60):
             packet, context, decision, provenance, keys = self.many_cards(count)
             original = copy.deepcopy(decision)
-            schema = strategy_decision_response_format_v5(context)["json_schema"]["schema"]
+            schema = strategy_decision_response_format(context)["json_schema"]["schema"]
             Draft202012Validator(schema).validate(decision)
-            aligned = align_strategy_decision_v5_evidence_plan(decision, context=context)
-            validate_strategy_decision_v5(aligned, context=context, required_horizon="12개월")
+            aligned = align_strategy_decision_evidence_plan(decision, context=context)
+            validate_strategy_decision(aligned, context=context, required_horizon="12개월")
             self.assertEqual(decision, original)
             self.assertEqual(aligned["strategy_brief"], original["strategy_brief"])
             self.assertEqual(set(keys), {x["card_key"] for x in aligned["evidence_plan"]["report_context_cards"]})
-            self.assertEqual(aligned, align_strategy_decision_v5_evidence_plan(aligned, context=context))
+            self.assertEqual(aligned, align_strategy_decision_evidence_plan(aligned, context=context))
             handoff, _ = build_writer_editorial_packet(strategy_packet=packet, strategy_decision=aligned, strategy_provenance=provenance)
             self.assertTrue(set(keys).issubset(handoff["cards"]))
             self.assertTrue(set(keys).issubset(handoff["available_card_keys_by_component"]["business_market_context"]))
@@ -81,18 +81,18 @@ class EvidencePreservationTests(unittest.TestCase):
             row["card_key"] = key
             decision["evidence_plan"]["decision_basis_cards"].append(row)
         decision["key_risks"] *= 4
-        schema = strategy_decision_response_format_v5(context)["json_schema"]["schema"]
+        schema = strategy_decision_response_format(context)["json_schema"]["schema"]
         Draft202012Validator(schema).validate(decision)
-        validate_strategy_decision_v5(align_strategy_decision_v5_evidence_plan(decision, context=context), context=context)
+        validate_strategy_decision(align_strategy_decision_evidence_plan(decision, context=context), context=context)
 
     def test_invalid_and_duplicate_refs_still_fail(self):
         _, context, decision, _, keys = self.many_cards()
         decision["strategy_brief"]["outlook"]["card_keys"] = ["news.unknown"]
         with self.assertRaisesRegex(ValueError, "unknown card"):
-            align_strategy_decision_v5_evidence_plan(decision, context=context)
+            align_strategy_decision_evidence_plan(decision, context=context)
         decision["strategy_brief"]["outlook"]["card_keys"] = [keys[0], keys[0]]
         with self.assertRaises(ValueError):
-            validate_strategy_decision_v5(align_strategy_decision_v5_evidence_plan(decision, context=context), context=context)
+            validate_strategy_decision(align_strategy_decision_evidence_plan(decision, context=context), context=context)
 
     def test_postprocessing_failure_retains_raw_and_history(self):
         _, context, decision, _ = strategy_fixture()
@@ -101,7 +101,7 @@ class EvidencePreservationTests(unittest.TestCase):
             root = Path(directory)
             for _ in range(2):
                 with self.assertRaises(ValueError):
-                    preserve_and_validate_strategy_v5(decision, context=context, output_dir=root,
+                    preserve_and_validate_strategy(decision, context=context, output_dir=root,
                         fingerprint="test_fingerprint", decision_horizon_profile="annual", required_horizon="12개월")
             failure = json.loads((root / "strategy_failure_report_v5.json").read_text())
             raw = json.loads(Path(failure["raw_response_path"]).read_text())

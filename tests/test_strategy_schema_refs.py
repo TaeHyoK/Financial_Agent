@@ -1,12 +1,12 @@
 import unittest
 from jsonschema import Draft202012Validator, ValidationError
-from Agent_Team.Strategy_Agent.contracts_v5 import strategy_decision_response_format_v5
+from Agent_Team.Strategy_Agent.decision import strategy_decision_response_format
 
 
 class StrategySchemaRefTests(unittest.TestCase):
     def test_large_catalog_keeps_all_allowed_ids_without_repeated_enums(self):
         keys = [f"NEWS_{index}" for index in range(100)]
-        schema = strategy_decision_response_format_v5({"evidence_cards": {
+        schema = strategy_decision_response_format({"evidence_cards": {
             key: {"domain": "news"} for key in keys}})["json_schema"]["schema"]
         Draft202012Validator.check_schema(schema)
         self.assertEqual(set(schema["$defs"]["evidence_card_key"]["enum"]), set(keys))

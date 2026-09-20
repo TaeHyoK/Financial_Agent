@@ -887,8 +887,6 @@ def build_strategy_command(
         str(agent_output_dir(paths.output_root, paths.run_key, "Y_Finance") / "final_report.json"),
         "--output-dir",
         str(paths.strategy_dir),
-        "--packet-version",
-        "v5",
         "--llm-model",
         args.llm_model,
         "--llm-timeout",

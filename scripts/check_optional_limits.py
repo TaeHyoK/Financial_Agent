@@ -8,11 +8,11 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "src/Agent_Team/Writer Agent")]
-from Agent_Team.Strategy_Agent.agent import run_decision_agent_v5, decision_prompt_v5
-from Agent_Team.Strategy_Agent.contracts_v2 import build_compact_strategy_packet_v2
-from Agent_Team.Strategy_Agent.contracts_v5 import (
-    build_strategy_context_package_v5, align_strategy_decision_v5_evidence_plan,
-    validate_strategy_decision_v5,
+from Agent_Team.Strategy_Agent.agent import run_decision_agent, decision_prompt
+from Agent_Team.Strategy_Agent.packet import build_compact_strategy_packet
+from Agent_Team.Strategy_Agent.decision import (
+    build_strategy_context_package, align_strategy_decision_evidence_plan,
+    validate_strategy_decision,
 )
 from writer_handoff import build_writer_editorial_packet
 from html_report_writer import request_html_report_payload, validate_raw_writer_payload, normalize_report_payload, _build_context
@@ -31,12 +31,12 @@ def run(args):
     bundle = json.loads(source.read_text())
     output = Path(args.output_dir).resolve()
     output.mkdir(parents=True, exist_ok=False)
-    packet, provenance, _, _ = build_compact_strategy_packet_v2(bundle)
-    context = build_strategy_context_package_v5(packet, input_bundle=bundle)
+    packet, provenance, _, _ = build_compact_strategy_packet(bundle)
+    context = build_strategy_context_package(packet, input_bundle=bundle)
     save(output / "strategy_packet.json", packet)
     save(output / "strategy_context.json", context)
     save(output / "strategy_provenance.json", provenance)
-    (output / "strategy_prompt.md").write_text(decision_prompt_v5("annual"), encoding="utf-8")
+    (output / "strategy_prompt.md").write_text(decision_prompt("annual"), encoding="utf-8")
     status = {"status": "prepared", "model": "gpt-5.4-mini", "source_sha256": digest,
               "scope": "saved target domain outputs + retained peer context; no peer rerun, no chart generation, no ablation evaluation"}
     if args.strategy_output:
@@ -54,11 +54,11 @@ def run(args):
                       LLM_USAGE_MANIFEST=str(output / "usage.jsonl"))
     try:
         raw = (json.loads(Path(args.strategy_output).read_text()) if args.strategy_output else
-               run_decision_agent_v5(context, llm_provider="openai", llm_model="gpt-5.4-mini", llm_timeout=300))
+               run_decision_agent(context, llm_provider="openai", llm_model="gpt-5.4-mini", llm_timeout=300))
         save(output / "strategy_raw.json", raw)
         print("Strategy response saved", flush=True)
-        decision = align_strategy_decision_v5_evidence_plan(raw, context=context)
-        validate_strategy_decision_v5(decision, context=context, required_horizon="12개월")
+        decision = align_strategy_decision_evidence_plan(raw, context=context)
+        validate_strategy_decision(decision, context=context, required_horizon="12개월")
         save(output / "strategy_decision.json", decision)
         if args.strategy_only:
             status["status"] = "strategy_completed"

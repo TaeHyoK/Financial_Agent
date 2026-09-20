@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from shared.subdata import financial_subdata, market_subdata, news_subdata, secondary_context_for_llm
+from shared.subdata import financial_subdata, market_subdata, secondary_context_for_llm
 from shared.subdata_guidance import context_guidance, context_ref_schema, validate_context_refs, CONTEXT_POLICY_VERSION
 
 import argparse
@@ -15,7 +15,6 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-from openai import OpenAI
 from shared.evidence_contracts import (
     SECONDARY_CONTEXT_EFFECTS,
     SECONDARY_CONTEXT_USAGE,
@@ -34,24 +33,11 @@ from .io.storage import save_json
 DEFAULT_MODEL = "gpt-5.4"
 DEFAULT_GRANULARITY = "month"
 SUMMARY_MONTH_COUNT = 12
-RECENT_RAW_MONTH_COUNT = 3
 SUMMARY_DAY_COUNT = 14
 RECENT_RAW_DAY_COUNT = 1
 SUMMARY_WEEK_COUNT = 14
 COMPANY_NEWS_TOP_K = ANNUAL_NEWS_LIMIT
 DEFAULT_MAX_RAW_EVENTS_PER_PERIOD = COMPANY_NEWS_TOP_K
-SECONDARY_FINANCIAL_METRICS = (
-    "revenue",
-    "revenue_growth",
-    "contribution_margin",
-    "sga_margin",
-    "operating_profit",
-    "net_income",
-    "operating_cash_flow",
-    "total_equity",
-    "eps",
-)
-
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
@@ -1151,25 +1137,8 @@ def _build_evidence_map(
     return evidence_map
 
 
-def _first_comparison(comparisons: dict[str, Any]) -> dict[str, Any]:
-    for comparison in comparisons.values():
-        if isinstance(comparison, dict) and comparison.get("status") in {None, "ok"}:
-            return comparison
-    return {}
-
-
 def _finite_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
-
-
-def _market_unit(metric: str) -> str:
-    if metric in {"stock_close", "kospi_close", "fx_close"}:
-        return "price"
-    if "rsi" in metric or "volume_ratio" in metric:
-        return "index"
-    if any(token in metric for token in ("return", "strength", "volatility", "to_ma", "obv", "bb_width")):
-        return "ratio"
-    return "number"
 
 
 def _resolve_analysis_periods(
@@ -1224,17 +1193,6 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value if str(item or "").strip()]
-
-
-def _month_window(as_of_date: date, count: int) -> list[str]:
-    month_index = as_of_date.year * 12 + as_of_date.month - 1
-    start_index = month_index - count + 1
-    periods = []
-    for idx in range(start_index, month_index + 1):
-        year = idx // 12
-        month = idx % 12 + 1
-        periods.append(f"{year:04d}-{month:02d}")
-    return periods
 
 
 def _day_window(as_of_date: date, count: int) -> list[str]:

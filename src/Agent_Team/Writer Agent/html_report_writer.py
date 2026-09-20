@@ -70,33 +70,6 @@ def writer_request_fingerprint(
     return hashlib.sha256(compact_json(payload, sort_keys=True).encode("utf-8")).hexdigest()
 
 
-def build_html_report_payload(
-    *,
-    writer_handoff: dict[str, Any],
-    model: str = DEFAULT_LLM_MODEL,
-    api_key: str | None = None,
-    writer_mode: str = DETERMINISTIC_WRITER_MODE,
-    chart_catalog: dict[str, Any] | None = None,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Generate one grounded report payload from the compact Writer handoff."""
-
-    raw_payload, llm_output = request_html_report_payload(
-        writer_handoff=writer_handoff,
-        model=model,
-        api_key=api_key,
-        writer_mode=writer_mode,
-        chart_catalog=chart_catalog,
-    )
-    validate_raw_writer_payload(raw_payload)
-    normalized = normalize_report_payload(
-        raw_payload,
-        writer_handoff=writer_handoff,
-        writer_mode=writer_mode,
-        chart_catalog=chart_catalog,
-    )
-    return normalized, llm_output
-
-
 def request_html_report_payload(
     *,
     writer_handoff: dict[str, Any],

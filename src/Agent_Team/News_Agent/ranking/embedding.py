@@ -54,14 +54,6 @@ class EmbeddingModel:
         return np.asarray(embeddings, dtype=np.float32)
 
 
-def cosine_similarity_matrix(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    if a.size == 0 or b.size == 0:
-        return np.zeros((a.shape[0], b.shape[0]), dtype=np.float32)
-    a_norm = a / (np.linalg.norm(a, axis=1, keepdims=True) + 1e-8)
-    b_norm = b / (np.linalg.norm(b, axis=1, keepdims=True) + 1e-8)
-    return np.dot(a_norm, b_norm.T)
-
-
 def cosine_similarity(vec_a: Iterable[float], vec_b: Iterable[float]) -> float:
     a = np.asarray(list(vec_a), dtype=np.float32)
     b = np.asarray(list(vec_b), dtype=np.float32)

@@ -1,9 +1,7 @@
 """Offline checks: never call an LLM while testing repeat orchestration."""
 import copy
-import json
 from pathlib import Path
 import sys
-from types import SimpleNamespace
 
 import pytest
 

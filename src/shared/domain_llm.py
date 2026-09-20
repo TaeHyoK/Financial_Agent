@@ -10,9 +10,6 @@ from .llm_clients import execute_with_telemetry, is_transient_transport_error
 
 DOMAIN_OUTPUT_BUDGETS = {"financial": 12000, "news": 12000, "market": 12000}
 DOMAIN_TIMEOUT_SECONDS = 300
-DOMAIN_POLICY_VERSION = "domain_parity_v4_analysis_before_conclusion"
-
-
 def domain_request(request: dict[str, Any], *, domain: str) -> dict[str, Any]:
     """Normalize legacy builders to the same explicit Responses policy."""
     result = copy.deepcopy(request)

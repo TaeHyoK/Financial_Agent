@@ -2875,24 +2875,6 @@ def normalize_strategy_report(report: dict[str, Any], input_bundle: dict[str, An
     return normalized
 
 
-def normalize_strategy_decision_output(output: dict[str, Any], input_bundle: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Normalize the Decision Agent output into report plus path-level basis card."""
-
-    raw_report, raw_basis = split_strategy_decision_output(output)
-    strategy_report = normalize_strategy_report(raw_report, input_bundle)
-    basis_packet = (
-        build_strategy_llm_packet(input_bundle)
-        if "target_reports" in input_bundle
-        else input_bundle
-    )
-    decision_basis_by_section = normalize_decision_basis_by_section(
-        raw_basis,
-        strategy_report,
-        basis_packet,
-    )
-    return strategy_report, decision_basis_by_section
-
-
 def split_strategy_decision_output(output: dict[str, Any]) -> tuple[dict[str, Any], Any]:
     """Split the integrated report and source-reference map."""
 
@@ -5243,20 +5225,6 @@ def dedupe(items: list[str], limit: int | None = None) -> list[str]:
         output.append(text)
         if limit is not None and len(output) >= limit:
             break
-    return output
-
-
-def dedupe_paths(paths: list[Path]) -> list[Path]:
-    """Dedupe paths while preserving order."""
-
-    seen: set[str] = set()
-    output: list[Path] = []
-    for path in paths:
-        key = str(path.expanduser().resolve())
-        if key in seen:
-            continue
-        seen.add(key)
-        output.append(path)
     return output
 
 

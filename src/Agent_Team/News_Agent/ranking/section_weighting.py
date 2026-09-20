@@ -13,7 +13,6 @@ from bs4 import BeautifulSoup
 
 WEIGHTS = {"sales": .30, "earnings": .20, "products": .15,
            "contracts": .15, "materials_facilities": .10, "overview": .10}
-EQUAL_WEIGHTS = {key: 1 / len(WEIGHTS) for key in WEIGHTS}
 SECTION_TITLES = {"sales": "매출 및 수주상황", "products": "주요 제품 및 서비스",
                   "contracts": "주요계약 및 연구개발활동",
                   "materials_facilities": "원재료 및 생산설비", "overview": "사업의 개요"}

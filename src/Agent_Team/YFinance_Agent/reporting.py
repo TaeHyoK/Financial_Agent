@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from shared.subdata import financial_subdata, market_subdata, news_subdata, evidence_catalog_for_llm, secondary_context_for_llm
+from shared.subdata import financial_subdata, news_subdata, evidence_catalog_for_llm, secondary_context_for_llm
 from shared.subdata_guidance import (
     context_guidance, context_issue_schema, context_ref_schema,
     flatten_context_issues, validate_context_refs, CONTEXT_POLICY_VERSION,
@@ -13,7 +13,7 @@ import json
 import math
 import os
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +26,7 @@ from shared.evidence_contracts import (
     validate_secondary_context_assessments,
 )
 from shared.domain_llm import domain_request, call_domain_response
-from shared.llm_clients import compact_json, execute_with_telemetry
+from shared.llm_clients import compact_json
 
 from valuation import build_valuation_snapshot, unavailable_direct_valuation
 
@@ -34,25 +34,9 @@ from valuation import build_valuation_snapshot, unavailable_direct_valuation
 AGENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = AGENT_DIR.parents[2]
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "Output_total" / "Y_Finance"
-DEFAULT_MARKET_JSON = DEFAULT_OUTPUT_DIR / "market_full_dataset.json"
-DEFAULT_DART_JSON: Path | None = None
-DEFAULT_NEWS_JSON: Path | None = None
 DEFAULT_REPORT_MD = DEFAULT_OUTPUT_DIR / "yfinance_analyst_report.md"
 DEFAULT_REPORT_JSON = DEFAULT_OUTPUT_DIR / "yfinance_analyst_report.json"
 DEFAULT_OPENAI_MODEL = "gpt-5.4"
-SECONDARY_FINANCIAL_METRICS = (
-    "revenue",
-    "revenue_growth",
-    "contribution_margin",
-    "sga_margin",
-    "operating_profit",
-    "net_income",
-    "operating_cash_flow",
-    "total_equity",
-    "eps",
-)
-
-
 @dataclass(frozen=True)
 class ReportPaths:
     """Paths written by the analyst report generator."""
@@ -421,31 +405,6 @@ def build_news_secondary_context(payload: dict[str, Any], *, source_path: Path) 
     return news_subdata(payload)
 
 
-def _weekly_period_start(period: str) -> str:
-    try:
-        return date.fromisoformat(period[:10]).isoformat()
-    except ValueError:
-        pass
-    try:
-        year_text, week_text = period.split("-W", 1)
-        return date.fromisocalendar(int(year_text), int(week_text), 1).isoformat()
-    except (TypeError, ValueError):
-        return ""
-
-
-def _news_period_summary_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    output = payload.get("output") if isinstance(payload.get("output"), dict) else {}
-    if isinstance(output.get("periods"), list):
-        return [item for item in output["periods"] if isinstance(item, dict)]
-    return [
-        result["output"]
-        for result in payload.get("period_results") or []
-        if isinstance(result, dict)
-        and result.get("status") in {None, "success"}
-        and isinstance(result.get("output"), dict)
-    ]
-
-
 def _combined_secondary_catalog(
     contexts: dict[str, Any],
 ) -> dict[str, dict[str, Any]]:
@@ -459,13 +418,6 @@ def _combined_secondary_catalog(
             catalog[evidence_id] = evidence
     validate_evidence_catalog(catalog, allowed_domains={"financial", "news"})
     return catalog
-
-
-def _first_usable_comparison(comparisons: dict[str, Any]) -> dict[str, Any]:
-    for comparison in comparisons.values():
-        if isinstance(comparison, dict) and comparison.get("status") in {None, "ok"}:
-            return comparison
-    return {}
 
 
 def _news_company_name(payload: dict[str, Any]) -> str | None:

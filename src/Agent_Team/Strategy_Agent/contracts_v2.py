@@ -64,9 +64,6 @@ CARD_BUDGETS = {
     "valuation": 2,
     "peer": 6,
 }
-NEWS_CRITICAL_OVERFLOW_LIMIT = 10
-NEWS_DEFAULT_CARD_LIMIT = 6
-READER_LIMITATION_LIMIT = 8
 INVESTMENT_EFFECTS = frozenset({"positive", "negative", "mixed", "neutral", "reference"})
 MATERIALITY_VALUES = frozenset({"decisive", "supporting", "context"})
 COMPARISON_SCOPES = frozenset(
@@ -2444,44 +2441,6 @@ def _is_critical_news_card(card: dict[str, Any]) -> bool:
         and observation.get("event_status") in {"occurred", "announced"}
         and observation.get("materiality_status") == "observed"
     )
-
-
-def _preserve_news_counterevidence(
-    selected: list[tuple[dict[str, Any], list[str], list[str]]],
-    all_cards: list[tuple[dict[str, Any], list[str], list[str]]],
-    limit: int,
-) -> None:
-    def roles(items: Iterable[tuple[dict[str, Any], list[str], list[str]]]) -> set[str]:
-        return {
-            role
-            for card, _ids, _paths in items
-            for role in _dict(card.get("primary_observation")).get("source_roles") or []
-        }
-
-    all_roles = roles(all_cards)
-    selected_roles = roles(selected)
-    for wanted in ("positive_signals", "negative_signals", "key_risks"):
-        if wanted not in all_roles or wanted in selected_roles:
-            continue
-        candidate = next(
-            item
-            for item in all_cards
-            if wanted in (_dict(item[0].get("primary_observation")).get("source_roles") or [])
-        )
-        if len(selected) < limit:
-            selected.append(candidate)
-        else:
-            replace_index = next(
-                (
-                    index
-                    for index in range(len(selected) - 1, -1, -1)
-                    if not _is_critical_news_card(selected[index][0])
-                ),
-                None,
-            )
-            if replace_index is not None:
-                selected[replace_index] = candidate
-        selected_roles = roles(selected)
 
 
 def _metadata(item: dict[str, Any], validation: dict[str, Any], key: str, fallback: str) -> str:

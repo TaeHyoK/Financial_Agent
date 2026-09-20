@@ -30,9 +30,6 @@ SECTION1_PATTERN = re.compile(
 TITLE_PATTERN = re.compile(r"<TITLE[^>]*>.*?</TITLE>", re.DOTALL | re.IGNORECASE)
 
 WHITESPACE_PATTERN = re.compile(r"[ \t\f\v]+")
-TABLE_HEADER_SEP = re.compile(r"^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$")
-
-
 def extract_section_html(content: str, title_keyword: str) -> str | None:
     for match in SECTION_PATTERN.finditer(content):
         header = match.group("header")

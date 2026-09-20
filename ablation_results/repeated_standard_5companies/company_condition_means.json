@@ -1,0 +1,227 @@
+[
+  {
+    "company": "현대건설",
+    "condition": "full",
+    "replicates": 3,
+    "bertscore_f1": 0.8869737585385641,
+    "bertscore_precision": 0.8842077851295471,
+    "bertscore_recall": 0.8897620240847269,
+    "bertscore_f1_std": 0.0026287784486464087
+  },
+  {
+    "company": "현대건설",
+    "condition": "random_news",
+    "replicates": 3,
+    "bertscore_f1": 0.8713754812876383,
+    "bertscore_precision": 0.8678190509478251,
+    "bertscore_recall": 0.8749638994534811,
+    "bertscore_f1_std": 0.009233023846484313
+  },
+  {
+    "company": "현대건설",
+    "condition": "no_peer",
+    "replicates": 3,
+    "bertscore_f1": 0.8845382730166117,
+    "bertscore_precision": 0.8814328114191691,
+    "bertscore_recall": 0.8876685500144958,
+    "bertscore_f1_std": 0.010032143295267037
+  },
+  {
+    "company": "현대건설",
+    "condition": "no_subdata",
+    "replicates": 3,
+    "bertscore_f1": 0.8853164513905843,
+    "bertscore_precision": 0.8811646302541097,
+    "bertscore_recall": 0.8895099759101868,
+    "bertscore_f1_std": 0.003978782610031893
+  },
+  {
+    "company": "현대건설",
+    "condition": "one_team",
+    "replicates": 3,
+    "bertscore_f1": 0.8755840460459391,
+    "bertscore_precision": 0.8721110820770264,
+    "bertscore_recall": 0.8790883620580038,
+    "bertscore_f1_std": 0.006932601298654981
+  },
+  {
+    "company": "두산",
+    "condition": "full",
+    "replicates": 3,
+    "bertscore_f1": 0.8643968105316162,
+    "bertscore_precision": 0.8729283014933268,
+    "bertscore_recall": 0.856036365032196,
+    "bertscore_f1_std": 0.005502841933281399
+  },
+  {
+    "company": "두산",
+    "condition": "random_news",
+    "replicates": 3,
+    "bertscore_f1": 0.8466156125068665,
+    "bertscore_precision": 0.8567268053690592,
+    "bertscore_recall": 0.8367475271224976,
+    "bertscore_f1_std": 0.0016505742951655911
+  },
+  {
+    "company": "두산",
+    "condition": "no_peer",
+    "replicates": 3,
+    "bertscore_f1": 0.8655675848325094,
+    "bertscore_precision": 0.8731953899065653,
+    "bertscore_recall": 0.8580742279688517,
+    "bertscore_f1_std": 0.006060347612980547
+  },
+  {
+    "company": "두산",
+    "condition": "no_subdata",
+    "replicates": 3,
+    "bertscore_f1": 0.8704661329587301,
+    "bertscore_precision": 0.8785214026769003,
+    "bertscore_recall": 0.8625587423642477,
+    "bertscore_f1_std": 0.006161847237395757
+  },
+  {
+    "company": "두산",
+    "condition": "one_team",
+    "replicates": 3,
+    "bertscore_f1": 0.8548891345659891,
+    "bertscore_precision": 0.8649308085441589,
+    "bertscore_recall": 0.8450794021288554,
+    "bertscore_f1_std": 0.0067730398202333775
+  },
+  {
+    "company": "BGF리테일",
+    "condition": "full",
+    "replicates": 3,
+    "bertscore_f1": 0.8800522089004517,
+    "bertscore_precision": 0.8874924182891846,
+    "bertscore_recall": 0.87273637453715,
+    "bertscore_f1_std": 0.005796171248497702
+  },
+  {
+    "company": "BGF리테일",
+    "condition": "random_news",
+    "replicates": 3,
+    "bertscore_f1": 0.8779977560043335,
+    "bertscore_precision": 0.8878946503003439,
+    "bertscore_recall": 0.8683366378148397,
+    "bertscore_f1_std": 0.0064052111185548865
+  },
+  {
+    "company": "BGF리테일",
+    "condition": "no_peer",
+    "replicates": 3,
+    "bertscore_f1": 0.8736234505971273,
+    "bertscore_precision": 0.8846845030784607,
+    "bertscore_recall": 0.8628444075584412,
+    "bertscore_f1_std": 0.009709713831583658
+  },
+  {
+    "company": "BGF리테일",
+    "condition": "no_subdata",
+    "replicates": 3,
+    "bertscore_f1": 0.8710022370020548,
+    "bertscore_precision": 0.878715713818868,
+    "bertscore_recall": 0.8634474476178488,
+    "bertscore_f1_std": 0.00651690409679147
+  },
+  {
+    "company": "BGF리테일",
+    "condition": "one_team",
+    "replicates": 3,
+    "bertscore_f1": 0.8675883014996847,
+    "bertscore_precision": 0.8771958947181702,
+    "bertscore_recall": 0.8581907351811727,
+    "bertscore_f1_std": 0.007660734069068877
+  },
+  {
+    "company": "아모레퍼시픽",
+    "condition": "full",
+    "replicates": 3,
+    "bertscore_f1": 0.895239015420278,
+    "bertscore_precision": 0.8996504346529642,
+    "bertscore_recall": 0.8908731540044149,
+    "bertscore_f1_std": 0.011865095622122146
+  },
+  {
+    "company": "아모레퍼시픽",
+    "condition": "random_news",
+    "replicates": 3,
+    "bertscore_f1": 0.8905540108680725,
+    "bertscore_precision": 0.8928431272506714,
+    "bertscore_recall": 0.8882789214452108,
+    "bertscore_f1_std": 0.010184565198740668
+  },
+  {
+    "company": "아모레퍼시픽",
+    "condition": "no_peer",
+    "replicates": 3,
+    "bertscore_f1": 0.9062613248825073,
+    "bertscore_precision": 0.9103581110636393,
+    "bertscore_recall": 0.9022040963172913,
+    "bertscore_f1_std": 0.006432289333656897
+  },
+  {
+    "company": "아모레퍼시픽",
+    "condition": "no_subdata",
+    "replicates": 3,
+    "bertscore_f1": 0.8969615697860718,
+    "bertscore_precision": 0.9011422594388326,
+    "bertscore_recall": 0.8928230404853821,
+    "bertscore_f1_std": 0.006110175522158998
+  },
+  {
+    "company": "아모레퍼시픽",
+    "condition": "one_team",
+    "replicates": 3,
+    "bertscore_f1": 0.9020439783732096,
+    "bertscore_precision": 0.9047675331433614,
+    "bertscore_recall": 0.8993391791979471,
+    "bertscore_f1_std": 0.00915855692654287
+  },
+  {
+    "company": "SK바이오팜",
+    "condition": "full",
+    "replicates": 3,
+    "bertscore_f1": 0.8623682459195455,
+    "bertscore_precision": 0.868962824344635,
+    "bertscore_recall": 0.8558763861656189,
+    "bertscore_f1_std": 0.009806599672682827
+  },
+  {
+    "company": "SK바이오팜",
+    "condition": "random_news",
+    "replicates": 3,
+    "bertscore_f1": 0.8434404532114664,
+    "bertscore_precision": 0.8508677283922831,
+    "bertscore_recall": 0.8361558516820272,
+    "bertscore_f1_std": 0.028538623707418602
+  },
+  {
+    "company": "SK바이오팜",
+    "condition": "no_peer",
+    "replicates": 3,
+    "bertscore_f1": 0.8578128218650818,
+    "bertscore_precision": 0.8630120754241943,
+    "bertscore_recall": 0.8527066111564636,
+    "bertscore_f1_std": 0.027991114444630757
+  },
+  {
+    "company": "SK바이오팜",
+    "condition": "no_subdata",
+    "replicates": 3,
+    "bertscore_f1": 0.8502667943636576,
+    "bertscore_precision": 0.8577696084976196,
+    "bertscore_recall": 0.8428945144017538,
+    "bertscore_f1_std": 0.011199363826002524
+  },
+  {
+    "company": "SK바이오팜",
+    "condition": "one_team",
+    "replicates": 3,
+    "bertscore_f1": 0.8432000676790873,
+    "bertscore_precision": 0.8507295250892639,
+    "bertscore_recall": 0.8358119130134583,
+    "bertscore_f1_std": 0.019592703051095676
+  }
+]

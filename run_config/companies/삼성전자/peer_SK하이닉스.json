@@ -1,0 +1,12 @@
+{
+  "company_code": "00164779",
+  "corp_code": "00164779",
+  "stock_code": "000660",
+  "company_name": "SK하이닉스",
+  "ticker": "000660.KS",
+  "report_type": "latest filing available before report date",
+  "date_range": "20241031-20251030",
+  "selected_date": "20251031",
+  "llm_model": "gpt-5.4",
+  "max_retries": 2
+}

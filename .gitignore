@@ -27,6 +27,15 @@ logs/
 *.log
 Output_total*/
 
+# Portable ablation data bundle (kept in Google Drive, never Git)
+evaluation/
+final_reports/
+references/
+reports/
+status/
+prepared_inputs/
+handoff/
+
 # Local change notes
 뉴스_에이전트_수정_이후_변경사항.md
 

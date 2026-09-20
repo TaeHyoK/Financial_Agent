@@ -780,20 +780,3 @@ def _safe_title_company(company_name: str) -> str:
 def _safe_company_label(company_name: str) -> str:
     label = str(company_name or "").strip()
     return label or "Peer"
-
-
-def _safe_category_label(category: str) -> str:
-    labels = {
-        "financial": "Financial",
-        "business_catalyst": "Business Catalyst",
-        "peer_positioning": "Peer Positioning",
-        "market_price": "Market Price",
-        "summary_strengths": "Summary Strengths",
-        "regulatory": "Regulatory",
-        "market": "Market Risk",
-        "execution": "Execution",
-        "cross_agent_consistency": "Cross Check",
-        "strategy_implication": "Thesis",
-        "monitoring": "Monitoring",
-    }
-    return labels.get(category, category.replace("_", " ").title())

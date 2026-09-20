@@ -23,7 +23,7 @@ try:
     )
     from .dart_client import DartClient
     from .financial_index_calculator import calculate_financial_index_files
-    from .handoff_builder import build_master_canonical, build_trend_canonical
+    from .handoff_builder import build_trend_canonical
     from .models import Filing, PipelineInput, TargetReport
     from .normalizer import normalize_primary_report
     from .revenue_breakdown_extractor import extract_revenue_breakdown
@@ -33,7 +33,7 @@ try:
 except ImportError:  # pragma: no cover - supports direct script execution
     from dart_client import DartClient
     from financial_index_calculator import calculate_financial_index_files
-    from handoff_builder import build_master_canonical, build_trend_canonical
+    from handoff_builder import build_trend_canonical
     from models import Filing, PipelineInput, TargetReport
     from normalizer import normalize_primary_report
     from revenue_breakdown_extractor import extract_revenue_breakdown
@@ -220,12 +220,6 @@ def _collect_parallel(
             role = futures[future]
             results[role] = future.result()
     return results
-
-
-def _build_master(collected: dict[str, dict[str, Any]], secondary_target: TargetReport) -> dict[str, Any]:
-    """Build the four-year canonical master payload."""
-
-    return build_master_canonical(_build_matrix_master(collected), secondary_target)
 
 
 def _build_matrix_master(collected: dict[str, dict[str, Any]]) -> dict[str, Any]:

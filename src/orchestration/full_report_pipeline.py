@@ -46,7 +46,6 @@ from .config import (
     peer_output_root,
     published_report_path,
     run_output_dir,
-    safe_label,
 )
 from .usage_summary import summarize_execution_usage
 

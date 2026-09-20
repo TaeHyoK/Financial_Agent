@@ -1,0 +1,373 @@
+{
+  "state": "success",
+  "run_id": "one_team_gpt54_r01",
+  "protocol": "unified_domain_team_v8_single_report",
+  "started_at": "2026-09-17T12:08:10.449242+00:00",
+  "models": {
+    "integrated_analysis": "gpt-5.4",
+    "downstream": "gpt-5.4",
+    "reused_news_summary": "gpt-5.6-luna"
+  },
+  "reports_total": 7,
+  "completed": [
+    {
+      "company": "현대건설",
+      "condition": "one_team",
+      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/one_team/one_team_gpt54_r01/현대건설/report_현대건설.html"
+    },
+    {
+      "company": "삼성전자",
+      "condition": "one_team",
+      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/one_team/one_team_gpt54_r01/삼성전자/report_삼성전자.html"
+    },
+    {
+      "company": "SK바이오팜",
+      "condition": "one_team",
+      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/one_team/one_team_gpt54_r01/SK바이오팜/report_SK바이오팜.html"
+    },
+    {
+      "company": "BGF리테일",
+      "condition": "one_team",
+      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/one_team/one_team_gpt54_r01/BGF리테일/report_BGF리테일.html"
+    },
+    {
+      "company": "아모레퍼시픽",
+      "condition": "one_team",
+      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/one_team/one_team_gpt54_r01/아모레퍼시픽/report_아모레퍼시픽.html"
+    },
+    {
+      "company": "코웨이",
+      "condition": "one_team",
+      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/one_team/one_team_gpt54_r01/코웨이/report_코웨이.html"
+    },
+    {
+      "company": "두산",
+      "condition": "one_team",
+      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/one_team/one_team_gpt54_r01/두산/report_두산.html"
+    }
+  ],
+  "stages": [
+    {
+      "company": "현대건설",
+      "stage": "target_unified",
+      "completed_at": "2026-09-17T12:09:06.966510+00:00"
+    },
+    {
+      "company": "현대건설",
+      "stage": "peer_unified",
+      "completed_at": "2026-09-17T12:10:11.129605+00:00"
+    },
+    {
+      "company": "현대건설",
+      "stage": "peer_dataset",
+      "completed_at": "2026-09-17T12:10:11.602962+00:00"
+    },
+    {
+      "company": "현대건설",
+      "stage": "peer_analysis",
+      "completed_at": "2026-09-17T12:10:48.050774+00:00"
+    },
+    {
+      "company": "현대건설",
+      "stage": "strategy",
+      "completed_at": "2026-09-17T12:11:27.202176+00:00"
+    },
+    {
+      "company": "현대건설",
+      "stage": "chart_catalog",
+      "completed_at": "2026-09-17T12:11:27.971632+00:00"
+    },
+    {
+      "company": "현대건설",
+      "stage": "writer",
+      "completed_at": "2026-09-17T12:12:06.024414+00:00"
+    },
+    {
+      "company": "현대건설",
+      "stage": "charts",
+      "completed_at": "2026-09-17T12:12:07.746615+00:00"
+    },
+    {
+      "company": "현대건설",
+      "stage": "render",
+      "completed_at": "2026-09-17T12:12:07.919795+00:00"
+    },
+    {
+      "company": "삼성전자",
+      "stage": "target_unified",
+      "completed_at": "2026-09-17T12:13:13.659183+00:00"
+    },
+    {
+      "company": "삼성전자",
+      "stage": "peer_unified",
+      "completed_at": "2026-09-17T12:14:11.688995+00:00"
+    },
+    {
+      "company": "삼성전자",
+      "stage": "peer_dataset",
+      "completed_at": "2026-09-17T12:14:12.162634+00:00"
+    },
+    {
+      "company": "삼성전자",
+      "stage": "peer_analysis",
+      "completed_at": "2026-09-17T12:14:46.251967+00:00"
+    },
+    {
+      "company": "삼성전자",
+      "stage": "strategy",
+      "completed_at": "2026-09-17T12:15:34.079897+00:00"
+    },
+    {
+      "company": "삼성전자",
+      "stage": "chart_catalog",
+      "completed_at": "2026-09-17T12:15:34.848825+00:00"
+    },
+    {
+      "company": "삼성전자",
+      "stage": "writer",
+      "completed_at": "2026-09-17T12:16:17.117506+00:00"
+    },
+    {
+      "company": "삼성전자",
+      "stage": "charts",
+      "completed_at": "2026-09-17T12:16:19.139443+00:00"
+    },
+    {
+      "company": "삼성전자",
+      "stage": "render",
+      "completed_at": "2026-09-17T12:16:19.312461+00:00"
+    },
+    {
+      "company": "SK바이오팜",
+      "stage": "target_unified",
+      "completed_at": "2026-09-17T12:17:20.217338+00:00"
+    },
+    {
+      "company": "SK바이오팜",
+      "stage": "peer_unified",
+      "completed_at": "2026-09-17T12:18:33.321140+00:00"
+    },
+    {
+      "company": "SK바이오팜",
+      "stage": "peer_dataset",
+      "completed_at": "2026-09-17T12:18:33.793876+00:00"
+    },
+    {
+      "company": "SK바이오팜",
+      "stage": "peer_analysis",
+      "completed_at": "2026-09-17T12:19:11.195128+00:00"
+    },
+    {
+      "company": "SK바이오팜",
+      "stage": "strategy",
+      "completed_at": "2026-09-17T12:19:51.148916+00:00"
+    },
+    {
+      "company": "SK바이오팜",
+      "stage": "chart_catalog",
+      "completed_at": "2026-09-17T12:19:51.868295+00:00"
+    },
+    {
+      "company": "SK바이오팜",
+      "stage": "writer",
+      "completed_at": "2026-09-17T12:20:27.462202+00:00"
+    },
+    {
+      "company": "SK바이오팜",
+      "stage": "charts",
+      "completed_at": "2026-09-17T12:20:29.837212+00:00"
+    },
+    {
+      "company": "SK바이오팜",
+      "stage": "render",
+      "completed_at": "2026-09-17T12:20:30.010631+00:00"
+    },
+    {
+      "company": "BGF리테일",
+      "stage": "target_unified",
+      "completed_at": "2026-09-17T12:21:27.730291+00:00"
+    },
+    {
+      "company": "BGF리테일",
+      "stage": "peer_unified",
+      "completed_at": "2026-09-17T12:22:35.104752+00:00"
+    },
+    {
+      "company": "BGF리테일",
+      "stage": "peer_dataset",
+      "completed_at": "2026-09-17T12:22:35.578577+00:00"
+    },
+    {
+      "company": "BGF리테일",
+      "stage": "peer_analysis",
+      "completed_at": "2026-09-17T12:23:18.248726+00:00"
+    },
+    {
+      "company": "BGF리테일",
+      "stage": "strategy",
+      "completed_at": "2026-09-17T12:23:59.210007+00:00"
+    },
+    {
+      "company": "BGF리테일",
+      "stage": "chart_catalog",
+      "completed_at": "2026-09-17T12:23:59.979670+00:00"
+    },
+    {
+      "company": "BGF리테일",
+      "stage": "writer",
+      "completed_at": "2026-09-17T12:24:37.181481+00:00"
+    },
+    {
+      "company": "BGF리테일",
+      "stage": "charts",
+      "completed_at": "2026-09-17T12:24:38.954439+00:00"
+    },
+    {
+      "company": "BGF리테일",
+      "stage": "render",
+      "completed_at": "2026-09-17T12:24:39.127730+00:00"
+    },
+    {
+      "company": "아모레퍼시픽",
+      "stage": "target_unified",
+      "completed_at": "2026-09-17T12:25:44.559423+00:00"
+    },
+    {
+      "company": "아모레퍼시픽",
+      "stage": "peer_unified",
+      "completed_at": "2026-09-17T12:26:38.818659+00:00"
+    },
+    {
+      "company": "아모레퍼시픽",
+      "stage": "peer_dataset",
+      "completed_at": "2026-09-17T12:26:39.292472+00:00"
+    },
+    {
+      "company": "아모레퍼시픽",
+      "stage": "peer_analysis",
+      "completed_at": "2026-09-17T12:27:13.984585+00:00"
+    },
+    {
+      "company": "아모레퍼시픽",
+      "stage": "strategy",
+      "completed_at": "2026-09-17T12:27:52.482865+00:00"
+    },
+    {
+      "company": "아모레퍼시픽",
+      "stage": "chart_catalog",
+      "completed_at": "2026-09-17T12:27:53.252652+00:00"
+    },
+    {
+      "company": "아모레퍼시픽",
+      "stage": "writer",
+      "completed_at": "2026-09-17T12:28:29.450377+00:00"
+    },
+    {
+      "company": "아모레퍼시픽",
+      "stage": "charts",
+      "completed_at": "2026-09-17T12:28:31.173475+00:00"
+    },
+    {
+      "company": "아모레퍼시픽",
+      "stage": "render",
+      "completed_at": "2026-09-17T12:28:31.346916+00:00"
+    },
+    {
+      "company": "코웨이",
+      "stage": "target_unified",
+      "completed_at": "2026-09-17T12:29:29.143954+00:00"
+    },
+    {
+      "company": "코웨이",
+      "stage": "peer_unified",
+      "completed_at": "2026-09-17T12:30:23.046107+00:00"
+    },
+    {
+      "company": "코웨이",
+      "stage": "peer_dataset",
+      "completed_at": "2026-09-17T12:30:23.463350+00:00"
+    },
+    {
+      "company": "코웨이",
+      "stage": "peer_analysis",
+      "completed_at": "2026-09-17T12:30:58.357409+00:00"
+    },
+    {
+      "company": "코웨이",
+      "stage": "strategy",
+      "completed_at": "2026-09-17T12:31:37.810589+00:00"
+    },
+    {
+      "company": "코웨이",
+      "stage": "chart_catalog",
+      "completed_at": "2026-09-17T12:31:38.580625+00:00"
+    },
+    {
+      "company": "코웨이",
+      "stage": "writer",
+      "completed_at": "2026-09-17T12:32:13.623621+00:00"
+    },
+    {
+      "company": "코웨이",
+      "stage": "charts",
+      "completed_at": "2026-09-17T12:32:15.296828+00:00"
+    },
+    {
+      "company": "코웨이",
+      "stage": "render",
+      "completed_at": "2026-09-17T12:32:15.470338+00:00"
+    },
+    {
+      "company": "두산",
+      "stage": "target_unified",
+      "completed_at": "2026-09-17T12:33:22.045207+00:00"
+    },
+    {
+      "company": "두산",
+      "stage": "peer_unified",
+      "completed_at": "2026-09-17T12:34:28.564885+00:00"
+    },
+    {
+      "company": "두산",
+      "stage": "peer_dataset",
+      "completed_at": "2026-09-17T12:34:29.088720+00:00"
+    },
+    {
+      "company": "두산",
+      "stage": "peer_analysis",
+      "completed_at": "2026-09-17T12:35:02.727344+00:00"
+    },
+    {
+      "company": "두산",
+      "stage": "strategy",
+      "completed_at": "2026-09-17T12:35:40.975774+00:00"
+    },
+    {
+      "company": "두산",
+      "stage": "chart_catalog",
+      "completed_at": "2026-09-17T12:35:41.746039+00:00"
+    },
+    {
+      "company": "두산",
+      "stage": "writer",
+      "completed_at": "2026-09-17T12:36:21.655345+00:00"
+    },
+    {
+      "company": "두산",
+      "stage": "charts",
+      "completed_at": "2026-09-17T12:36:24.029403+00:00"
+    },
+    {
+      "company": "두산",
+      "stage": "render",
+      "completed_at": "2026-09-17T12:36:24.203101+00:00"
+    }
+  ],
+  "entities": [],
+  "worker_pid": 2274841,
+  "current_company": "두산",
+  "current_stage": "complete",
+  "updated_at": "2026-09-17T12:36:24.211962+00:00",
+  "reports_completed": 7,
+  "completed_at": "2026-09-17T12:36:24.211944+00:00"
+}

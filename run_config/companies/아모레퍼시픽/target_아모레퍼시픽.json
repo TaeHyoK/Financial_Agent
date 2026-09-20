@@ -1,0 +1,12 @@
+{
+  "company_code": "00583424",
+  "corp_code": "00583424",
+  "stock_code": "090430",
+  "company_name": "아모레퍼시픽",
+  "ticker": "090430.KS",
+  "report_type": "latest filing available before report date",
+  "date_range": "20241107-20251106",
+  "selected_date": "20251107",
+  "llm_model": "gpt-5.4",
+  "max_retries": 2
+}

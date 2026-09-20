@@ -1,0 +1,12 @@
+{
+  "company_code": "00878696",
+  "corp_code": "00878696",
+  "stock_code": "326030",
+  "company_name": "SK바이오팜",
+  "ticker": "326030.KS",
+  "report_type": "latest filing available before report date",
+  "date_range": "20241106-20251105",
+  "selected_date": "20251106",
+  "llm_model": "gpt-5.4",
+  "max_retries": 2
+}

@@ -1,0 +1,12 @@
+{
+  "status": "verified",
+  "reports": 35,
+  "companies": 7,
+  "conditions": 5,
+  "analysis_models_matched": true,
+  "analysis_model": "gpt-5.4",
+  "original_scores_exactly_reproduced": 28,
+  "same_reference_regions": true,
+  "truncated": false,
+  "paid_evaluation_api_calls": 0
+}

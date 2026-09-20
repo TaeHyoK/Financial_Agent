@@ -1,0 +1,12 @@
+{
+  "company_code": "00126380",
+  "corp_code": "00126380",
+  "stock_code": "005930",
+  "company_name": "삼성전자",
+  "ticker": "005930.KS",
+  "report_type": "latest filing available before report date",
+  "date_range": "20241031-20251030",
+  "selected_date": "20251031",
+  "llm_model": "gpt-5.4",
+  "max_retries": 2
+}

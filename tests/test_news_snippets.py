@@ -9,7 +9,7 @@ import requests
 
 from Agent_Team.News_Agent import context_export
 from Agent_Team.News_Agent.collectors.google_news_collector import (
-    GoogleNewsCollector, SNIPPET_POLICY, _extract_article_snippet, _truncate_snippet,
+    GoogleNewsCollector, _extract_article_snippet, _truncate_snippet,
 )
 from Agent_Team.News_Agent.collectors.report_snippets import enrich_report_snippets, require_prepared_summary_snippets
 

@@ -1,0 +1,12 @@
+{
+  "company_code": "00164478",
+  "corp_code": "00164478",
+  "stock_code": "000720",
+  "company_name": "현대건설",
+  "ticker": "000720.KS",
+  "report_type": "latest filing available before report date",
+  "date_range": "20241020-20251019",
+  "selected_date": "20251020",
+  "llm_model": "gpt-5.4",
+  "max_retries": 2
+}

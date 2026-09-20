@@ -1,0 +1,165 @@
+{
+  "workspace": "/data/agent2/financial_agent_ablation_2025h2",
+  "repository": {
+    "path": "/data/agent2/financial_agent_ablation_2025h2/repo",
+    "commit": "7e20b3d2c803c7490099ab0fe96a70084b88257d"
+  },
+  "environment_file": "/home/agent2/FINAL/configs/.env",
+  "collection_policy": {
+    "information_window": "12 calendar months ending one day before the report date",
+    "news_periods": 12,
+    "news_granularity": "month",
+    "news_summary_request": "one request per month; requests only, no LLM execution",
+    "news_model_for_later_execution": "gpt-5.6-luna",
+    "analysis_model_for_later_execution": "gpt-5.4",
+    "llm_calls_allowed": false,
+    "conditions_sharing_snapshot": [
+      "full",
+      "random_news",
+      "no_peer",
+      "no_subdata"
+    ]
+  },
+  "companies": [
+    {
+      "report_date": "20251020",
+      "target": {
+        "company_name": "현대건설",
+        "stock_code": "000720",
+        "corp_code": "00164478",
+        "ticker": "000720.KS"
+      },
+      "peer": {
+        "company_name": "GS건설",
+        "stock_code": "006360",
+        "corp_code": "00120030",
+        "ticker": "006360.KS"
+      },
+      "reference_report": {
+        "file": "references/20251020_company_현대건설.pdf",
+        "sha256": "a7c5bdb876e20119d591e1de999d605e15397c6f43e1d018d567a6ff6c59378b",
+        "source_url": "https://stock.mk.co.kr/uploads/20251020/1760924228_e937ea8d172eb4338923.pdf"
+      }
+    },
+    {
+      "report_date": "20251031",
+      "target": {
+        "company_name": "삼성전자",
+        "stock_code": "005930",
+        "corp_code": "00126380",
+        "ticker": "005930.KS"
+      },
+      "peer": {
+        "company_name": "SK하이닉스",
+        "stock_code": "000660",
+        "corp_code": "00164779",
+        "ticker": "000660.KS"
+      },
+      "reference_report": {
+        "file": "references/20251031_company_삼성전자.pdf",
+        "sha256": "a0f8e2d62a1961143c88868507af3aac88905041a2cc8ec449db7fbfdef0aa0f",
+        "source_url": "https://www.eugenefn.com/common/files/amail/20251031_005930_sophie.yim_104.pdf"
+      }
+    },
+    {
+      "report_date": "20251106",
+      "target": {
+        "company_name": "SK바이오팜",
+        "stock_code": "326030",
+        "corp_code": "00878696",
+        "ticker": "326030.KS"
+      },
+      "peer": {
+        "company_name": "유한양행",
+        "stock_code": "000100",
+        "corp_code": "00145109",
+        "ticker": "000100.KS"
+      },
+      "reference_report": {
+        "file": "references/20251106_company_sk바이오팜.pdf",
+        "sha256": "8c820ecf049cb1f8836380144094dacae40aaf35961985c01ebac8567ac58320",
+        "source_url": "https://m.ibks.com/iko/IKO01/download.do?attatchCd=ATTATCH1&menuCode=IKO010201&seq=4496"
+      }
+    },
+    {
+      "report_date": "20251107",
+      "target": {
+        "company_name": "BGF리테일",
+        "stock_code": "282330",
+        "corp_code": "01263022",
+        "ticker": "282330.KS"
+      },
+      "peer": {
+        "company_name": "GS리테일",
+        "stock_code": "007070",
+        "corp_code": "00140177",
+        "ticker": "007070.KS"
+      },
+      "reference_report": {
+        "file": "references/20251107_company_bgf리테일.pdf",
+        "sha256": "e113534a25e2581931defa49d99327cb3b83076afee2e537ac9ab33533648dff",
+        "source_url": "https://m.ibks.com/iko/IKO01/download.do?attatchCd=ATTATCH1&menuCode=IKO010201&seq=11915"
+      }
+    },
+    {
+      "report_date": "20251107",
+      "target": {
+        "company_name": "아모레퍼시픽",
+        "stock_code": "090430",
+        "corp_code": "00583424",
+        "ticker": "090430.KS"
+      },
+      "peer": {
+        "company_name": "LG생활건강",
+        "stock_code": "051900",
+        "corp_code": "00356370",
+        "ticker": "051900.KS"
+      },
+      "reference_report": {
+        "file": "references/20251107_company_아모레퍼시픽.pdf",
+        "sha256": "3a338aa23111b097e8f5ba2f40a9be78bb46ff60a9dc2060040735315e0ffeef",
+        "source_url": "https://bbn.kiwoom.com/rfCR11701"
+      }
+    },
+    {
+      "report_date": "20251110",
+      "target": {
+        "company_name": "코웨이",
+        "stock_code": "021240",
+        "corp_code": "00170558",
+        "ticker": "021240.KS"
+      },
+      "peer": {
+        "company_name": "쿠쿠홀딩스",
+        "stock_code": "192400",
+        "corp_code": "00132354",
+        "ticker": "192400.KS"
+      },
+      "reference_report": {
+        "file": "references/20251110_company_코웨이.pdf",
+        "sha256": "35beb8766b99e4b8725cd059def237c2fc700a13eeb7839c78068f33055495d4",
+        "source_url": "https://file.alphasquare.co.kr/media/pdfs/company-report/%ED%95%9C%ED%99%9420251110%EC%BD%94%EC%9B%A8%EC%9D%B4.pdf"
+      }
+    },
+    {
+      "report_date": "20251111",
+      "target": {
+        "company_name": "두산",
+        "stock_code": "000150",
+        "corp_code": "00117212",
+        "ticker": "000150.KS"
+      },
+      "peer": {
+        "company_name": "SK",
+        "stock_code": "034730",
+        "corp_code": "00181712",
+        "ticker": "034730.KS"
+      },
+      "reference_report": {
+        "file": "references/20251111_company_두산.pdf",
+        "sha256": "a9cfc501dc94807242e0edc425bbe773b0c538d13269ed514bbe411e661bcd1a",
+        "source_url": "https://www.eugenefn.com/common/files/amail/20251111_000150_Juhyeonglee_39.pdf"
+      }
+    }
+  ]
+}

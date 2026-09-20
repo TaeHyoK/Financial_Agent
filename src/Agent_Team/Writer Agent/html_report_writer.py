@@ -21,7 +21,6 @@ from writer_handoff import (
     EDITORIAL_PACKET_VERSION,
     EDITORIAL_PACKET_VERSION_V3,
     validate_writer_editorial_packet,
-    validate_writer_handoff,
 )
 
 
@@ -68,33 +67,6 @@ def writer_request_fingerprint(
         ),
     }
     return hashlib.sha256(compact_json(payload, sort_keys=True).encode("utf-8")).hexdigest()
-
-
-def build_html_report_payload(
-    *,
-    writer_handoff: dict[str, Any],
-    model: str = DEFAULT_LLM_MODEL,
-    api_key: str | None = None,
-    writer_mode: str = DETERMINISTIC_WRITER_MODE,
-    chart_catalog: dict[str, Any] | None = None,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Generate one grounded report payload from the compact Writer handoff."""
-
-    raw_payload, llm_output = request_html_report_payload(
-        writer_handoff=writer_handoff,
-        model=model,
-        api_key=api_key,
-        writer_mode=writer_mode,
-        chart_catalog=chart_catalog,
-    )
-    validate_raw_writer_payload(raw_payload)
-    normalized = normalize_report_payload(
-        raw_payload,
-        writer_handoff=writer_handoff,
-        writer_mode=writer_mode,
-        chart_catalog=chart_catalog,
-    )
-    return normalized, llm_output
 
 
 def request_html_report_payload(
@@ -244,8 +216,6 @@ def normalize_report_payload(
         "contract_version": contract_version,
         "missing_value_policy": MISSING_VALUE,
     }
-    if not _is_v2_writer_packet(writer_handoff):
-        normalized["generation"]["writer_handoff_version"] = writer_handoff.get("handoff_version")
     return normalized
 
 
@@ -364,58 +334,7 @@ def _build_context(
 
     _validate_writer_input(writer_handoff)
     writer_mode = _normalize_writer_mode(writer_mode)
-    if _is_v2_writer_packet(writer_handoff):
-        context = _build_context_v2(writer_handoff, writer_mode=writer_mode)
-        return _with_chart_selection_context(context, chart_catalog)
-    context = {
-        "writer_mode": writer_mode,
-        "task": "계층화된 근거를 사용해 한국어 one-paper 기업 리서치 리포트 payload를 작성한다.",
-        "output_contract": _output_contract(),
-        "section_role_guidance": _section_role_guidance(),
-        "writing_rules": {
-            "recommendation_lock": _dict(writer_handoff.get("decision")).get("opinion"),
-            "use_only_writer_input": True,
-            "grounding_refs_required": True,
-            "missing_data_phrase": MISSING_VALUE,
-            "hierarchy": [
-                "decisive_positive_evidence",
-                "decisive_negative_evidence",
-                "structured domain evidence",
-                "data_limits",
-            ],
-            "financial_policy": "동일 기간 재무 추세와 현금흐름을 우선하고 기간·단위·공시 기준을 보존한다.",
-            "revenue_policy": "제품·서비스별 매출액과 비중은 revenue_breakdown의 현재 공시값만 사용하며 시장점유율을 만들지 않는다.",
-            "valuation_policy": "선택일 계산 밸류에이션을 우선하고 날짜가 다른 provider-direct 값은 별도 참고값으로 구분한다.",
-            "required_evidence_policy": (
-                "required_key_evidence의 모든 display token을 key_evidence_table에 정확히 한 번씩 그대로 복사한다. "
-                "반올림, 단위 환산, provider-direct 값 대체를 하지 않는다."
-            ),
-            "peer_policy": "peer_comparison의 명시된 1:1 비교만 사용하고 업종 평균이나 다른 경쟁사를 만들지 않는다.",
-            "catalyst_policy": "catalysts의 서로 다른 이벤트만 사용하고 시장 반응이나 현재 실적을 촉매로 다시 만들지 않는다.",
-            "risk_policy": (
-                "risk_monitoring_table의 리스크 행은 writer_handoff.risks의 실제 observed risk와 1:1로 대응해야 하며 "
-                "행 수는 risks 수를 넘지 않는다. data_limits, 미공개 정보, 아직 확인되지 않은 촉매 기여를 "
-                "새 리스크 행으로 승격하지 않는다. 각 위험이 현재 투자 판단에 미치는 영향을 구분해 쓴다."
-            ),
-            "no_new_information": "수치, 제품·서비스명, 회사명, 이벤트, 인과관계, 전망치를 새로 만들지 않는다.",
-            "no_internal_narration": "Agent, prompt, validation workflow, 파일 경로, OP/claim/evidence ID를 독자 문장에 노출하지 않는다.",
-            "no_forbidden_content": "목표주가, 컨센서스, 별도 투자의견 변경 시나리오를 작성하지 않는다.",
-            "current_input_only": (
-                "판단은 입력된 자료로 현재 시점에서 완결한다. 후속 공시·수치·사건을 확인하거나 "
-                "향후 재검토해야 한다는 작업 계획을 제시하지 않는다. 확인되지 않은 내용은 현재 "
-                "판단에 반영할 수 없는 범위로만 설명한다."
-            ),
-            "hide_recommendation_label": (
-                "독자에게 보이는 문장에는 Buy, Hold, Sell 의견 등급을 직접 쓰지 않고 "
-                "투자기간과 긍정·부정 근거의 균형만 설명한다."
-            ),
-            "plain_korean": "누적·연간·비교 기업·촉매·확인 항목은 일반 투자자가 이해할 수 있는 한국어로 쓴다.",
-            "deduplication": "같은 수치나 이벤트를 여러 섹션에 반복하지 않고 각 섹션의 질문에 필요한 역할로만 배치한다.",
-            "text_density": "텍스트 섹션은 권장 문단 수를 참고하되 필요한 논거와 인용을 생략하지 않고 bullets는 빈 배열로 둔다. 상세 원 단위 수치와 전체 비교값은 key_evidence_table에 배치한다.",
-            "inline_html": ["<strong>"],
-        },
-        "writer_input": build_writer_llm_input(writer_handoff),
-    }
+    context = _build_context_v2(writer_handoff, writer_mode=writer_mode)
     return _with_chart_selection_context(context, chart_catalog)
 
 
@@ -599,30 +518,12 @@ def build_writer_llm_input(writer_handoff: dict[str, Any]) -> dict[str, Any]:
     """Remove audit-only provenance and duplicated counter-evidence from LLM input."""
 
     _validate_writer_input(writer_handoff)
-    if _is_v2_writer_packet(writer_handoff):
-        compact = json.loads(json.dumps(writer_handoff, ensure_ascii=False))
-        compact["target"] = {
-            key: value
-            for key, value in _dict(compact.get("target")).items()
-            if key != "run_key"
-        }
-        return compact
-    compact = {
-        key: json.loads(json.dumps(value, ensure_ascii=False))
-        for key, value in writer_handoff.items()
-        if key not in {"handoff_version", "contrary_evidence", "evidence_refs"}
-    }
+    compact = json.loads(json.dumps(writer_handoff, ensure_ascii=False))
     compact["target"] = {
         key: value
         for key, value in _dict(compact.get("target")).items()
         if key != "run_key"
     }
-    compact["grounding_ref_map"] = {
-        str(item.get("id")): str(item.get("strategy_path"))
-        for item in writer_handoff.get("evidence_refs") or []
-        if isinstance(item, dict) and item.get("id") and item.get("strategy_path")
-    }
-    compact["required_key_evidence"] = build_required_key_evidence(writer_handoff)
     return compact
 
 
@@ -869,54 +770,6 @@ def _normalize_chart_selection_details(
     return normalized
 
 
-def build_required_key_evidence(writer_handoff: dict[str, Any]) -> dict[str, Any]:
-    """Expose exact display tokens that the fixed key-evidence table must preserve."""
-
-    revenue = _dict(writer_handoff.get("revenue_breakdown"))
-    revenue_unit = str(revenue.get("unit") or "").strip()
-    revenue_items = [
-        {
-            "name": str(item.get("name") or "").strip(),
-            "revenue_display": " ".join(
-                value
-                for value in (str(item.get("revenue_disclosed") or "").strip(), revenue_unit)
-                if value
-            ),
-            "share_display": str(item.get("revenue_share_disclosed") or "").strip(),
-        }
-        for item in revenue.get("current_items") or []
-        if isinstance(item, dict)
-    ]
-    calculated = _dict(_dict(writer_handoff.get("valuation")).get("calculated_from_close_and_dart"))
-    metrics = _dict(calculated.get("metrics"))
-    valuation_labels = {
-        "trailing_pe": "P/E",
-        "price_to_sales": "P/S",
-        "price_to_book": "P/B",
-    }
-    valuation_tokens = [
-        f"{label} {float(metric['value']):.2f}"
-        for key, label in valuation_labels.items()
-        for metric in [_dict(metrics.get(key))]
-        if metric.get("value") is not None
-    ]
-    peer_names = [
-        str(item.get("company_name") or "").strip()
-        for item in _dict(writer_handoff.get("peer_comparison")).get("metrics") or []
-        if isinstance(item, dict) and str(item.get("company_name") or "").strip()
-    ]
-    return {
-        "instruction": "Copy every display token verbatim into key_evidence_table.",
-        "revenue_period": _dict(revenue.get("current_period")).get("label"),
-        "revenue_items": revenue_items,
-        "selected_date_valuation": {
-            "as_of_date": calculated.get("as_of_date"),
-            "display_tokens": valuation_tokens,
-        },
-        "peer_company_names": list(dict.fromkeys(peer_names)),
-    }
-
-
 def _section_keys() -> list[str]:
     return [section["key"] for section in REPORT_SECTIONS]
 
@@ -1014,19 +867,6 @@ def _section_role_guidance() -> list[dict[str, Any]]:
         },
     }
     return [{"section_key": section["key"], "title": section["title"], **roles[section["key"]]} for section in REPORT_SECTIONS]
-
-
-def _output_contract() -> dict[str, Any]:
-    return {
-        "metadata": {"report_title": "문자열"},
-        "sections": {
-            section["key"]: {
-                item_key: _table_contract() if item_type == "table" else _text_contract()
-                for item_key, _title, item_type in section["items"]
-            }
-            for section in REPORT_SECTIONS
-        },
-    }
 
 
 def _output_contract_v2(
@@ -1221,8 +1061,6 @@ def writer_report_response_format(
 
     _validate_writer_input(writer_handoff)
     writer_mode = _normalize_writer_mode(writer_mode)
-    if not _is_v2_writer_packet(writer_handoff):
-        return {"type": "json_object"}
     if chart_catalog is not None:
         chart_catalog = _grounded_chart_catalog_for_writer(
             chart_catalog,
@@ -1516,58 +1354,15 @@ def _bounded_string_array_schema(
     return schema
 
 
-def _text_contract() -> dict[str, Any]:
-    return {
-        "paragraphs": ["필요한 논거를 충분히 설명하는 한국어 분석 문단"],
-        "bullets": [],
-        "grounding_refs": ["writer_input.grounding_ref_map의 유효한 id"],
-    }
-
-
-def _table_contract() -> dict[str, Any]:
-    return {
-        "columns": ["표 컬럼명"],
-        "rows": [{"표 컬럼명": "근거가 있는 셀 값"}],
-        "grounding_refs": ["writer_input.grounding_ref_map의 유효한 id"],
-    }
-
-
 def _system_prompt(
     contract_version: str = "",
     *,
     writer_mode: str = DETERMINISTIC_WRITER_MODE,
 ) -> str:
     writer_mode = _normalize_writer_mode(writer_mode)
-    if contract_version in {EDITORIAL_PACKET_VERSION, EDITORIAL_PACKET_VERSION_V3}:
-        return _system_prompt_v2(writer_mode=writer_mode)
-    return """
-너는 범용 상장기업 리서치 Writer Agent다. 반드시 유효한 JSON object 하나만 반환한다.
-
-강제 조건:
-- user message의 writer_input만 사용한다. 새로운 수치, 회사, 제품·서비스, 이벤트, 인과관계, 전망을 만들지 않는다.
-- 숫자는 writer_input에 표시된 값과 단위를 그대로 사용한다. 곱셈·나눗셈·단위 환산으로 새 숫자를 만들지 않는다.
-- 이름이 _100m 또는 _100m_krw로 끝나는 값은 이미 억원 단위다. 원 단위 정수로 재계산하지 말고 억원으로 표시한다.
-- Strategy의 판단 방향과 투자기간을 바꾸지 않는다.
-- sections 바로 아래에 정확히 6개 section key를 sibling으로 둔다. 중첩하거나 다른 section을 추가하지 않는다.
-- 각 section item에 사용한 writer_input.grounding_ref_map의 유효한 id를 grounding_refs로 넣는다.
-- OP/claim/evidence ID, Agent, prompt, validation workflow, 절대 파일 경로는 본문이나 표 셀에 쓰지 않는다.
-- 목표주가, 컨센서스, 별도 투자의견 변경 시나리오를 생성하지 않는다.
-- 제품·서비스별 매출액과 비중, 선택일 밸류에이션, 명시된 1:1 비교 기업을 key evidence table에 반영한다.
-- writer_input.required_key_evidence의 revenue_items, selected_date_valuation.display_tokens, peer_company_names를 모두 key evidence table에 문자열 그대로 한 번씩 포함한다.
-- 선택일 계산 밸류에이션과 날짜가 다른 provider-direct 값은 구분한다.
-- 같은 근거를 여러 섹션에 반복하지 않는다.
-- 텍스트 섹션은 output_contract에 지정된 문단 수를 지키고 bullets는 빈 배열로 둔다. 상세 원 단위 수치와 전체 비교값은 key_evidence_table에만 배치한다.
-- inline HTML은 <strong>만 허용한다. Markdown과 raw HTML 문서는 반환하지 않는다.
-- available_charts가 있으면 보고서 판단을 직접 보완하는 차트만 최대 허용 개수까지 requested_chart_keys에 넣는다. 적절한 차트가 없으면 빈 배열로 둔다.
-
-섹션 목적:
-- investment_call_thesis: 결론, 결정적 긍정·부정 근거와 반대 논리를 종합한다.
-- business_market_context: 매출 구조와 시장 맥락을 설명한다.
-- key_evidence_table: 재무 추세, 제품 매출, 시장, 밸류에이션, 1:1 peer를 표로 비교한다.
-- catalysts_execution: 확인된 이벤트와 실행·재무 기여의 확인 범위를 구분한다.
-- risk_monitoring_matrix: 근거가 있는 위험과 관찰 가능한 확인 항목을 표로 정리한다.
-- data_limits: 자료 시점, 기간, 비교, 인과 한계만 설명한다. 판단 변경 시나리오는 쓰지 않는다.
-""".strip()
+    if contract_version not in {EDITORIAL_PACKET_VERSION, EDITORIAL_PACKET_VERSION_V3}:
+        raise ValueError("writer contract_version must be an editorial packet version")
+    return _system_prompt_v2(writer_mode=writer_mode)
 
 
 def _system_prompt_v2(
@@ -1677,9 +1472,7 @@ def _evidence_display_columns(packet: dict[str, Any]) -> tuple[str, ...]:
 
 
 def _writer_contract_version(value: dict[str, Any]) -> str:
-    if _is_v2_writer_packet(value):
-        return str(value.get("packet_version") or EDITORIAL_PACKET_VERSION)
-    return str(value.get("handoff_version") or "")
+    return str(value.get("packet_version") or EDITORIAL_PACKET_VERSION)
 
 
 def _normalize_writer_mode(value: str) -> str:
@@ -1692,10 +1485,9 @@ def _normalize_writer_mode(value: str) -> str:
 
 
 def _validate_writer_input(value: dict[str, Any]) -> None:
-    if _is_v2_writer_packet(value):
-        validate_writer_editorial_packet(value)
-        return
-    validate_writer_handoff(value)
+    if not _is_v2_writer_packet(value):
+        raise ValueError("writer input must be a writer editorial packet")
+    validate_writer_editorial_packet(value)
 
 
 def _enrich_writer_metadata_v2(payload: dict[str, Any], writer_packet: dict[str, Any]) -> dict[str, Any]:

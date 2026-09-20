@@ -8,13 +8,6 @@ from typing import Iterable
 from .schemas import DartSection
 from ..io.normalization import normalize_text
 
-SECTION_MAP = {
-    "1. 사업의 개요": "overview",
-    "2. 주요 제품 및 서비스": "products",
-    "3. 원재료 및 생산설비": "materials",
-    "6. 주요계약 및 연구개발활동": "contracts"
-}
-
 HEADER_PREFIX = r"(?:[\dⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+[\.|\)|\-\s]*)?"
 
 

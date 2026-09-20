@@ -1,0 +1,22 @@
+{
+  "state": "success",
+  "reports_evaluated": 35,
+  "companies": [
+    "현대건설",
+    "두산",
+    "삼성전자",
+    "BGF리테일",
+    "아모레퍼시픽",
+    "코웨이",
+    "SK바이오팜"
+  ],
+  "conditions": [
+    "full",
+    "random_news",
+    "no_peer",
+    "no_subdata",
+    "one_team"
+  ],
+  "device": "cuda:2",
+  "paid_api_calls": 0
+}

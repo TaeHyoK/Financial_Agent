@@ -9,8 +9,6 @@ from typing import Any
 from html_report_spec import (
     INVESTMENT_THESIS_ITEM_KEY,
     INVESTMENT_THESIS_SECTION_KEY,
-    KEY_EVIDENCE_DISPLAY_COLUMNS,
-    LABEL_FREE_KEY_EVIDENCE_DISPLAY_COLUMNS,
     REPORT_DISCLAIMER,
     REPORT_SECTIONS,
     RISK_DISPLAY_COLUMNS,
@@ -43,6 +41,8 @@ def validate_html_report(
 ) -> dict[str, Any]:
     """Reject report-integrity violations and report presentation advisories."""
 
+    if not _is_v2_writer_packet(writer_handoff):
+        raise ValueError("writer input must be a writer editorial packet")
     notes: list[str] = []
     hard_checks = {
         "complete_html_document": _pass_fail(
@@ -63,7 +63,8 @@ def validate_html_report(
             writer_handoff,
             notes,
         ),
-        "grounding_refs": _validate_grounding_refs(report_payload, writer_handoff, notes),
+        # Grounding refs belonged to the pre-packet Writer contract; the key stays for report shape.
+        "grounding_refs": "pass",
         "card_key_coverage": _validate_card_key_coverage(report_payload, writer_handoff, notes),
         "strategy_meaning_preservation": _validate_strategy_meaning_preservation(
             report_payload, writer_handoff, notes
@@ -80,7 +81,8 @@ def validate_html_report(
         "internal_metadata_hidden": _validate_internal_metadata_hidden(
             report_payload, html_content, writer_handoff, notes
         ),
-        "required_evidence_coverage": _validate_required_evidence_coverage(report_payload, writer_handoff, notes),
+        # Verbatim token coverage belonged to the pre-packet Writer contract; card coverage replaces it.
+        "required_evidence_coverage": "pass",
         "large_number_grounding": _validate_large_number_grounding(report_payload, writer_handoff, notes),
         "absolute_paths_removed": _validate_no_absolute_paths(report_payload, html_content, notes),
     }
@@ -144,11 +146,6 @@ def _validate_chart_selection_grounding(
 ) -> str:
     """Check chart-to-evidence links without judging which chart should be chosen."""
 
-    if writer_handoff.get("packet_version") not in {
-        EDITORIAL_PACKET_VERSION,
-        EDITORIAL_PACKET_VERSION_V3,
-    }:
-        return "pass"
     requested = [
         str(value).strip()
         for value in report_payload.get("requested_chart_keys") or []
@@ -339,52 +336,11 @@ def _validate_investment_horizon_heading(
     return _pass_fail(not errors)
 
 
-def _validate_grounding_refs(report_payload: dict[str, Any], writer_handoff: dict[str, Any], notes: list[str]) -> str:
-    if _is_v2_writer_packet(writer_handoff):
-        return "pass"
-    refs = {
-        str(item.get("id") or ""): str(item.get("strategy_path") or "")
-        for item in _list(writer_handoff.get("evidence_refs"))
-        if isinstance(item, dict) and item.get("id")
-    }
-    required_prefixes = {
-        "investment_call_thesis": ("final_recommendation", "investment_thesis", "decision_balance", "final_rationale"),
-        "business_market_context": ("business_mix_view", "market_price_view"),
-        "key_evidence_table": ("financial_view", "business_mix_view", "market_price_view", "valuation_view", "peer_competitor_positioning"),
-        "catalysts_execution": ("catalyst_view",),
-        "risk_monitoring_matrix": ("risk_view", "limitations.monitoring_points"),
-        "data_limits": ("limitations.data_limitations", "limitations.interpretation_limitations"),
-    }
-    errors: list[str] = []
-    sections = _dict(report_payload.get("sections"))
-    for section in REPORT_SECTIONS:
-        section_key = section["key"]
-        payload = _dict(sections.get(section_key))
-        section_refs: list[str] = []
-        for item_key, _title, _item_type in section["items"]:
-            item = _dict(payload.get(item_key))
-            grounding_refs = [str(value).strip() for value in _list(item.get("grounding_refs")) if str(value).strip()]
-            if not grounding_refs:
-                errors.append(f"{section_key}.{item_key} has no grounding_refs")
-            invalid = sorted(set(grounding_refs) - set(refs))
-            if invalid:
-                errors.append(f"{section_key}.{item_key} has invalid grounding_refs: {invalid}")
-            section_refs.extend(ref for ref in grounding_refs if ref in refs)
-        prefixes = required_prefixes[section_key]
-        if section_refs and not any(refs[ref].startswith(prefixes) for ref in section_refs):
-            errors.append(f"{section_key} has no grounding ref for its required evidence domain")
-    if errors:
-        notes.extend(errors)
-    return _pass_fail(not errors)
-
-
 def _validate_card_key_coverage(
     report_payload: dict[str, Any],
     writer_handoff: dict[str, Any],
     notes: list[str],
 ) -> str:
-    if not _is_v2_writer_packet(writer_handoff):
-        return "pass"
     required = _dict(writer_handoff.get("required_card_keys_by_component"))
     available = _dict(writer_handoff.get("available_card_keys_by_component", required))
     sections = _dict(report_payload.get("sections"))
@@ -413,8 +369,6 @@ def _validate_strategy_meaning_preservation(
     writer_handoff: dict[str, Any],
     notes: list[str],
 ) -> str:
-    if not _is_v2_writer_packet(writer_handoff):
-        return "pass"
     errors: list[str] = []
     cards = _dict(writer_handoff.get("cards"))
     label_free = _is_label_free_writer_packet(writer_handoff)
@@ -493,8 +447,6 @@ def _validate_strategy_presentation_preservation(
 ) -> str:
     """Advise on exact labels/order without rejecting a semantically linked report."""
 
-    if not _is_v2_writer_packet(writer_handoff):
-        return "pass"
     errors: list[str] = []
     cards = _dict(writer_handoff.get("cards"))
     label_free = _is_label_free_writer_packet(writer_handoff)
@@ -581,8 +533,6 @@ def _validate_claim_card_grounding(
     writer_handoff: dict[str, Any],
     notes: list[str],
 ) -> str:
-    if not _is_v2_writer_packet(writer_handoff):
-        return "pass"
     sections = _dict(report_payload.get("sections"))
     errors: list[str] = []
     for section in REPORT_SECTIONS:
@@ -626,8 +576,6 @@ def _validate_claim_visibility(
 ) -> str:
     """Advise when hidden claim units do not exactly match rendered prose."""
 
-    if not _is_v2_writer_packet(writer_handoff):
-        return "pass"
     sections = _dict(report_payload.get("sections"))
     errors: list[str] = []
     for section in REPORT_SECTIONS:
@@ -667,8 +615,6 @@ def _validate_required_limitation_coverage(
     writer_handoff: dict[str, Any],
     notes: list[str],
 ) -> str:
-    if not _is_v2_writer_packet(writer_handoff):
-        return "pass"
     required = [
         str(item.get("category"))
         for item in _list(writer_handoff.get("required_limitations"))
@@ -751,55 +697,6 @@ def _validate_internal_metadata_hidden(
     if leaked_card_keys:
         notes.append(f"Semantic card key(s) rendered: {leaked_card_keys}")
     return _pass_fail(not found and not raw_ids and not leaked_card_keys)
-
-
-def _validate_required_evidence_coverage(
-    report_payload: dict[str, Any],
-    writer_handoff: dict[str, Any],
-    notes: list[str],
-) -> str:
-    if _is_v2_writer_packet(writer_handoff):
-        return "pass"
-    serialized = _reader_payload_text(report_payload)
-    missing: list[str] = []
-    revenue = _dict(writer_handoff.get("revenue_breakdown"))
-    if revenue.get("status") == "available":
-        for item in _list(revenue.get("current_items")):
-            if not isinstance(item, dict):
-                continue
-            for value in (item.get("name"), item.get("revenue_disclosed"), item.get("revenue_share_disclosed")):
-                text = str(value or "").strip()
-                if text and text not in serialized:
-                    missing.append(f"revenue_breakdown:{text}")
-    valuation = _dict(_dict(writer_handoff.get("valuation")).get("calculated_from_close_and_dart"))
-    if valuation.get("status") == "available":
-        valuation_date = str(valuation.get("as_of_date") or "").strip()
-        if valuation_date and valuation_date not in serialized:
-            missing.append(f"valuation_date:{valuation_date}")
-        metric_names = {
-            "trailing_pe": "P/E",
-            "price_to_sales": "P/S",
-            "price_to_book": "P/B",
-        }
-        metrics = _dict(valuation.get("metrics"))
-        for key, label in metric_names.items():
-            metric = _dict(metrics.get(key))
-            value = metric.get("value")
-            if value is None:
-                continue
-            rounded = f"{float(value):.2f}"
-            if rounded not in serialized:
-                missing.append(f"valuation:{label} {rounded}")
-    peer_metrics = _list(_dict(writer_handoff.get("peer_comparison")).get("metrics"))
-    for metric in peer_metrics:
-        if not isinstance(metric, dict):
-            continue
-        company_name = str(metric.get("company_name") or "").strip()
-        if company_name and company_name not in serialized:
-            missing.append(f"peer_company:{company_name}")
-    if missing:
-        notes.append(f"Required handoff evidence is absent from the report payload: {missing}")
-    return _pass_fail(not missing)
 
 
 def _validate_compact_text_sections(

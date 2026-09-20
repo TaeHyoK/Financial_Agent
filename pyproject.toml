@@ -44,7 +44,6 @@ financial-index = "Agent_Team.Financial_Agent.financial_index_calculator:main"
 financial-analyst-agent = "Agent_Team.Financial_Agent.langgraph_flow:main"
 news-workflow = "Agent_Team.News_Agent.cli:main"
 news-analysis-agent = "Agent_Team.News_Agent.analysis_agent:main"
-yfinance-pipeline = "Agent_Team.YFinance_Agent.run_pipeline:main"
 strategy-agent = "Agent_Team.Strategy_Agent.cli:main"
 
 [tool.setuptools.package-dir]

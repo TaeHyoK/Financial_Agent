@@ -53,11 +53,6 @@ class ContextChunk:
 
 
 @dataclass(frozen=True)
-class CorporateContextChunk(ContextChunk):
-    embedding: list[float] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
 class RawNewsRecord:
     collect_date: str
     article_id: str

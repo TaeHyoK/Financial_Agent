@@ -22,10 +22,3 @@ STEP_SPECS: tuple[StepSpec, ...] = (
     StepSpec("financial_analyst", dependencies=("financial_layer_1", "yfinance_layer_1", "news_llm"), requires_llm=True),
     StepSpec("yfinance_report", dependencies=("financial_layer_1", "yfinance_layer_1", "news_llm"), requires_llm=True),
 )
-
-
-def dependency_names(step_name: str) -> tuple[str, ...]:
-    for spec in STEP_SPECS:
-        if spec.name == step_name:
-            return spec.dependencies
-    raise KeyError(f"Unknown orchestration step: {step_name}")

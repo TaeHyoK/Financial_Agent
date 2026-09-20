@@ -1,0 +1,32 @@
+[
+  {
+    "condition": "full",
+    "bertscore_f1": 0.8778060078620911,
+    "bertscore_precision": 0.8826483527819315,
+    "bertscore_recall": 0.8730568607648214
+  },
+  {
+    "condition": "random_news",
+    "bertscore_f1": 0.8659966627756754,
+    "bertscore_precision": 0.8712302724520365,
+    "bertscore_recall": 0.8608965675036113
+  },
+  {
+    "condition": "no_peer",
+    "bertscore_f1": 0.8775606910387675,
+    "bertscore_precision": 0.8825365781784057,
+    "bertscore_recall": 0.8726995786031088
+  },
+  {
+    "condition": "no_subdata",
+    "bertscore_f1": 0.8748026371002198,
+    "bertscore_precision": 0.879462722937266,
+    "bertscore_recall": 0.8702467441558838
+  },
+  {
+    "condition": "one_team",
+    "bertscore_f1": 0.868661105632782,
+    "bertscore_precision": 0.8739469687143961,
+    "bertscore_recall": 0.8635019183158874
+  }
+]

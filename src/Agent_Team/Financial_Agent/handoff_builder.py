@@ -121,24 +121,6 @@ class PeriodItems:
     items: list[dict[str, Any]]
 
 
-def build_single_report_canonical(master: dict[str, Any], primary_target: TargetReport) -> dict[str, Any]:
-    """Build the canonical schema from one resolved DART report."""
-
-    canonical: dict[str, Any] = {}
-    for statement_key, statement_name in STATEMENT_NAMES.items():
-        current_section = _section(master, "primary", statement_key)
-        if statement_key == "4-3":
-            canonical[statement_key] = _build_single_equity_statement(current_section, primary_target)
-        else:
-            canonical[statement_key] = _build_single_period_statement(
-                statement_key,
-                statement_name,
-                current_section,
-                primary_target,
-            )
-    return canonical
-
-
 def build_trend_canonical(
     master: dict[str, Any],
     resolved: dict[str, tuple[TargetReport, Filing]],
@@ -365,26 +347,6 @@ def _build_trend_equity_statement(
             }
         )
     return {"statement_name": STATEMENT_NAMES["4-3"], "tables": tables}
-
-
-def build_2y_handoff(master: dict[str, Any], secondary_target: TargetReport) -> dict[str, Any]:
-    """Build the canonical two-year schema from the flat matrix master."""
-
-    canonical: dict[str, Any] = {}
-    for statement_key, statement_name in STATEMENT_NAMES.items():
-        current_section = _section(master, "primary", statement_key)
-        secondary_section = _section(master, "secondary", statement_key)
-        if statement_key == "4-3":
-            canonical[statement_key] = _build_equity_statement(current_section, secondary_section, secondary_target)
-        else:
-            canonical[statement_key] = _build_pair_statement(
-                statement_key,
-                statement_name,
-                current_section,
-                secondary_section,
-                secondary_target,
-            )
-    return canonical
 
 
 def build_master_canonical(master: dict[str, Any], secondary_target: TargetReport) -> dict[str, Any]:

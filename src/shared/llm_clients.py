@@ -15,7 +15,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable, TypeVar
+from typing import Any, Callable, TypeVar
 
 
 DEFAULT_MINI_TARGET_INPUT_TOKENS = 100_000
@@ -295,34 +295,6 @@ def is_transient_transport_error(exc: Exception) -> bool:
             reason if isinstance(reason, BaseException) else None
         )
     return False
-
-
-def partition_by_prompt_budget(
-    items: Iterable[ItemT],
-    *,
-    build_request: Callable[[list[ItemT]], Any],
-    model: str,
-    target_input_tokens: int | None = None,
-) -> list[list[ItemT]]:
-    """Greedily partition items while measuring each exact candidate request."""
-
-    target, _ = prompt_budget_for_model(model)
-    limit = target_input_tokens or target
-    chunks: list[list[ItemT]] = []
-    current: list[ItemT] = []
-    for item in items:
-        candidate = [*current, item]
-        measurement = measure_request(build_request(candidate), model=model)
-        if current and measurement.estimated_input_tokens > limit:
-            chunks.append(current)
-            current = [item]
-            preflight_request(build_request(current), model=model, step="single batch item")
-        else:
-            current = candidate
-            preflight_request(build_request(current), model=model, step="batch")
-    if current:
-        chunks.append(current)
-    return chunks
 
 
 def _first_int(payload: Any, *keys: str) -> int:

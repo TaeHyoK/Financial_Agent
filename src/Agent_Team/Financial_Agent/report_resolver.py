@@ -219,36 +219,6 @@ def resolve_latest_available_annual_report(
     raise LookupError(f"No annual DART filing was available by {selected_date.isoformat()}.")
 
 
-def resolve_reports(
-    *,
-    client: DartClient,
-    company_code: str,
-    primary_target: TargetReport,
-    secondary_target: TargetReport,
-    today: date | None = None,
-) -> dict[str, tuple[TargetReport, Filing]]:
-    """Resolve both target reports before document collection begins."""
-
-    return {
-        "primary": (primary_target, resolve_single_report(client, company_code, primary_target, today=today)),
-        "secondary": (secondary_target, resolve_single_report(client, company_code, secondary_target, today=today)),
-    }
-
-
-def resolve_primary_report(
-    *,
-    client: DartClient,
-    company_code: str,
-    primary_target: TargetReport,
-    today: date | None = None,
-) -> dict[str, tuple[TargetReport, Filing]]:
-    """Resolve only the closest primary report."""
-
-    return {
-        "primary": (primary_target, resolve_single_report(client, company_code, primary_target, today=today)),
-    }
-
-
 def resolve_single_report(
     client: DartClient,
     company_code: str,

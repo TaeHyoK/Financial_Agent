@@ -1,0 +1,12 @@
+{
+  "company_code": "00132354",
+  "corp_code": "00132354",
+  "stock_code": "192400",
+  "company_name": "쿠쿠홀딩스",
+  "ticker": "192400.KS",
+  "report_type": "latest filing available before report date",
+  "date_range": "20241110-20251109",
+  "selected_date": "20251110",
+  "llm_model": "gpt-5.4",
+  "max_retries": 2
+}

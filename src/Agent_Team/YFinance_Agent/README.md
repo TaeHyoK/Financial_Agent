@@ -11,47 +11,20 @@ cd /path/to/Financial_Agent
 python -m pip install -r requirements.txt
 ```
 
-## Run All
+## Run
 
-```bash
-cd /path/to/Financial_Agent
-python src/Agent_Team/YFinance_Agent/run_pipeline.py
-```
-
-기본 실행은 아래 순서로 동작합니다.
-
-- `main.py`: YFinance/KOSPI/FX 데이터 수집, 지표 계산, 차트 생성
-- `report.py`: YFinance 시장 데이터를 기준으로 News/DART를 보조 반영한 LLM 보고서 생성
-
-기본 env 파일은 `configs/.env`입니다. 기본 산출물 위치는 기업별 폴더인 `Output_total/Y_Finance/SK바이오팜_20251031`입니다.
-
-설치된 패키지 엔트리포인트를 사용할 수 있는 환경이면 같은 실행을 아래처럼 호출할 수 있습니다.
-
-```bash
-yfinance-pipeline
-```
-
-옵션으로 입력, 출력, 모델, 보조 데이터 경로를 덮어쓸 수 있습니다.
-
-```bash
-python src/Agent_Team/YFinance_Agent/run_pipeline.py \
-  --input configs/company_input.json \
-  --output-dir Output_total/Y_Finance/SK바이오팜_20251031 \
-  --env-file configs/.env \
-  --dart-json Output_total/Financial/SK바이오팜_20251031/dart_lightweight.json \
-  --news-json Output_total/News/SK바이오팜_20251031/context_exports/month/llm_period_summaries.json
-```
-
-이미 시장 데이터가 있으면 `--skip-collect`, 이미 보고서가 있으면 `--skip-report`를 사용할 수 있습니다.
-
-## Individual Steps
-
-필요할 때만 개별 단계를 직접 호출할 수 있습니다.
+시장 데이터 수집과 지표 계산은 `main.py` 가 담당합니다. 최종 보고서 파이프라인(`run_config/`)도 이 스크립트를 직접 호출합니다.
 
 ```bash
 cd /path/to/Financial_Agent
 python src/Agent_Team/YFinance_Agent/main.py --input configs/company_input.json
 ```
+
+기본 env 파일은 `configs/.env`입니다. 기본 산출물 위치는 기업별 폴더인 `Output_total/Y_Finance/SK바이오팜_20251031`입니다.
+
+LLM 보고서는 `reporting.generate_analyst_report` 가 만들며, 최종 보고서 파이프라인 안에서 조건별 입력과 함께 호출됩니다. 단독 실행용 스크립트는 두지 않습니다.
+
+## Options
 
 옵션으로 기간과 티커를 덮어쓸 수 있습니다.
 
@@ -66,21 +39,6 @@ python src/Agent_Team/YFinance_Agent/main.py \
   --fx-ticker KRW=X
 ```
 
-이미 생성된 YFinance, News, DART JSON만 사용해서 LLM 기반 애널리스트 보고서를 만듭니다. 이 명령은 yfinance에서 시장 데이터를 새로 다운로드하지 않습니다.
-
-```bash
-cd /path/to/Financial_Agent
-python src/Agent_Team/YFinance_Agent/report.py
-```
-
-기본적으로 `configs/.env`를 읽어 `OPENAI_API_KEY`를 사용합니다. 다른 env 파일을 쓰려면 `--env-file`로 지정합니다.
-
-모델은 `--model` 또는 `OPENAI_MODEL`로 지정할 수 있으며, 기본값은 `gpt-5.4`입니다. 과거 실행 결과의 모델은 당시 기록을 따릅니다.
-
-```bash
-python src/Agent_Team/YFinance_Agent/report.py --model gpt-5.4
-```
-
 보고서는 YFinance `market_full_dataset.json`을 주 분석자료로 사용합니다. 뉴스 에이전트의 주장을 전달받지 않고 최근 1년의 월별 요약 12개와 DART 3개년 재무 추세표를 공통 subdata로 읽습니다. 주 분석 입력은 1·3·6·12개월 지표, 월별 관측치 12개와 최근 20거래일로 제한하며 전체 일별 자료는 파일에 보관합니다. 가격 수익률은 배당을 제외한 공급자 분할조정 종가 기준입니다. 뉴스와 가격의 시간적 대응은 살펴보되 인과관계로 단정하지 않습니다.
 
 보조자료는 시장 관측의 의미·지속성·위험을 해석하는 데 활용합니다. 도메인별 쟁점 배열에 연결 근거, `statement`, `judgment_impact`를 작성하고 `main_view.context_ids`로 종합 판단에 반영한 쟁점을 연결합니다. 관련성이 없으면 배열을 비워 두며 보조자료의 유무만으로 방향을 정하지 않습니다. 정규화된 산출물에는 보조자료의 출처와 기간 메타데이터도 함께 보존합니다.
@@ -89,7 +47,7 @@ python src/Agent_Team/YFinance_Agent/report.py --model gpt-5.4
 
 ## Outputs
 
-`run_pipeline.py` 기준 기본 산출물은 모두 `Output_total/Y_Finance/<company>_<YYYYMMDD>` 아래에 저장합니다.
+기본 산출물은 모두 `Output_total/Y_Finance/<company>_<YYYYMMDD>` 아래에 저장합니다.
 
 - `market_full_dataset.csv`
 - `market_full_dataset.json`

@@ -1,34 +1,17 @@
 #!/usr/bin/env python3
-from shared.subdata import financial_subdata, market_subdata, news_subdata
+from shared.subdata import market_subdata, news_subdata
 import argparse
 import copy
 import json
 import math
-from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, TypedDict
 
 from langgraph.graph import END, START, StateGraph
-from shared.evidence_contracts import (
-    canonical_evidence_id,
-    validate_evidence_catalog,
-)
 from Agent_Team.Financial_Agent.financial_analysis_agent import (
     apply_financial_analysis,
     generate_financial_analysis_with_llm,
 )
-
-SECONDARY_MARKET_METRICS = (
-    "stock_return_5d",
-    "stock_return_20d",
-    "stock_return_60d",
-    "stock_excess_return_20d",
-    "stock_relative_strength_60",
-    "stock_volume_ratio_20",
-    "stock_volatility_20",
-    "stock_rsi_14",
-)
-
 
 class FinancialAnalystGraphState(TypedDict, total=False):
     manifest_path: str
@@ -290,18 +273,6 @@ def build_financial_secondary_context(inputs: Dict[str, Any]) -> Dict[str, Any]:
 
 def _news_weekly_summary_context(payload: Dict[str, Any]) -> dict[str, Any]:
     return news_subdata(payload)
-
-
-def _weekly_period_start(period: str) -> str:
-    try:
-        return date.fromisoformat(period[:10]).isoformat()
-    except ValueError:
-        pass
-    try:
-        year_text, week_text = period.split("-W", 1)
-        return date.fromisocalendar(int(year_text), int(week_text), 1).isoformat()
-    except (TypeError, ValueError):
-        return ""
 
 
 def _market_secondary_context(payload: Any) -> dict[str, Any]:

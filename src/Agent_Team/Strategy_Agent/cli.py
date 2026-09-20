@@ -57,8 +57,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--packet-version",
         default=None,
-        choices=["v1", "v2", "v3", "v4", "v5"],
-        help="Strategy packet/decision contract. Defaults to STRATEGY_PACKET_VERSION or v5.",
+        choices=["v5"],
+        help="Strategy packet/decision contract. Defaults to v5.",
     )
     parser.add_argument("--env-file", default=None, help="Optional .env path. Defaults to configs/.env in agent.py.")
     parser.add_argument(

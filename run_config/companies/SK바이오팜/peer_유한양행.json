@@ -1,0 +1,12 @@
+{
+  "company_code": "00145109",
+  "corp_code": "00145109",
+  "stock_code": "000100",
+  "company_name": "유한양행",
+  "ticker": "000100.KS",
+  "report_type": "latest filing available before report date",
+  "date_range": "20241106-20251105",
+  "selected_date": "20251106",
+  "llm_model": "gpt-5.4",
+  "max_retries": 2
+}

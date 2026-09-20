@@ -1,0 +1,53 @@
+{
+  "body_policy": "narrative_body_v1",
+  "regions_sha256": "2ecee167b2dd9a795bb2d9a675419eec36f493d9d0ab01ea8ff17f01df4a8cdb",
+  "bert_model": "BAAI/bge-m3",
+  "layers": 24,
+  "idf": false,
+  "rescale": false,
+  "truncated": false,
+  "same_body_for_both_metrics": true,
+  "replicates": 3,
+  "paid_judge_called": false,
+  "reference_policy": "Include narrative analysis, prose forecasts and earnings-call Q&A; exclude tables (including forecast statements), charts, stock data, contacts and disclosures. Regions are fixed by reference layout, not generated reports or scores.",
+  "new_regions_review": "Rendered reference pages reviewed before scoring; prose earnings-call Q&A included",
+  "extractor_sha256": "efbd11b7fe7af3c3c6c9420a4ee3f18a62dab49745c400bd4ff8082d93aa7ef0",
+  "scorer_source": "/home/agent2/ABLATION/real_report_evaluation/runner.py",
+  "scorer_sha256": "d0777f8d59864b6a0196bd19aeed84b60df88bd0467af6b8e4bf2cb71e2e68ce",
+  "evaluation_script_sha256": "c9f2e217433e50f5ab2cebc02e826e79f6f33350340e140995addf78ed2f31a4",
+  "conditions": [
+    "full",
+    "random_news",
+    "no_peer",
+    "no_subdata",
+    "one_team"
+  ],
+  "comparisons": 75,
+  "generation_status_sha256": "dd43b3d09da4f957af6baa676edda4a854677e4a35ced936dfe6cb185b76c7a6",
+  "one_team_status_sha256": "66d328bccf1e14212b984f92dfba2f336b980fef86e72b602b61532b6121b507",
+  "one_team_run_id": "one_team_gpt54_r01",
+  "original_inputs_verified": 28,
+  "generation_models": {
+    "original_analysis": "gpt-5.4",
+    "one_team": {
+      "integrated_analysis": "gpt-5.4",
+      "downstream": "gpt-5.4",
+      "reused_news_summary": "gpt-5.6-luna"
+    }
+  },
+  "interpretation_note": "One-team과 기존 4개 조건의 분석 모델을 모두 gpt-5.4로 맞췄다. 월별 뉴스 요약은 기존 결과를 공통으로 재사용했다.",
+  "analysis_models_matched": true,
+  "companies": [
+    "현대건설",
+    "두산",
+    "BGF리테일",
+    "아모레퍼시픽",
+    "SK바이오팜"
+  ],
+  "baseline_metrics_sha256": "8a4bac5a3aaf89bf4087c0b81dea21b8571d688e9cb28b829a7c5e2066b53084",
+  "original_scores_reused": 25,
+  "new_scores_computed": 50,
+  "device": "cuda:2",
+  "paid_api_calls": 0,
+  "offline_recovery_note": "r03/one_team/아모레퍼시픽: two chart-link metadata arrays repaired offline; narrative body unchanged."
+}

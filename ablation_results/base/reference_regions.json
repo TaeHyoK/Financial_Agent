@@ -1,0 +1,231 @@
+{
+  "version": "narrative_regions_v1",
+  "policy": "Include narrative analysis, prose forecasts and earnings-call Q&A; exclude tables (including forecast statements), charts, stock data, contacts and disclosures. Regions are fixed by reference layout, not generated reports or scores.",
+  "documents": {
+    "20251103_company_현대모비스.pdf": {
+      "sha256": "da6ef0e9a336443a2b53f34aa58ccc87e08d130d2d4da4dec9c3802dc1592670",
+      "regions": [
+        {
+          "page": 1,
+          "bbox": [
+            37,
+            163,
+            355,
+            213
+          ]
+        },
+        {
+          "page": 1,
+          "bbox": [
+            219,
+            234,
+            560,
+            600
+          ]
+        },
+        {
+          "page": 5,
+          "bbox": [
+            204,
+            133,
+            532,
+            756
+          ]
+        },
+        {
+          "page": 6,
+          "bbox": [
+            204,
+            149,
+            532,
+            506
+          ]
+        }
+      ]
+    },
+    "20251104_company_soil.pdf": {
+      "sha256": "5b8020fdcf3ce1fb0b2a4db0fbed0f61c47e4cc635220fba95a024d566c5e372",
+      "regions": [
+        {
+          "page": 1,
+          "bbox": [
+            211,
+            162,
+            555,
+            633
+          ]
+        }
+      ]
+    },
+    "20251106_company_sk바이오팜.pdf": {
+      "sha256": "8c820ecf049cb1f8836380144094dacae40aaf35961985c01ebac8567ac58320",
+      "regions": [
+        {
+          "page": 1,
+          "bbox": [
+            215,
+            204,
+            570,
+            608
+          ]
+        }
+      ]
+    },
+    "20251107_company_bgf리테일.pdf": {
+      "sha256": "e113534a25e2581931defa49d99327cb3b83076afee2e537ac9ab33533648dff",
+      "regions": [
+        {
+          "page": 1,
+          "bbox": [
+            215,
+            204,
+            570,
+            589
+          ]
+        }
+      ]
+    },
+    "20251107_company_아모레퍼시픽.pdf": {
+      "sha256": "3a338aa23111b097e8f5ba2f40a9be78bb46ff60a9dc2060040735315e0ffeef",
+      "regions": [
+        {
+          "page": 1,
+          "bbox": [
+            242,
+            191,
+            574,
+            783
+          ]
+        },
+        {
+          "page": 2,
+          "bbox": [
+            242,
+            79,
+            574,
+            126
+          ]
+        }
+      ]
+    },
+    "20251110_company_코웨이.pdf": {
+      "sha256": "35beb8766b99e4b8725cd059def237c2fc700a13eeb7839c78068f33055495d4",
+      "regions": [
+        {
+          "page": 1,
+          "bbox": [
+            263,
+            248,
+            543,
+            780
+          ]
+        }
+      ]
+    },
+    "20251020_company_현대건설.pdf": {
+      "sha256": "a7c5bdb876e20119d591e1de999d605e15397c6f43e1d018d567a6ff6c59378b",
+      "regions": [
+        {
+          "page": 1,
+          "bbox": [
+            44,
+            200,
+            358,
+            809
+          ]
+        },
+        {
+          "page": 2,
+          "bbox": [
+            203,
+            118,
+            535,
+            551
+          ]
+        }
+      ]
+    },
+    "20251031_company_삼성전자.pdf": {
+      "sha256": "a0f8e2d62a1961143c88868507af3aac88905041a2cc8ec449db7fbfdef0aa0f",
+      "regions": [
+        {
+          "page": 1,
+          "bbox": [
+            45,
+            280,
+            550,
+            450
+          ]
+        },
+        {
+          "page": 2,
+          "bbox": [
+            183,
+            120,
+            527,
+            765
+          ]
+        },
+        {
+          "page": 3,
+          "bbox": [
+            183,
+            120,
+            527,
+            765
+          ]
+        },
+        {
+          "page": 4,
+          "bbox": [
+            183,
+            120,
+            527,
+            765
+          ]
+        },
+        {
+          "page": 5,
+          "bbox": [
+            183,
+            120,
+            527,
+            765
+          ]
+        },
+        {
+          "page": 6,
+          "bbox": [
+            183,
+            120,
+            527,
+            765
+          ]
+        },
+        {
+          "page": 7,
+          "bbox": [
+            183,
+            120,
+            527,
+            765
+          ]
+        }
+      ]
+    },
+    "20251111_company_두산.pdf": {
+      "sha256": "a9cfc501dc94807242e0edc425bbe773b0c538d13269ed514bbe411e661bcd1a",
+      "regions": [
+        {
+          "page": 1,
+          "bbox": [
+            45,
+            280,
+            555,
+            525
+          ]
+        }
+      ]
+    }
+  }
+}

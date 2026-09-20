@@ -1,0 +1,10 @@
+{
+  "reason": "Resume after Coway peer EPS None plotting failure; preserve all existing paid outputs",
+  "code_repairs": {
+    "src/Agent_Team/Visualization Agent/chart_builders.py": {
+      "original_sha256": "d9302cff841fc7ea998c4a7aae142c8cad26026dc22f36d5cee2eef33cffc283",
+      "repaired_sha256": "e753412d085fe9344ed15c90a144c15c2b1f1ecb6dc815d92e5e47dc5d411bdd",
+      "change": "Convert None to numeric NaN for charting without zero imputation; label missing EPS"
+    }
+  }
+}

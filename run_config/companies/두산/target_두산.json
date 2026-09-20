@@ -1,0 +1,12 @@
+{
+  "company_code": "00117212",
+  "corp_code": "00117212",
+  "stock_code": "000150",
+  "company_name": "두산",
+  "ticker": "000150.KS",
+  "report_type": "latest filing available before report date",
+  "date_range": "20241111-20251110",
+  "selected_date": "20251111",
+  "llm_model": "gpt-5.4",
+  "max_retries": 2
+}

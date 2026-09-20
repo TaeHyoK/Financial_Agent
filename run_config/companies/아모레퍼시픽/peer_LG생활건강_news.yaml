@@ -1,0 +1,71 @@
+data_root: /data/agent2/financial_agent_ablation_2025h2/collected_data/아모레퍼시픽/snapshot/아모레퍼시픽/비교기업/LG생활건강/News/20251107/artifacts
+inputs_root: /data/agent2/financial_agent_ablation_2025h2/collected_data/아모레퍼시픽/snapshot/아모레퍼시픽/비교기업/LG생활건강/News/20251107/inputs
+news:
+  collector: google_news_rss
+  collection_days: 365
+  collection_chunk_days: 7
+  query_language: ko
+  max_results: 200
+  weekly_top_k: 3
+  raw_news_policy: monthly_selected_articles_v1
+  monthly_top_k: null
+  event_top_k: null
+  total_max_results: null
+  dedup_on_url: true
+dart:
+  api_key_env: DART_API_KEY
+  fetch_lookback_days: 550
+  list_timeout_seconds: 20
+  document_timeout_seconds: 30
+  document_max_retries: 2
+  document_retry_delay_seconds: 0.5
+  parser_py_path: null
+  sections_to_extract:
+  - 사업의 개요
+  - 주요 제품 및 서비스
+  - 원재료 및 생산설비
+  - 주요계약 및 연구개발활동
+  chunking:
+    target_char_min: 40
+    target_char_max: 140
+    hard_char_max: 220
+    min_char_drop: 25
+    topk_per_section:
+      overview: 6
+      products: 10
+      materials: 8
+      facilities: 8
+      contracts: 6
+      rnd: 6
+    diversity:
+      enabled: true
+      cosine_skip_threshold: 0.8
+models:
+  embedding_model_name: BAAI/bge-m3
+  device: cuda
+  batch_size: 32
+clustering:
+  method: cosine_connected_components
+  time_window_hours: 168
+  similarity_threshold: 0.88
+  min_cluster_size: 2
+  min_samples: 1
+scoring:
+  section_weighting:
+    enabled: true
+    chunk_max_chars: 400
+    weights:
+      sales: 0.3
+      earnings: 0.2
+      products: 0.15
+      contracts: 0.15
+      materials_facilities: 0.1
+      overview: 0.1
+  tau_hours: 48
+  mention_transform: log1p
+  impact_topk: 3
+outputs:
+  format:
+  - parquet
+  - jsonl
+  keep_cluster_members: true

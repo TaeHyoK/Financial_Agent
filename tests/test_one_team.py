@@ -110,16 +110,16 @@ class IntegratedReportTest(unittest.TestCase):
 import json, sys
 from pathlib import Path
 from Agent_Team.Strategy_Agent.agent import build_strategy_input_bundle, validate_input_bundle
-from Agent_Team.Strategy_Agent.contracts_v2 import build_compact_strategy_packet_v2
-from Agent_Team.Strategy_Agent.contracts_v5 import build_strategy_context_package_v5
+from Agent_Team.Strategy_Agent.packet import build_compact_strategy_packet
+from Agent_Team.Strategy_Agent.decision import build_strategy_context_package
 from Agent_Team.Competitor_Agent.comparison_agent import _resolved_file, _load_json, build_comparison_context
 from Agent_Team.Competitor_Agent.peer_comparison import _load_json as load_metrics
 financial, news, market = map(Path, sys.argv[1:])
 bundle = build_strategy_input_bundle(target_company_name='검증기업', target_run_key='검증기업_20251106',
     target_financial_path=financial, target_news_path=news, target_yfinance_path=market)
 validate_input_bundle(bundle)
-packet, provenance, _, _ = build_compact_strategy_packet_v2(bundle, model='gpt-5.4')
-context = build_strategy_context_package_v5(packet, input_bundle=bundle)
+packet, provenance, _, _ = build_compact_strategy_packet(bundle, model='gpt-5.4')
+context = build_strategy_context_package(packet, input_bundle=bundle)
 assert set(context['domain_handoffs']) == {'integrated'}, context['domain_handoffs']
 assert context['domain_handoffs']['integrated']['integrated_analysis']['statement']
 assert 'integrated.finding_1' in context['evidence_cards']

@@ -54,12 +54,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--llm-provider", default="openai", choices=["auto", "openai"])
     parser.add_argument("--llm-model", default="auto")
     parser.add_argument("--llm-timeout", type=int, default=120)
-    parser.add_argument(
-        "--packet-version",
-        default=None,
-        choices=["v5"],
-        help="Strategy packet/decision contract. Defaults to v5.",
-    )
     parser.add_argument("--env-file", default=None, help="Optional .env path. Defaults to configs/.env in agent.py.")
     parser.add_argument(
         "--include-domain",
@@ -129,7 +123,6 @@ def main(argv: list[str] | None = None) -> int:
             llm_model=args.llm_model,
             llm_timeout=args.llm_timeout,
             env_file=Path(args.env_file).expanduser().resolve() if args.env_file else DEFAULT_ENV_FILE,
-            packet_version=args.packet_version,
             ablation_config=ablation.as_dict(),
             decision_horizon_profile=args.decision_horizon_profile,
         )
@@ -144,7 +137,6 @@ def main(argv: list[str] | None = None) -> int:
             llm_model=args.llm_model,
             llm_timeout=args.llm_timeout,
             env_file=Path(args.env_file).expanduser().resolve() if args.env_file else DEFAULT_ENV_FILE,
-            packet_version=args.packet_version,
             ablation_config=ablation.as_dict(),
             decision_horizon_profile=args.decision_horizon_profile,
         )

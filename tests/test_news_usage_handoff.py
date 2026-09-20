@@ -5,12 +5,12 @@ import unittest
 from jsonschema import Draft202012Validator
 from test_annual_context import strategy_fixture
 from shared.evidence_cards import card_content_sha256
-from Agent_Team.Strategy_Agent.contracts_v5 import (
-    build_strategy_context_package_v5, strategy_decision_response_format_v5,
-    align_strategy_decision_v5_evidence_plan, validate_strategy_decision_v5,
+from Agent_Team.Strategy_Agent.decision import (
+    build_strategy_context_package, strategy_decision_response_format,
+    align_strategy_decision_evidence_plan, validate_strategy_decision,
 )
 from writer_handoff import build_writer_editorial_packet
-from html_report_writer import _build_context, _system_prompt_v2, normalize_report_payload
+from html_report_writer import _build_context, _editorial_system_prompt, normalize_report_payload
 from test_optional_limits import writer_fixture
 from formatted_html_renderer import build_complete_html
 from html_report_validator import _validate_compact_text_sections
@@ -32,7 +32,7 @@ class NewsUsageHandoffTests(unittest.TestCase):
                     'final_score': .9, 'relevance_rank': 1, 'scores': {'dart': .8},
                     'ablation_selection': {'condition': 'full'}, 'value': -10}}
         before = copy.deepcopy(packet)
-        context = build_strategy_context_package_v5(packet, input_bundle={})
+        context = build_strategy_context_package(packet, input_bundle={})
         self.assertEqual(set(context['evidence_cards']), set(packet['cards']))
         for card in context['evidence_cards'].values():
             self.assertNotIn('evidence_role', card)
@@ -61,10 +61,10 @@ class NewsUsageHandoffTests(unittest.TestCase):
             decision['report_insights'].append({'insight_type': 'events_and_execution',
                 'text': f'독립 사건 {index}의 사업상 의미다.', 'card_keys': [key]})
         before = copy.deepcopy(decision)
-        schema = strategy_decision_response_format_v5(context)['json_schema']['schema']
+        schema = strategy_decision_response_format(context)['json_schema']['schema']
         Draft202012Validator(schema).validate(decision)
-        aligned = align_strategy_decision_v5_evidence_plan(decision, context=context)
-        validate_strategy_decision_v5(aligned, context=context)
+        aligned = align_strategy_decision_evidence_plan(decision, context=context)
+        validate_strategy_decision(aligned, context=context)
         handoff, _ = build_writer_editorial_packet(strategy_packet=packet, strategy_decision=aligned,
                                                    strategy_provenance=provenance)
         self.assertEqual(handoff['report_insights'], decision['report_insights'])
@@ -87,7 +87,7 @@ class NewsUsageHandoffTests(unittest.TestCase):
                 'source_evidence_ids': ['RAW_LATER'], 'source_paths': [], 'source_files': []}
         counterview = {'text': '후행 보도의 매출 증가는 성장 지속 해석을 보강한다.', 'card_keys': [key]}
         decision['strategy_brief']['counterview'] = counterview
-        aligned = align_strategy_decision_v5_evidence_plan(decision, context=context)
+        aligned = align_strategy_decision_evidence_plan(decision, context=context)
         handoff, _ = build_writer_editorial_packet(strategy_packet=packet, strategy_decision=aligned,
                                                    strategy_provenance=provenance)
         request = _build_context(writer_handoff=handoff)
@@ -98,8 +98,8 @@ class NewsUsageHandoffTests(unittest.TestCase):
         self.assertNotIn('decision_use', handoff['cards'][key])
         self.assertEqual(handoff['cards'][key]['source_metadata']['event_status'], 'announced')
         self.assertIn('counterview', request['writing_rules']['thesis_policy'])
-        self.assertIn('counterview', _system_prompt_v2())
-        self.assertNotIn('두 문단 안팎', _system_prompt_v2())
+        self.assertIn('counterview', _editorial_system_prompt())
+        self.assertNotIn('두 문단 안팎', _editorial_system_prompt())
 
     def test_writer_keeps_distinct_event_paragraphs_without_count_or_character_cut(self):
         handoff, raw = writer_fixture()

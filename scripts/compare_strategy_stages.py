@@ -12,12 +12,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from jsonschema import Draft202012Validator
 from Agent_Team.Strategy_Agent.agent import (
-    call_openai, parse_llm_json, decision_prompt_v5, DEFAULT_OPENAI_MAX_TOKENS,
-    build_strategy_report_projection_v5, render_strategy_projection_markdown_v5,
+    call_openai, parse_llm_json, decision_prompt, DEFAULT_OPENAI_MAX_TOKENS,
+    build_strategy_report_projection, render_strategy_projection_markdown,
 )
-from Agent_Team.Strategy_Agent.contracts_v5 import (
-    validate_strategy_context_package_v5, strategy_decision_response_format_v5,
-    align_strategy_decision_v5_evidence_plan, validate_strategy_decision_v5,
+from Agent_Team.Strategy_Agent.decision import (
+    validate_strategy_context_package, strategy_decision_response_format,
+    align_strategy_decision_evidence_plan, validate_strategy_decision,
 )
 from shared.llm_clients import compact_json
 from orchestration.usage_summary import summarize_execution_usage
@@ -93,11 +93,11 @@ def run(args):
     source = Path(args.context_file).resolve()
     source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
     context = json.loads(source.read_text(encoding="utf-8"))
-    validate_strategy_context_package_v5(context)
+    validate_strategy_context_package(context)
     output = Path(args.output_dir).resolve()
     output.mkdir(parents=True, exist_ok=False)
-    prompt = decision_prompt_v5("annual")
-    decision_format = strategy_decision_response_format_v5(context, required_horizon="12개월")
+    prompt = decision_prompt("annual")
+    decision_format = strategy_decision_response_format(context, required_horizon="12개월")
     save(output / "strategy_context.json", context)
     save(output / "decision_schema.json", decision_format)
     (output / "decision_prompt.md").write_text(prompt + (MEMO_INSTRUCTION if args.arm == "two_stage" else ""), encoding="utf-8")
@@ -142,11 +142,11 @@ def run(args):
         assert payload["strategy_context_package_v5"] == context
         raw = call("strategy", prompt + (MEMO_INSTRUCTION if memo is not None else ""), payload, DECISION_SYSTEM, decision_format)
         Draft202012Validator(decision_format["json_schema"]["schema"]).validate(raw)
-        aligned = align_strategy_decision_v5_evidence_plan(raw, context=context)
-        validate_strategy_decision_v5(aligned, context=context, required_horizon="12개월")
+        aligned = align_strategy_decision_evidence_plan(raw, context=context)
+        validate_strategy_decision(aligned, context=context, required_horizon="12개월")
         save(output / "strategy_decision.json", aligned)
-        projection = build_strategy_report_projection_v5(aligned, input_bundle={"target_company": context["target_company"]}, context=context)
-        (output / "strategy_report.md").write_text(render_strategy_projection_markdown_v5(projection), encoding="utf-8")
+        projection = build_strategy_report_projection(aligned, input_bundle={"target_company": context["target_company"]}, context=context)
+        (output / "strategy_report.md").write_text(render_strategy_projection_markdown(projection), encoding="utf-8")
         status.update(status="completed", recommendation=aligned["strategy_brief"]["recommendation"],
                       decision_card_count=len(aligned["evidence_plan"]["decision_basis_cards"]),
                       context_card_count=len(aligned["evidence_plan"]["report_context_cards"]))

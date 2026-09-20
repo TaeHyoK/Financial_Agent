@@ -12,13 +12,13 @@ from shared.evidence_cards import (
 )
 
 
-EDITORIAL_PACKET_VERSION = "writer_editorial_packet_v2"
-EDITORIAL_PACKET_VERSION_V3 = "writer_editorial_packet_v3"
-WRITER_PROVENANCE_VERSION = "writer_packet_provenance_v2"
-WRITER_PROVENANCE_VERSION_V3 = "writer_packet_provenance_v3"
+LEGACY_EDITORIAL_PACKET_VERSION = "writer_editorial_packet_v2"
+EDITORIAL_PACKET_VERSION = "writer_editorial_packet_v3"
+LEGACY_WRITER_PROVENANCE_VERSION = "writer_packet_provenance_v2"
+WRITER_PROVENANCE_VERSION = "writer_packet_provenance_v3"
 FINAL_RECOMMENDATIONS = {"Buy", "Hold", "Sell"}
-LABEL_FREE_STRATEGY_VERSION = "strategy_decision_output_v4"
-STRATEGY_VERSION_V5 = "strategy_decision_output_v5"
+LEGACY_LABEL_FREE_STRATEGY_VERSION = "strategy_decision_output_v4"
+STRATEGY_DECISION_VERSION = "strategy_decision_output_v5"
 WRITER_COMPONENTS = (
     "investment_call_thesis",
     "business_market_context",
@@ -49,27 +49,12 @@ def build_writer_editorial_packet(
     strategy_decision: dict[str, Any],
     strategy_provenance: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Build the bounded Writer v2 input and its external provenance map."""
+    """Build the bounded Writer input from the two-tier Strategy evidence plan."""
 
-    if strategy_decision.get("decision_version") != STRATEGY_VERSION_V5:
+    if strategy_decision.get("decision_version") != STRATEGY_DECISION_VERSION:
         raise ValueError(
-            f"Writer requires a {STRATEGY_VERSION_V5} Strategy decision."
+            f"Writer requires a {STRATEGY_DECISION_VERSION} Strategy decision."
         )
-    return _build_writer_editorial_packet_v5(
-        strategy_packet=strategy_packet,
-        strategy_decision=strategy_decision,
-        strategy_provenance=strategy_provenance,
-    )
-
-
-def _build_writer_editorial_packet_v5(
-    *,
-    strategy_packet: dict[str, Any],
-    strategy_decision: dict[str, Any],
-    strategy_provenance: dict[str, Any],
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Build Writer v3 input from Strategy v5's two-tier evidence plan."""
-
     source_cards = _dict(strategy_packet.get("cards"))
     brief = _require_dict(strategy_decision.get("strategy_brief"), "strategy_brief")
     plan = _require_dict(strategy_decision.get("evidence_plan"), "evidence_plan")
@@ -94,7 +79,7 @@ def _build_writer_editorial_packet_v5(
     decision_by_key = {str(item["card_key"]): item for item in decision_rows}
     context_by_key = {str(item["card_key"]): item for item in context_rows}
     selected_keys = _dedupe([*decision_keys, *context_keys])
-    limitations = _select_v5_limitations(
+    limitations = _select_limitations(
         _list(strategy_packet.get("limitation_requirements")),
         selected_keys=selected_keys,
         source_cards=source_cards,
@@ -110,19 +95,19 @@ def _build_writer_editorial_packet_v5(
     cards: dict[str, dict[str, Any]] = {}
     for card_key in included_keys:
         if card_key in decision_by_key:
-            cards[card_key] = _writer_card_v5(
+            cards[card_key] = _writer_card(
                 source_cards[card_key],
                 decision_by_key[card_key],
                 evidence_tier="decision_basis",
             )
         elif card_key in context_by_key:
-            cards[card_key] = _writer_card_v5(
+            cards[card_key] = _writer_card(
                 source_cards[card_key],
                 context_by_key[card_key],
                 evidence_tier="report_context",
             )
         else:
-            cards[card_key] = _writer_card_v5(
+            cards[card_key] = _writer_card(
                 source_cards[card_key],
                 {
                     "report_implication": "자료의 기준일과 적용 범위를 구분한다.",
@@ -216,8 +201,8 @@ def _build_writer_editorial_packet_v5(
         )
 
     packet = {
-        "packet_version": EDITORIAL_PACKET_VERSION_V3,
-        "strategy_contract_version": STRATEGY_VERSION_V5,
+        "packet_version": EDITORIAL_PACKET_VERSION,
+        "strategy_contract_version": STRATEGY_DECISION_VERSION,
         "target": {
             "company_name": target.get("company_name"),
             "run_key": target.get("run_key"),
@@ -276,7 +261,7 @@ def _build_writer_editorial_packet_v5(
         source_cards=source_cards,
         strategy_provenance=strategy_provenance,
         target_run_key=target.get("run_key"),
-        provenance_version=WRITER_PROVENANCE_VERSION_V3,
+        provenance_version=WRITER_PROVENANCE_VERSION,
     )
     validate_writer_editorial_packet(
         packet,
@@ -286,13 +271,13 @@ def _build_writer_editorial_packet_v5(
     return packet, provenance
 
 
-def _select_v5_limitations(
+def _select_limitations(
     requirements: list[Any],
     *,
     selected_keys: list[str],
     source_cards: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Route only limitations that apply to evidence selected by Strategy v5."""
+    """Route only limitations that apply to evidence selected by the Strategy decision."""
 
     selected = set(selected_keys)
     selected_domains = {
@@ -336,7 +321,7 @@ def _select_v5_limitations(
     return result
 
 
-def _writer_card_v5(
+def _writer_card(
     source: dict[str, Any],
     plan_row: dict[str, Any],
     *,
@@ -430,7 +415,7 @@ def _writer_provenance_for_cards(
     source_cards: dict[str, Any],
     strategy_provenance: dict[str, Any],
     target_run_key: Any,
-    provenance_version: str = WRITER_PROVENANCE_VERSION,
+    provenance_version: str = LEGACY_WRITER_PROVENANCE_VERSION,
 ) -> dict[str, Any]:
     source_provenance = _dict(strategy_provenance.get("cards"))
     provenance_cards: dict[str, Any] = {}
@@ -460,13 +445,13 @@ def validate_writer_editorial_packet(
     provenance: dict[str, Any] | None = None,
     strategy_packet: dict[str, Any] | None = None,
 ) -> None:
-    """Validate the v2 Writer input without judging free-form Korean prose."""
+    """Validate the Writer editorial packet without judging free-form Korean prose."""
 
     packet_version = str(_dict(packet).get("packet_version") or "")
-    if packet_version not in {EDITORIAL_PACKET_VERSION, EDITORIAL_PACKET_VERSION_V3}:
+    if packet_version not in {LEGACY_EDITORIAL_PACKET_VERSION, EDITORIAL_PACKET_VERSION}:
         raise ValueError(
             "writer editorial packet version must be "
-            f"{EDITORIAL_PACKET_VERSION} or {EDITORIAL_PACKET_VERSION_V3}."
+            f"{LEGACY_EDITORIAL_PACKET_VERSION} or {EDITORIAL_PACKET_VERSION}."
         )
     target = _require_dict(packet.get("target"), "target")
     for key in ("company_name", "run_key", "selected_date"):
@@ -474,8 +459,8 @@ def validate_writer_editorial_packet(
             raise ValueError(f"writer editorial target.{key} is required.")
     decision = _require_dict(packet.get("decision"), "decision")
     strategy_version = packet.get("strategy_contract_version")
-    label_free = strategy_version in {LABEL_FREE_STRATEGY_VERSION, STRATEGY_VERSION_V5}
-    strategy_v5 = strategy_version == STRATEGY_VERSION_V5
+    label_free = strategy_version in {LEGACY_LABEL_FREE_STRATEGY_VERSION, STRATEGY_DECISION_VERSION}
+    is_strategy_decision = strategy_version == STRATEGY_DECISION_VERSION
     if label_free:
         if not str(decision.get("judgment") or "").strip():
             raise ValueError("writer editorial decision.judgment is required for label-free Strategy.")
@@ -528,7 +513,7 @@ def validate_writer_editorial_packet(
             raise ValueError(f"Writer card observation is required: {card_key}")
         if not str(card.get("strategy_interpretation") or "").strip():
             raise ValueError(f"Writer card Strategy interpretation is required: {card_key}")
-        if strategy_v5:
+        if is_strategy_decision:
             if packet.get("schema_revision") != "12m_v3" and card.get("strategy_role") not in {
                 "supports_decision",
                 "opposes_decision",
@@ -587,7 +572,7 @@ def validate_writer_editorial_packet(
             raise ValueError(
                 f"target_peer_context[{index}] implication does not match Strategy meaning."
             )
-    if strategy_v5:
+    if is_strategy_decision:
         selected_peer_cards = {
             card_key
             for card_key, card in cards.items()

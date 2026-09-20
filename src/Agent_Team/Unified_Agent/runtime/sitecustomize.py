@@ -29,7 +29,7 @@ def _patch_writer(module: ModuleType) -> None:
             return execute(*args, **kwargs)
         with_policy._ablation_luna_policy = True
         module.execute_with_telemetry = with_policy
-    original = getattr(module, "_limitation_card_assignments_v2", None)
+    original = getattr(module, "_limitation_card_assignments", None)
     if original is None or getattr(original, "_ablation_empty_limitations_safe", False):
         return
 
@@ -42,7 +42,7 @@ def _patch_writer(module: ModuleType) -> None:
         return original(writer_packet, limitations)
 
     safe_assignments._ablation_empty_limitations_safe = True  # type: ignore[attr-defined]
-    module._limitation_card_assignments_v2 = safe_assignments
+    module._limitation_card_assignments = safe_assignments
 
 
 class _PatchLoader(importlib.abc.Loader):
@@ -70,8 +70,8 @@ class _PatchFinder(importlib.abc.MetaPathFinder):
             "Agent_Team.Competitor_Agent.peer_comparison",
             "Agent_Team.Competitor_Agent.comparison_agent",
             "Agent_Team.Strategy_Agent.agent",
-            "Agent_Team.Strategy_Agent.contracts_v2",
-            "Agent_Team.Strategy_Agent.contracts_v4",
+            "Agent_Team.Strategy_Agent.packet",
+            "Agent_Team.Strategy_Agent.context",
             "data_loader",
         }
         single_report = os.getenv("ONE_TEAM_SINGLE_REPORT") == "1"

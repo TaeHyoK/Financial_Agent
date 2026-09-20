@@ -1,4 +1,4 @@
-"""Strategy v5 contract with separate decision and report-context evidence."""
+"""Strategy decision contract with separate decision and report-context evidence."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from shared.evidence_cards import (
     assert_no_opaque_ids,
 )
 
-from .contracts_v2 import _dedupe_strings, _dict, _list, _nonempty_string_schema, _strict_object
-from .contracts_v4 import build_strategy_context_package_v4
+from .packet import _dedupe_strings, _dict, _list, _nonempty_string_schema, _strict_object
+from .context import build_base_strategy_context
 
 
 CONTEXT_VERSION = "strategy_context_package_v5"
@@ -45,14 +45,14 @@ def _without_news_selection_metadata(value: Any) -> Any:
     return value
 
 
-def build_strategy_context_package_v5(
+def build_strategy_context_package(
     packet: dict[str, Any],
     *,
     input_bundle: dict[str, Any],
 ) -> dict[str, Any]:
     """Build a compact agent context and retain typed limitation requirements."""
 
-    context = build_strategy_context_package_v4(packet, input_bundle=input_bundle)
+    context = build_base_strategy_context(packet, input_bundle=input_bundle)
     context["context_version"] = CONTEXT_VERSION
     context["evidence_cards"].pop("financial.filing_basis", None)
     for card in context["evidence_cards"].values():
@@ -102,11 +102,11 @@ def build_strategy_context_package_v5(
     context["domain_handoffs"] = interpretations
     context["applicability_notes"] = {"by_card": scoped_notes, "shared": shared_notes}
     context["context_layout_revision"] = "observations_interpretations_scope_v1"
-    validate_strategy_context_package_v5(context)
+    validate_strategy_context_package(context)
     return context
 
 
-def validate_strategy_context_package_v5(context: dict[str, Any]) -> None:
+def validate_strategy_context_package(context: dict[str, Any]) -> None:
     if context.get("context_version") != CONTEXT_VERSION:
         raise ValueError(f"Strategy context_version must be {CONTEXT_VERSION}.")
     target = _dict(context.get("target_company"))
@@ -130,12 +130,12 @@ def validate_strategy_context_package_v5(context: dict[str, Any]) -> None:
     assert_no_opaque_ids(context, location="strategy_context_package_v5")
 
 
-def strategy_decision_response_format_v5(
+def strategy_decision_response_format(
     context: dict[str, Any],
     *,
     required_horizon: str | None = None,
 ) -> dict[str, Any]:
-    """Return the strict response schema for the v5 Strategy Agent."""
+    """Return the strict response schema for the Strategy decision."""
 
     cards = _dict(context.get("evidence_cards"))
     decision_keys = sorted(cards)
@@ -321,7 +321,7 @@ def strategy_decision_response_format_v5(
     }
 
 
-def validate_strategy_decision_v5(
+def validate_strategy_decision(
     output: dict[str, Any],
     *,
     context: dict[str, Any],
@@ -447,7 +447,7 @@ def validate_strategy_decision_v5(
     }
 
 
-def align_strategy_decision_v5_evidence_plan(
+def align_strategy_decision_evidence_plan(
     output: dict[str, Any],
     *,
     context: dict[str, Any],
@@ -709,9 +709,9 @@ __all__ = [
     "DECISION_VERSION",
     "MAX_MODEL_REPORT_CONTEXT_CARDS",
     "STRATEGY_CACHE_VERSION",
-    "build_strategy_context_package_v5",
-    "align_strategy_decision_v5_evidence_plan",
-    "strategy_decision_response_format_v5",
-    "validate_strategy_context_package_v5",
-    "validate_strategy_decision_v5",
+    "build_strategy_context_package",
+    "align_strategy_decision_evidence_plan",
+    "strategy_decision_response_format",
+    "validate_strategy_context_package",
+    "validate_strategy_decision",
 ]

@@ -22,8 +22,8 @@ from Agent_Team.News_Agent.analysis_agent import (
     build_llm_request, _merge_analysis_anchor_evidence_ids, _validate_news_analysis_output,
 )
 from Agent_Team.YFinance_Agent.reporting import build_market_request, validate_market_analysis
-from Agent_Team.Strategy_Agent.contracts_v2 import build_compact_strategy_packet_v2
-from Agent_Team.Strategy_Agent.contracts_v5 import build_strategy_context_package_v5
+from Agent_Team.Strategy_Agent.packet import build_compact_strategy_packet
+from Agent_Team.Strategy_Agent.decision import build_strategy_context_package
 from Agent_Team.Strategy_Agent.agent import sanitize_strategy_input_report
 
 
@@ -125,8 +125,8 @@ def run(args):
             domain: sanitize_strategy_input_report(report, domain)
             for domain, report in new_bundle["target_reports"].items()
         }
-        packet, provenance, _, _ = build_compact_strategy_packet_v2(new_bundle)
-        context = build_strategy_context_package_v5(packet, input_bundle=new_bundle)
+        packet, provenance, _, _ = build_compact_strategy_packet(new_bundle)
+        context = build_strategy_context_package(packet, input_bundle=new_bundle)
         save(output / "normalized_domain_bundle.json", new_bundle)
         save(output / "strategy_packet.json", packet)
         save(output / "strategy_provenance.json", provenance)

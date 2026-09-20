@@ -17,8 +17,8 @@ from Agent_Team.Financial_Agent.financial_analysis_agent import build_financial_
 from Agent_Team.News_Agent.analysis_agent import build_llm_request
 from Agent_Team.YFinance_Agent.reporting import build_market_request
 from Agent_Team.Strategy_Agent.context_links import build_context_links
-from Agent_Team.Strategy_Agent.contracts_v2 import _card, _attach_secondary_context
-from Agent_Team.Strategy_Agent.contracts_v5 import build_strategy_context_package_v5
+from Agent_Team.Strategy_Agent.packet import _card, _attach_secondary_context
+from Agent_Team.Strategy_Agent.decision import build_strategy_context_package
 from Agent_Team.Strategy_Agent.agent import sanitize_strategy_input_report
 from shared.evidence_cards import assert_no_opaque_ids
 from writer_handoff import _reader_observation
@@ -148,7 +148,7 @@ class SubdataGuidanceTests(unittest.TestCase):
     def test_strategy_handoff_keeps_links_and_joint_summary(self):
         bundle, cards, _, links = self.links_fixture()
         packet = {"cards": cards, "target_company": {"company_name": "검증기업"}, "context_links": links}
-        context = build_strategy_context_package_v5(packet, input_bundle=bundle)
+        context = build_strategy_context_package(packet, input_bundle=bundle)
         handoff = context["domain_handoffs"]["financial"]
         self.assertEqual(handoff["cross_domain_assessments"], links["financial"]["assessments"])
         self.assertEqual(handoff["main_view"]["summary"], bundle["target_reports"]["financial"]["main_view"]["summary"])

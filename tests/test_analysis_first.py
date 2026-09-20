@@ -4,14 +4,14 @@ import unittest
 from jsonschema import Draft202012Validator
 from test_annual_context import strategy_fixture
 from test_optional_limits import writer_fixture
-from Agent_Team.Strategy_Agent.agent import build_strategy_report_projection_v5
-from Agent_Team.Strategy_Agent.contracts_v4 import build_strategy_context_package_v4
-from Agent_Team.Strategy_Agent.contracts_v5 import (
-    build_strategy_context_package_v5, strategy_decision_response_format_v5,
-    validate_strategy_decision_v5, align_strategy_decision_v5_evidence_plan,
+from Agent_Team.Strategy_Agent.agent import build_strategy_report_projection
+from Agent_Team.Strategy_Agent.context import build_base_strategy_context
+from Agent_Team.Strategy_Agent.decision import (
+    build_strategy_context_package, strategy_decision_response_format,
+    validate_strategy_decision, align_strategy_decision_evidence_plan,
 )
 from writer_handoff import build_writer_editorial_packet
-from html_report_writer import normalize_report_payload, _writer_report_schema_v2, _output_contract_v2
+from html_report_writer import normalize_report_payload, _writer_report_schema, _output_contract
 from formatted_html_renderer import build_complete_html
 from html_report_validator import validate_html_report
 
@@ -20,8 +20,8 @@ class AnalysisFirstTests(unittest.TestCase):
     def test_observations_and_interpretations_are_unchanged(self):
         packet, _, _, _ = strategy_fixture()
         bundle = {"target_reports": {}}
-        old = build_strategy_context_package_v4(packet, input_bundle=bundle)
-        new = build_strategy_context_package_v5(packet, input_bundle=bundle)
+        old = build_base_strategy_context(packet, input_bundle=bundle)
+        new = build_strategy_context_package(packet, input_bundle=bundle)
         self.assertEqual(new["evidence_cards"], old["evidence_cards"])
         self.assertEqual(new["domain_handoffs"], old["domain_handoffs"])
         self.assertLess(list(new).index("evidence_cards"), list(new).index("domain_handoffs"))
@@ -35,14 +35,14 @@ class AnalysisFirstTests(unittest.TestCase):
         unresolved = {"basis_card_key": "financial.not_available", "text": "원래 참조가 없어도 주의사항을 보존한다."}
         packet["reader_limitations"] = [scoped, shared, scoped, unresolved, shared]
         before = copy.deepcopy(packet)
-        new = build_strategy_context_package_v5(packet, input_bundle={"target_reports": {}})
+        new = build_strategy_context_package(packet, input_bundle={"target_reports": {}})
         self.assertEqual(new["applicability_notes"], {"by_card": {key: [scoped]}, "shared": [shared, unresolved]})
         self.assertNotIn("data_limitations", new)
         self.assertEqual(packet, before)
 
     def test_schema_produces_analysis_before_opinion_and_evidence_index(self):
         _, context, decision, _ = strategy_fixture()
-        schema = strategy_decision_response_format_v5(context)["json_schema"]["schema"]
+        schema = strategy_decision_response_format(context)["json_schema"]["schema"]
         Draft202012Validator(schema).validate(decision)
         self.assertLess(list(schema["properties"]).index("strategy_brief"), list(schema["properties"]).index("evidence_plan"))
         keys = list(schema["properties"]["strategy_brief"]["properties"])
@@ -54,15 +54,15 @@ class AnalysisFirstTests(unittest.TestCase):
         packet, context, decision, _ = strategy_fixture()
         notes = {"shared": [{"text": "기간 비교 범위를 보존한다."}], "by_card": {}}
         context["applicability_notes"] = notes
-        projection = build_strategy_report_projection_v5(decision, input_bundle={"target_company": packet["target_company"]}, context=context)
+        projection = build_strategy_report_projection(decision, input_bundle={"target_company": packet["target_company"]}, context=context)
         self.assertEqual(projection["applicability_notes"], notes)
 
     def test_no_relation_classifier_in_contract_or_handoff(self):
         for opinion in ("Buy", "Hold", "Sell"):
             packet, context, decision, provenance = strategy_fixture(opinion)
             before = copy.deepcopy(decision)
-            decision = align_strategy_decision_v5_evidence_plan(decision, context=context)
-            validate_strategy_decision_v5(decision, context=context)
+            decision = align_strategy_decision_evidence_plan(decision, context=context)
+            validate_strategy_decision(decision, context=context)
             handoff, _ = build_writer_editorial_packet(strategy_packet=packet, strategy_decision=decision, strategy_provenance=provenance)
             self.assertEqual(handoff["decision"]["opinion"], opinion)
             self.assertEqual(decision["strategy_brief"], before["strategy_brief"])
@@ -70,7 +70,7 @@ class AnalysisFirstTests(unittest.TestCase):
             bad = copy.deepcopy(decision)
             bad["evidence_plan"]["decision_basis_cards"][0]["relation_to_decision"] = "supports"
             with self.assertRaisesRegex(ValueError, "relation_to_decision"):
-                validate_strategy_decision_v5(bad, context=context)
+                validate_strategy_decision(bad, context=context)
 
     def test_three_column_table_preserves_model_interpretation_and_validates(self):
         handoff, raw = writer_fixture()
@@ -88,12 +88,12 @@ class AnalysisFirstTests(unittest.TestCase):
 
     def test_free_form_contract_has_no_role_field(self):
         handoff, _ = writer_fixture()
-        schema = _writer_report_schema_v2(handoff, writer_mode="free_form")
+        schema = _writer_report_schema(handoff, writer_mode="free_form")
         fields = schema["properties"]["sections"]["properties"]["key_evidence_table"]["properties"]["evidence_table"]["properties"]["rows"]["items"]["properties"]
         self.assertIn("투자 판단에 미치는 의미", fields)
         self.assertNotIn("판단상 역할", fields)
         self.assertNotIn("_strategy_role", fields)
-        contract = _output_contract_v2(handoff, writer_mode="free_form")
+        contract = _output_contract(handoff, writer_mode="free_form")
         row = contract["sections"]["key_evidence_table"]["evidence_table"]["rows"][0]
         self.assertNotIn("_strategy_role", row)
 
@@ -103,7 +103,7 @@ class AnalysisFirstTests(unittest.TestCase):
         decision["evidence_plan"]["decision_basis_cards"][0]["relation_to_decision"] = "supports"
         handoff, _ = build_writer_editorial_packet(strategy_packet=packet, strategy_decision=decision, strategy_provenance=provenance)
         self.assertEqual(next(iter(handoff["cards"].values()))["strategy_role"], "supports_decision")
-        row = _output_contract_v2(handoff, writer_mode="free_form")["sections"]["key_evidence_table"]["evidence_table"]["rows"][0]
+        row = _output_contract(handoff, writer_mode="free_form")["sections"]["key_evidence_table"]["evidence_table"]["rows"][0]
         self.assertIn("판단상 역할", row)
 
 

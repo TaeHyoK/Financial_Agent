@@ -16,9 +16,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from compare_strategy_stages import (
     ROOT, MODEL, DECISION_SYSTEM, strict_object, analysis_response_format,
     decision_payload, digest, save, call_openai, parse_llm_json, compact_json,
-    decision_prompt_v5, strategy_decision_response_format_v5,
-    validate_strategy_context_package_v5, align_strategy_decision_v5_evidence_plan,
-    validate_strategy_decision_v5, summarize_execution_usage, Draft202012Validator,
+    decision_prompt, strategy_decision_response_format,
+    validate_strategy_context_package, align_strategy_decision_evidence_plan,
+    validate_strategy_decision, summarize_execution_usage, Draft202012Validator,
 )
 
 FIELDS = ("earnings_review", "outlook", "price_assessment", "alternative_interpretation")
@@ -47,14 +47,14 @@ schema_revision은 기존 전달용 버전이며, 이번 실제 생성 계약은
 
 
 def decision_only_prompt():
-    base = decision_prompt_v5("annual")
+    base = decision_prompt("annual")
     before, rest = base.split("## 분석 결과와 의견 작성", 1)
     _, evidence = rest.split("## 근거 계약", 1)
     return before + DECISION_TASK + "\n## 근거 계약" + evidence
 
 
 def decision_only_format(context):
-    fmt = copy.deepcopy(strategy_decision_response_format_v5(context, required_horizon="12개월"))
+    fmt = copy.deepcopy(strategy_decision_response_format(context, required_horizon="12개월"))
     fmt["json_schema"]["name"] = "preserved_analysis_decision_v1"
     schema = fmt["json_schema"]["schema"]
     brief = schema["properties"]["strategy_brief"]
@@ -104,7 +104,7 @@ def assemble_writer_projection(context, analysis, decision):
     projection = copy.deepcopy(decision)
     del projection["analysis_corrections"]
     projection["strategy_brief"].update({field: copy.deepcopy(effective[field]) for field in FIELDS[:3]})
-    projection = align_strategy_decision_v5_evidence_plan(projection, context=context)
+    projection = align_strategy_decision_evidence_plan(projection, context=context)
     # Keep alternative-analysis citations too, even if the decision does not use them.
     plan = projection["evidence_plan"]
     selected = {row["card_key"] for name in ("decision_basis_cards", "report_context_cards") for row in plan[name]}
@@ -115,7 +115,7 @@ def assemble_writer_projection(context, analysis, decision):
                 "purpose": "peer_context" if domain == "peer" else "event_context" if domain == "news" else "business_context",
                 "report_implication": effective["alternative_interpretation"]["text"]})
             selected.add(key)
-    validate_strategy_decision_v5(projection, context=context, required_horizon="12개월")
+    validate_strategy_decision(projection, context=context, required_horizon="12개월")
     return effective, projection
 
 
@@ -144,12 +144,12 @@ def run(args):
                Path(args.domain_run).resolve() / "normalized_domain_bundle.json"]
     hashes = {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in sources}
     context, analysis, bundle = [json.loads(path.read_text(encoding="utf-8")) for path in sources]
-    validate_strategy_context_package_v5(context)
+    validate_strategy_context_package(context)
     Draft202012Validator(analysis_response_format(context)["json_schema"]["schema"]).validate(analysis)
-    from Agent_Team.Strategy_Agent.contracts_v2 import build_compact_strategy_packet_v2
-    from Agent_Team.Strategy_Agent.contracts_v5 import build_strategy_context_package_v5
-    packet, provenance, _, _ = build_compact_strategy_packet_v2(bundle)
-    if build_strategy_context_package_v5(packet, input_bundle=bundle) != context:
+    from Agent_Team.Strategy_Agent.packet import build_compact_strategy_packet
+    from Agent_Team.Strategy_Agent.decision import build_strategy_context_package
+    packet, provenance, _, _ = build_compact_strategy_packet(bundle)
+    if build_strategy_context_package(packet, input_bundle=bundle) != context:
         raise ValueError("Frozen context does not match domain bundle; cannot compare Writer inputs")
     output = Path(args.output_dir).resolve()
     output.mkdir(parents=True, exist_ok=False)

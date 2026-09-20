@@ -6,9 +6,9 @@ from datetime import date
 from types import SimpleNamespace
 
 from Agent_Team.News_Agent import analysis_agent as news
-from Agent_Team.Strategy_Agent.contracts_v2 import _news_cards, build_compact_strategy_packet_v2
-from Agent_Team.Strategy_Agent.contracts_v4 import _news_handoff
-from Agent_Team.Strategy_Agent.contracts_v5 import build_strategy_context_package_v5
+from Agent_Team.Strategy_Agent.packet import _news_cards, build_compact_strategy_packet
+from Agent_Team.Strategy_Agent.context import _news_handoff
+from Agent_Team.Strategy_Agent.decision import build_strategy_context_package
 
 
 class NewsProvenanceTests(unittest.TestCase):
@@ -57,8 +57,8 @@ class NewsProvenanceTests(unittest.TestCase):
         bundle = {"target_company": {"company_name": "검증기업"},
                   "target_reports": {"news": {"analysis_blocks": {"news_only": {"positive_signals": [claim]}}}},
                   "evidence_catalogs": {"news": self.catalog}}
-        packet, provenance, _, _ = build_compact_strategy_packet_v2(bundle)
-        context = build_strategy_context_package_v5(packet, input_bundle=bundle)
+        packet, provenance, _, _ = build_compact_strategy_packet(bundle)
+        context = build_strategy_context_package(packet, input_bundle=bundle)
         key = next(k for k, c in packet["cards"].items() if c["domain"] == "news")
         self.assertEqual(provenance["cards"][key]["anchor_evidence_id"], "NEWS_RAW_A")
         self.assertEqual(context["evidence_cards"][key]["primary_observation"]["anchor_source"]["title"], "국내 허가")
@@ -80,8 +80,8 @@ class NewsProvenanceTests(unittest.TestCase):
                   'target_reports': {'news': {'analysis_blocks': {'news_only': {'positive_signals': [claim]}}}},
                   'evidence_catalogs': {'news': self.catalog}}
         before = copy.deepcopy(bundle)
-        packet, provenance, _, _ = build_compact_strategy_packet_v2(bundle)
-        context = build_strategy_context_package_v5(packet, input_bundle=bundle)
+        packet, provenance, _, _ = build_compact_strategy_packet(bundle)
+        context = build_strategy_context_package(packet, input_bundle=bundle)
         key = next(k for k, c in packet['cards'].items() if c['domain'] == 'news')
         observation = context['evidence_cards'][key]['primary_observation']
         sources = observation['cited_sources']

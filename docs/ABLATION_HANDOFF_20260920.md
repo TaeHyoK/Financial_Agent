@@ -144,3 +144,23 @@ python run_config/final_report_llm_judge.py aggregate
 - skip 16개: Git에 넣지 않은 과거 127MB frozen 생성 입력이 필요한 반복생성 테스트
 - skip 3개: 별도 보고서 ZIP을 풀기 전에는 입력 본문이 없어 실행할 수 없는 Judge 준비 테스트
 - 이동용 ZIP의 Judge 요청 검증: valid, requests 360, audits 360, paid API calls 0
+
+## 10. 정리 커밋 이후 상태 (2026-09-21 추가)
+
+브랜치 `cleanup-dead-code-20260921` 에서 dead code 와 v1~v4 잔여 코드를 걷어냈다. 계획과 파일별 분류는 `docs/cleanup_plan_20260921.md` 에 있다.
+
+- 최종 보고서 산출 동작과 프롬프트(`decision_agent_v5.md`, `comparison_agent.md`)는 바꾸지 않았다. 남은 v5 경로 코드는 정리 전과 같고, 테스트 픽스처로 Strategy·Writer 산출물과 캐시 지문이 전후 동일함을 확인했다.
+- LLM Judge(`run_config/final_report_llm_judge.py`)는 리포 내부 모듈을 import 하지 않아 영향이 없다. `validate` 는 여전히 valid / 360 / 360 / 0 이다.
+- `real_report_evaluation/extract.py`·`runner.py` 는 손대지 않았고 `ablation_results/*/protocol.json` 의 해시와 일치한다.
+- 테스트는 257 passed, 19 skipped 로 총계는 9절과 같지만 구성이 다르다. ZIP 을 풀면 Judge 준비 테스트 3개가 돌고, 대신 `tests/test_one_team.py` 의 러너 테스트 3개가 리포 바깥 경로(`../run_config/`)를 찾다가 스킵된다.
+
+**생성 재현 검사는 이 브랜치에서 더 이상 통과하지 않는다.** `run_config/run_prepared_reports.py`·`run_one_team_reports.py`·`run_repeated_reports.py` 의 `check()` 는 생성 당시 `src/**/*.py` 의 sha256 을 상태 파일과 대조하는데, 정리 커밋 이후 트리는 생성 시점 코드와 다르다. `ablation_results/status/` 의 상태 파일은 생성 시점 기록으로 그대로 두었고 다시 만들지 않았다. 생성 시점 코드가 필요하면 커밋 `da85eb3`(`ablation-final-handoff-20260920` 브랜치 끝)을 본다.
+
+정리 커밋 네 개와 규모:
+
+| 커밋 | 내용 | 순 감소 |
+|---|---|---|
+| 9815f15 | 어디서도 참조되지 않는 파일·함수·상수·import | 1,708줄 |
+| e084754 | Strategy v1~v4 실행 경로·결정 계약·프롬프트 제거, v5 단일화 | 5,681줄 |
+| 0599ef3 | Writer 의 v1 handoff·v2 폴백·v4 분기 제거 | 822줄 |
+| e119baf | 구 ablation·평가 스택과 미사용 엔트리포인트 삭제 | 3,757줄 |

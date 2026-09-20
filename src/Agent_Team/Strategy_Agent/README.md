@@ -1,4 +1,4 @@
-> 기본 실행은 `v5 / schema_revision=12m_v3`입니다. 관측 자료·하위 해석·적용 범위를 구분해 제공하며, 실적·전망·가격 분석과 대안 해석을 먼저 작성한 뒤 12개월 Buy/Hold/Sell 의견을 정리합니다. 근거의 역할은 분류 라벨 대신 `investment_implication`으로 서술합니다. 실제 인용에 고정 개수 상한을 두지 않으며, 핵심 표에 쓰지 않은 인용도 문맥 근거로 보존합니다. 현재 계약은 [분석 중심 Strategy 변경 및 검토](../../../docs/strategy_analysis_first.md)를 참고하세요. 아래의 과거 계약 설명은 현재 실행 규격이 아닙니다.
+> 기본 실행은 `v5 / schema_revision=12m_v3`입니다. 관측 자료·하위 해석·적용 범위를 구분해 제공하며, 실적·전망·가격 분석과 대안 해석을 먼저 작성한 뒤 12개월 Buy/Hold/Sell 의견을 정리합니다. 근거의 역할은 분류 라벨 대신 `investment_implication`으로 서술합니다. 실제 인용에 고정 개수 상한을 두지 않으며, 핵심 표에 쓰지 않은 인용도 문맥 근거로 보존합니다. 현재 계약은 [분석 중심 Strategy 변경 및 검토](../../../docs/strategy_analysis_first.md)를 참고하세요. 아래 설명은 v5 계약의 개요이며, 세부 규격이 다르면 그 문서를 따릅니다. v1~v4 계약 코드는 제거되었습니다.
 
 # Strategy Agent
 
@@ -14,7 +14,7 @@ Strategy Agent는 Financial, News, YFinance 분석과 비교기업 자료를 바
 
 비교 데이터셋은 동일 지표·단위·날짜·기간 기준이 확인된 값을 제공하고, 비교 분석 보고서는 대상기업과 비교기업에 동일 절차를 적용한 하위 에이전트 결과를 종합해 두 기업의 상대적 위치를 설명한다.
 
-## 과거 v5 추론 계약 참고
+## v5 추론 계약
 
 입력 구성기는 하위 에이전트의 주요 분석, 교차 자료 판단과 사실 기반 근거 카드를 하나의 `strategy_context_package_v5`로 전달한다. 날짜·기간·단위·비교 대상·자료의 적용 범위는 유지하지만, 카드의 투자 방향과 중요도는 미리 결정하지 않는다.
 
@@ -47,7 +47,7 @@ Strategy LLM은 한 호출에서 다음을 반환한다.
 
 운영 경로에는 자연어 판단을 채점하거나 방향을 바꾸는 입력·판단 게이트를 두지 않는다. 기준일, 재무기간, 단위와 비교 기준은 문맥 패키지를 만드는 과정에서 확정하고, 사용할 수 있는 근거 카드는 구조화 출력 선택지로 제공한다. 언어모형 응답은 지정된 JSON 형식으로 해석할 수 없거나, 선택하지 않은 카드를 본문·위험·비교 문맥에서 참조하는 등 구조화 계약의 참조 무결성이 깨진 경우에만 실행 오류로 처리한다. 판단 방향, 근거의 중요도와 문체는 Strategy Agent가 결정한다.
 
-`validate_compact_strategy_packet_v2`와 버전별 `validate_strategy_decision` 함수는 회귀시험과 실험 평가에서도 사용한다. v5 운영 경로에서는 카드 존재 여부, 중복, 선택 카드 참조와 비교 지표의 동일 기준 사용 같은 구조적 무결성만 확인하며 자연어 의미를 규칙으로 판정하거나 응답을 재생성하지 않는다.
+`validate_compact_strategy_packet_v2`와 `validate_strategy_decision_v5`는 회귀시험과 실험 평가에서도 사용한다. v5 운영 경로에서는 카드 존재 여부, 중복, 선택 카드 참조와 비교 지표의 동일 기준 사용 같은 구조적 무결성만 확인하며 자연어 의미를 규칙으로 판정하거나 응답을 재생성하지 않는다.
 
 ## 실행
 
@@ -80,14 +80,4 @@ strategy_report.json
 strategy_report.md
 ```
 
-`decision_basis_card.json`은 과거 v1 계약에서 판단 근거를 Writer와 Visualization 단계에 전달하던 파일이다. v5에서는 `strategy_decision_output_v5.json`의 `decision_basis_cards`, 파생된 `report_context_cards`와 외부 provenance 파일이 그 역할을 나누어 맡으므로 이 파일을 생성하거나 downstream 입력으로 사용하지 않는다. v5 성공 후 같은 output directory의 이전 판단 산출물은 제거된다. 이전 버전은 비교 및 호환 경로이며 서로 다른 버전의 판단 파일을 하나의 downstream 입력으로 혼합하지 않는다.
-
-## 이전 의견 등급 계약 평가
-
-```bash
-PYTHONPATH=src python -m Agent_Team.Strategy_Agent.evaluate_recommendation_bias \
-  --llm-model gpt-5.4 \
-  --env-file configs/.env
-```
-
-평가 호출은 `LLM_RUN_ROLE=evaluation`으로 기록되며 정상 15-call 보고서 파이프라인 집계에서 제외된다.
+`decision_basis_card.json`은 과거 v1 계약에서 판단 근거를 Writer와 Visualization 단계에 전달하던 파일이다. v5에서는 `strategy_decision_output_v5.json`의 `decision_basis_cards`, 파생된 `report_context_cards`와 외부 provenance 파일이 그 역할을 나누어 맡으므로 이 파일을 생성하거나 downstream 입력으로 사용하지 않는다. v5 성공 후 같은 output directory의 이전 판단 산출물은 제거된다. 서로 다른 버전의 판단 파일을 하나의 downstream 입력으로 혼합하지 않는다.

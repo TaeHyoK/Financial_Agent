@@ -121,7 +121,7 @@ One-team 조건에서 사용하는 통합 분석 구성요소는 `Unified_Agent`
 
 ## Ablation 인수인계 브랜치
 
-`ablation-final-handoff-20260920` 브랜치에는 실험 재현을 위한 `run_config/`, 소형 평가 결과인 `ablation_results/`, 최종 보고서 LLM-as-a-Judge 코드가 추가되어 있다. 생성 보고서와 실제 애널리스트 PDF는 Git에 포함하지 않는다. 다른 노트북에서 이어서 실행할 때는 [인수인계 문서](docs/ABLATION_HANDOFF_20260920.md)를 먼저 확인한다.
+실험 재현을 위한 `run_config/`, 최종 보고서 75개(`final_reports/`), 그 자동 지표(`ablation_results/`), 최종 보고서 LLM-as-a-Judge 코드가 들어 있다. 실제 애널리스트 PDF와 중간 산출물은 Git에 포함하지 않는다. 다른 노트북에서 이어서 실행할 때는 [인수인계 문서](docs/ABLATION_HANDOFF_20260920.md)를 먼저 확인한다.
 
 ## 적용 범위
 

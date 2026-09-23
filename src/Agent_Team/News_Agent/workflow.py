@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from shared.env import load_env_file
 from .dart.collect import fetch_latest_periodic_xml, save_xml
 from .io.storage import save_json
 from .pipelines.build_corporate_context_db import build_context_db
@@ -72,19 +73,7 @@ class EnvironmentLoader:
         self._load_env_file(self.kca_root / "env" / ".env")
         self._load_env_file(self.project_root / ".env")
 
-    @staticmethod
-    def _load_env_file(path: Path) -> None:
-        if not path.exists():
-            return
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            key = key.strip()
-            value = value.strip().strip('"').strip("'")
-            if key and key not in os.environ:
-                os.environ[key] = value
+    _load_env_file = staticmethod(load_env_file)
 
 
 class ProjectLayout:

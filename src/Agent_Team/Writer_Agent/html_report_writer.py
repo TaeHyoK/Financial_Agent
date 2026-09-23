@@ -14,6 +14,7 @@ from .html_report_spec import (
     REPORT_SECTIONS,
     RISK_DISPLAY_COLUMNS,
 )
+from shared.coerce import as_dict as _dict
 from shared.evidence_cards import PRODUCT_DISCLOSURE_SCOPE_LABEL
 from shared.llm_clients import compact_json, execute_with_telemetry, is_transient_transport_error
 from .writer_handoff import (
@@ -2022,10 +2023,6 @@ def _normalize_table(value: Any, *, preserve_strategy_values: bool = False) -> d
     if "card_keys" in payload:
         result["card_keys"] = _clean_identifiers(payload.get("card_keys"))
     return result
-
-
-def _dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
 
 
 def _clean_list(value: Any) -> list[str]:

@@ -6,13 +6,13 @@ import hashlib
 import json
 import os
 import re
-import tempfile
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib import error, request
 
+from shared.jsonio import atomic_write_text as _atomic_write_text
 from shared.llm_clients import (
     compact_json,
     estimate_text_tokens,
@@ -20,7 +20,7 @@ from shared.llm_clients import (
     is_transient_transport_error,
 )
 from orchestration.ablation import config_from_mapping
-from orchestration.config import agent_output_dir
+from orchestration.config import agent_output_dir, company_from_run_key, normalize_date, safe_label
 
 from . import AGENT_DIR, DEFAULT_TARGET_CONFIG, OUTPUT_ROOT
 from .packet import build_compact_strategy_packet
@@ -1335,25 +1335,6 @@ def save_text(path: Path, content: str) -> None:
     _atomic_write_text(path, content)
 
 
-def _atomic_write_text(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        dir=path.parent,
-    )
-    temporary_path = Path(temporary)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
-            file.write(content)
-            file.flush()
-            os.fsync(file.fileno())
-        os.replace(temporary_path, path)
-    finally:
-        if temporary_path.exists():
-            temporary_path.unlink()
-
-
 def load_env_file(path: Path) -> None:
     """Load KEY=VALUE pairs without overriding exported environment variables."""
 
@@ -1505,15 +1486,6 @@ def dedupe(items: list[str], limit: int | None = None) -> list[str]:
     return output
 
 
-def normalize_date(value: Any) -> str:
-    """Return YYYYMMDD for supported date inputs."""
-
-    digits = "".join(character for character in str(value or "") if character.isdigit())
-    if len(digits) != 8:
-        raise ValueError("date must be YYYYMMDD or YYYY-MM-DD.")
-    return digits
-
-
 def normalize_iso_date(value: Any) -> str | None:
     """Return YYYY-MM-DD for date-like values."""
 
@@ -1521,21 +1493,3 @@ def normalize_iso_date(value: Any) -> str | None:
     if len(digits) != 8:
         return None
     return f"{digits[:4]}-{digits[4:6]}-{digits[6:]}"
-
-
-def safe_label(value: str | None, fallback: str = "company") -> str:
-    """Sanitize labels for run_key path fragments."""
-
-    label = str(value or fallback).strip() or fallback
-    for character in ('\\', '/', ':', '*', '?', '"', '<', '>', '|'):
-        label = label.replace(character, "_")
-    return "_".join(label.split())
-
-
-def company_from_run_key(run_key: str) -> str:
-    """Infer company name from run_key."""
-
-    match = re.match(r"^(?P<name>.+)_(?P<date>\d{8})$", run_key)
-    if match:
-        return match.group("name")
-    return run_key

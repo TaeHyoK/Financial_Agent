@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
+from shared.coerce import is_finite_number as _finite_number
 from shared.subdata import market_subdata, news_subdata
 import argparse
 import copy
 import json
-import math
 from pathlib import Path
 from typing import Any, Dict, List, TypedDict
 
@@ -277,10 +277,6 @@ def _news_weekly_summary_context(payload: Dict[str, Any]) -> dict[str, Any]:
 
 def _market_secondary_context(payload: Any) -> dict[str, Any]:
     return market_subdata(payload)
-
-
-def _finite_number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
 
 
 def infer_statement_scope(dart_master: Dict[str, Any]) -> str:

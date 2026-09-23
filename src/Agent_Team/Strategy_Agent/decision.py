@@ -10,7 +10,9 @@ from shared.evidence_cards import (
     assert_no_opaque_ids,
 )
 
-from .packet import _dedupe_strings, _dict, _list, _nonempty_string_schema, _strict_object
+from shared.schema import strict_object as _strict_object
+
+from .packet import _dedupe_strings, _dict, _list, _nonempty_string_schema
 from .context import build_base_strategy_context
 
 

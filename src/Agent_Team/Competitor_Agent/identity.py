@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from . import OUTPUT_ROOT
-from orchestration.config import agent_output_dir
+from orchestration.config import (
+    agent_output_dir,
+    build_run_key,
+    company_from_run_key,
+    normalize_date,
+    safe_label,
+)
 
 
 @dataclass(frozen=True)
@@ -80,34 +84,3 @@ def load_identity_from_config(path: Path) -> RunIdentity:
         corp_code=corp_code,
         stock_code=stock_code,
     )
-
-
-def normalize_date(value: Any) -> str:
-    """Return YYYYMMDD for supported date inputs."""
-
-    digits = "".join(character for character in str(value or "") if character.isdigit())
-    if len(digits) != 8:
-        raise ValueError("date must be YYYYMMDD or YYYY-MM-DD.")
-    return digits
-
-
-def safe_label(value: str | None, fallback: str = "company") -> str:
-    """Sanitize labels for run-key path fragments."""
-
-    label = str(value or fallback).strip() or fallback
-    for character in ('\\', '/', ':', '*', '?', '"', '<', '>', '|'):
-        label = label.replace(character, "_")
-    return "_".join(label.split())
-
-
-def build_run_key(company_name: str | None, selected_date: Any, fallback: str | None = None) -> str:
-    """Build the run-key shape used by orchestration."""
-
-    return f"{safe_label(company_name, fallback or 'company')}_{normalize_date(selected_date)}"
-
-
-def company_from_run_key(run_key: str) -> str:
-    """Infer company name from a run key."""
-
-    match = re.match(r"^(?P<name>.+)_(?P<date>\d{8})$", run_key)
-    return match.group("name") if match else run_key

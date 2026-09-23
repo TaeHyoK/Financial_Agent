@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from tqdm.auto import tqdm
+from shared.env import load_env_file as _load_env_file
 from shared.llm_clients import execute_with_telemetry
 from shared.time_windows import monthly_windows
 from shared.news_selection import MONTHLY_NEWS_POLICY, MONTHLY_NEWS_LABEL, ANNUAL_NEWS_LIMIT, validate_monthly_news
@@ -436,20 +437,6 @@ def _write_period_llm_requests(request_payload: dict[str, Any], output_dir: Path
         save_json(period_request, request_path)
         paths.append(str(request_path))
     return paths
-
-
-def _load_env_file(path: Path) -> None:
-    if not path.exists():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
-            os.environ[key] = value
 
 
 def _load_llm_environment(api_key_env: str, env_path: str | Path | None) -> str:

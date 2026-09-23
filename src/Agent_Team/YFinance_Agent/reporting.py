@@ -29,7 +29,7 @@ from shared.coerce import is_finite_number as _is_finite_number
 from shared.domain_llm import domain_request, call_domain_response
 from shared.llm_clients import compact_json
 
-from valuation import build_valuation_snapshot, unavailable_direct_valuation
+from Agent_Team.YFinance_Agent.valuation import build_valuation_snapshot, unavailable_direct_valuation
 
 
 AGENT_DIR = Path(__file__).resolve().parent

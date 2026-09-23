@@ -3,7 +3,6 @@ import copy
 import json
 import unittest
 
-import test_annual_context  # Configures local agent imports.
 from shared.subdata import evidence_catalog_for_llm, secondary_context_for_llm
 from Agent_Team.News_Agent.analysis_agent import _compact_news_evidence_for_llm, build_llm_request
 from Agent_Team.News_Agent.context_export import _build_llm_summary_request, _load_llm_user_payload

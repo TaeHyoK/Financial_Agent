@@ -1,10 +1,7 @@
 """Distinct DART identifiers must never collapse through digit stripping."""
-import sys
 import unittest
 from unittest.mock import MagicMock, patch
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from orchestration.company_resolver import (
     _stock_code, parse_dart_company_directory,
     resolve_company_identity_by_stock_code, CompanyResolutionError,

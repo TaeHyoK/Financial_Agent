@@ -2,12 +2,10 @@
 import ast
 import json
 from pathlib import Path
-import sys
 import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 ANALYSIS_MODEL = "gpt-5.4"
 SUMMARY_MODEL = "gpt-5.6-luna"
 

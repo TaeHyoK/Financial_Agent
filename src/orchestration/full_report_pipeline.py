@@ -23,6 +23,16 @@ from Agent_Team.Strategy_Agent.agent import (
     DEFAULT_DECISION_HORIZON_PROFILE,
     resolve_decision_horizon_profile,
 )
+from Agent_Team.Strategy_Agent.artifacts import (
+    COMPACT_PACKET_FILENAME,
+    DECISION_OUTPUT_FILENAME,
+    PACKET_PROVENANCE_FILENAME,
+)
+from Agent_Team.Strategy_Agent.decision import DECISION_VERSION as STRATEGY_DECISION_VERSION
+from Agent_Team.Writer_Agent.artifacts import (
+    EDITORIAL_PACKET_FILENAME,
+    PACKET_PROVENANCE_FILENAME as WRITER_PACKET_PROVENANCE_FILENAME,
+)
 
 from .ablation import AblationConfig, config_from_args
 from .company_resolver import (
@@ -952,13 +962,8 @@ def _build_visualization_command(
 ) -> list[str]:
     command = [
         sys.executable,
-        str(
-            PROJECT_ROOT
-            / "src"
-            / "Agent_Team"
-            / "Visualization Agent"
-            / "report_chart_cli.py"
-        ),
+        "-m",
+        "Agent_Team.Visualization_Agent.report_chart_cli",
         phase,
         "--output-root",
         str(paths.output_root),
@@ -985,17 +990,18 @@ def build_writer_generation_command(
 ) -> list[str]:
     command = [
         sys.executable,
-        str(PROJECT_ROOT / "src" / "Agent_Team" / "Writer Agent" / "writer_agent.py"),
+        "-m",
+        "Agent_Team.Writer_Agent.writer_agent",
         "--phase",
         "generate",
         "--run-key",
         paths.run_key,
         "--strategy-packet",
-        str(paths.strategy_dir / "strategy_compact_packet_v2.json"),
+        str(paths.strategy_dir / COMPACT_PACKET_FILENAME),
         "--strategy-provenance",
-        str(paths.strategy_dir / "strategy_packet_provenance_v2.json"),
+        str(paths.strategy_dir / PACKET_PROVENANCE_FILENAME),
         "--strategy-decision",
-        str(paths.strategy_dir / "strategy_decision_output_v5.json"),
+        str(paths.strategy_dir / DECISION_OUTPUT_FILENAME),
         "--output-dir",
         str(paths.writer_dir),
         "--env-file",
@@ -1020,7 +1026,8 @@ def build_writer_render_command(
     del ablation
     return [
         sys.executable,
-        str(PROJECT_ROOT / "src" / "Agent_Team" / "Writer Agent" / "writer_agent.py"),
+        "-m",
+        "Agent_Team.Writer_Agent.writer_agent",
         "--phase",
         "render",
         "--run-key",
@@ -1049,7 +1056,7 @@ def validate_full_pipeline_outputs(
         if include_competitor
         else {}
     )
-    strategy_path = paths.strategy_dir / "strategy_decision_output_v5.json"
+    strategy_path = paths.strategy_dir / DECISION_OUTPUT_FILENAME
     strategy = _load_json(strategy_path)
     chart_catalog_path = paths.visualization_dir / "chart_catalog.json"
     chart_manifest_path = paths.visualization_dir / "chart_manifest.json"
@@ -1086,7 +1093,7 @@ def validate_full_pipeline_outputs(
     checks = {
         "target_domain_pipeline": target_manifest.get("status") == "success",
         "strategy_output": strategy_path.is_file() and bool(strategy),
-        "label_free_strategy_contract": strategy.get("decision_version") == "strategy_decision_output_v5",
+        "label_free_strategy_contract": strategy.get("decision_version") == STRATEGY_DECISION_VERSION,
         "visualization_catalog": chart_catalog_path.is_file(),
         "writer_chart_selection": (
             len(requested_chart_keys) == len(set(requested_chart_keys))
@@ -1583,14 +1590,14 @@ def _base_manifest(
             "peer_comparison": str(paths.peer_comparison),
             "peer_analysis": str(paths.peer_analysis),
             "strategy_report": str(paths.strategy_dir / "strategy_report.json"),
-            "strategy_compact_packet_v2": str(paths.strategy_dir / "strategy_compact_packet_v2.json"),
-            "strategy_packet_provenance_v2": str(paths.strategy_dir / "strategy_packet_provenance_v2.json"),
-            "strategy_decision_output_v5": str(paths.strategy_dir / "strategy_decision_output_v5.json"),
+            "strategy_compact_packet": str(paths.strategy_dir / COMPACT_PACKET_FILENAME),
+            "strategy_packet_provenance": str(paths.strategy_dir / PACKET_PROVENANCE_FILENAME),
+            "strategy_decision_output": str(paths.strategy_dir / DECISION_OUTPUT_FILENAME),
             "visualization_chart_catalog": str(paths.visualization_dir / "chart_catalog.json"),
             "visualization_chart_manifest": str(paths.visualization_dir / "chart_manifest.json"),
             "visualization_chart_selection": str(paths.visualization_dir / "chart_selection.json"),
-            "writer_editorial_packet_v3": str(paths.writer_dir / "writer_editorial_packet_v3.json"),
-            "writer_packet_provenance_v3": str(paths.writer_dir / "writer_packet_provenance_v3.json"),
+            "writer_editorial_packet": str(paths.writer_dir / EDITORIAL_PACKET_FILENAME),
+            "writer_packet_provenance": str(paths.writer_dir / WRITER_PACKET_PROVENANCE_FILENAME),
             "writer_report_payload": str(paths.writer_dir / "writer_report_payload.json"),
             "writer_run_status": str(paths.writer_dir / "writer_run_status.json"),
             "writer_internal_report": str(paths.writer_dir / "report.html"),

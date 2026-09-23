@@ -11,6 +11,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
+from shared.env import load_env_file as _load_env_file
+from shared.jsonio import dump_json as _dump_json
+
 try:
     from . import (
         AGENT_DIR,
@@ -279,26 +282,6 @@ def _resolve_output_dir(output_dir: str | None, pipeline_input: PipelineInput) -
 
 def _run_key(pipeline_input: PipelineInput) -> str:
     return build_run_key(pipeline_input.company_name, pipeline_input.selected_date, pipeline_input.company_code)
-
-
-def _load_env_file(path: Path) -> None:
-    if not path.exists():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key, value = stripped.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
-            os.environ[key] = value
-
-
-def _dump_json(path: Path, payload: Any) -> None:
-    with path.open("w", encoding="utf-8") as file:
-        json.dump(payload, file, ensure_ascii=False, indent=2)
-        file.write("\n")
 
 
 if __name__ == "__main__":

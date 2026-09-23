@@ -38,7 +38,7 @@ cd /home/tkim298/agent2/Financial_Agent && .venv/bin/python -m pytest -q -rs
 1. **코드 해시 동결.** 세 실행기가 `src/**/*.py` 전체의 sha256 을 상태 파일에 적어 두고 `check()` 에서 대조한다(`run_config/run_repeated_reports.py:80-81, 103-106`, `run_prepared_reports.py:67-76`, `run_one_team_reports.py:109, 127`). src 아래 파일을 하나라도 고치면 생성 재실행·재개 검사가 막힌다. 생성은 이미 끝났으므로 Judge 에는 영향이 없지만, "이 트리로 생성을 재현할 수 있다"는 성질은 정리 시점에 끊긴다.
 2. **sitecustomize 패치 대상 이름.** `Agent_Team.Strategy_Agent.agent`, `contracts_v2`, `contracts_v4`, `Competitor_Agent.peer_comparison`, `comparison_agent`, `data_loader`, `html_report_writer`, `shared.domain_llm` 모듈 이름과 그 안의 `build_strategy_input_bundle`, `load_required_json`, `_financial_cards`, `_card`, `STRATEGY_SECTIONS`, `build_strategy_context_package_v4`, `_limitation_card_assignments_v2`, `execute_with_telemetry` 이름은 바꿀 수 없다. (이름 변경 이후: `_limitation_card_assignments_v2` → `_limitation_card_assignments`, `build_strategy_context_package_v4` → `build_base_strategy_context`, `contracts_v2` → `packet`, `contracts_v4` → `context`)
 3. **import 순서.** `contracts_v5.py:14` 가 `build_strategy_context_package_v4` 를 import 시점에 바인딩한다. `agent.py` 가 `contracts_v4` 를 먼저 import 하기 때문에 패치된 함수가 바인딩된다. v4 함수를 v5 안으로 옮기거나 import 순서를 바꾸면 one-team 산출이 조용히 바뀐다. (이름 변경 이후: `build_strategy_context_package_v4` → `build_base_strategy_context`, `contracts_v4` → `context`, `contracts_v5` → `decision`)
-4. **산출물 파일명과 계약 문자열.** `strategy_compact_packet_v2.json`, `strategy_packet_provenance_v2.json`, `strategy_decision_output_v5.json`, `writer_editorial_packet_v3.json` 등 파일명, `DECISION_VERSION`·`STRATEGY_CACHE_VERSION` 상수값은 Writer 입력·캐시 키·계약 판별에 쓰이므로 바꾸지 않는다.
+4. **산출물 파일명과 계약 문자열.** `strategy_compact_packet_v2.json`, `strategy_packet_provenance_v2.json`, `strategy_decision_output_v5.json`, `writer_editorial_packet_v3.json` 등 파일명, `DECISION_VERSION`·`STRATEGY_CACHE_VERSION` 상수값은 Writer 입력·캐시 키·계약 판별에 쓰이므로 바꾸지 않는다. → 2026-09-23 결정 변경: 2층도 버전 없는 이름으로 통일(깨끗한 단절)
 5. **테스트가 private 헬퍼를 직접 import.** `_news_cards`, `_reader_limitations`, `_news_claim_card`, `_card`, `_attach_secondary_context`, `_market_cards`, `_news_handoff`, `_writer_card_v5`, `_select_v5_limitations`, `_writer_report_schema_v2`, `_output_contract_v2`, `_system_prompt_v2` 등. 이름을 바꾸면 테스트가 바로 깨진다. (이름 변경 이후: `_output_contract_v2` → `_output_contract`, `_select_v5_limitations` → `_select_limitations`, `_system_prompt_v2` → `_editorial_system_prompt`, `_writer_card_v5` → `_writer_card`, `_writer_report_schema_v2` → `_writer_report_schema`)
 6. **평가 코드 해시.** `run_config/evaluate_repeated_bert.py:30-34` 가 `real_report_evaluation/extract.py`·`runner.py` 의 sha256 을 `protocol.json` 과 대조한다. 이 두 파일은 건드리지 않는다.
 
@@ -61,7 +61,7 @@ cd /home/tkim298/agent2/Financial_Agent && .venv/bin/python -m pytest -q -rs
 | `src/Agent_Team/YFinance_Agent/report.py` | 어떤 코드도 import 안 함. README 에만 등장 |
 | `src/Agent_Team/Strategy_Agent/contracts_v3.py` (597줄) | `agent.py:33-38` 이 import 만 함. v3 실행 경로 제거와 함께 삭제 |
 | `ablation_suite/legacy_unified.py` (124줄) | import 하는 곳 0. 의존 방향이 legacy→unified 라 삭제해도 unified 무영향 |
-| `src/Agent_Team/Writer Agent/__init__.py`, `src/Agent_Team/Visualization Agent/__init__.py` | 폴더명에 공백이 있어 패키지 import 자체가 불가. `from .writer_agent import` 는 영원히 실행 안 됨 |
+| `src/Agent_Team/Writer Agent/__init__.py`, `src/Agent_Team/Visualization Agent/__init__.py` | 폴더명에 공백이 있어 패키지 import 자체가 불가. `from .writer_agent import` 는 영원히 실행 안 됨 (2026-09-23 패키지화 이후: Writer_Agent / Visualization_Agent) |
 
 함수·클래스 (외부 참조 0, 파일 내부 호출 0):
 
@@ -69,9 +69,9 @@ cd /home/tkim298/agent2/Financial_Agent && .venv/bin/python -m pytest -q -rs
 |---|---|
 | `Strategy_Agent/agent.py` | `normalize_strategy_decision_output` 2878, `dedupe_paths` 5249 |
 | `Strategy_Agent/contracts_v2.py` | `_preserve_news_counterevidence` 2449-2484 (이름 변경 이후: `contracts_v2` → `packet`) |
-| `Writer Agent/writer_handoff.py` | `build_writer_handoff` 1649-1745, `handoff_json_size` 1789-1792, `reformat_financial_reader_observations` 1169-1185 (v1 유물). `validate_writer_handoff` 1748 은 html_report_writer 레거시 가지가 부르므로 3단계에서 함께 제거 |
-| `Writer Agent/html_report_writer.py` | `build_html_report_payload` 73 |
-| `Visualization Agent/chart_builders.py` | `_safe_category_label` 785 |
+| `Writer Agent/writer_handoff.py` (2026-09-23 패키지화 이후: Writer_Agent / Visualization_Agent) | `build_writer_handoff` 1649-1745, `handoff_json_size` 1789-1792, `reformat_financial_reader_observations` 1169-1185 (v1 유물). `validate_writer_handoff` 1748 은 html_report_writer 레거시 가지가 부르므로 3단계에서 함께 제거 |
+| `Writer Agent/html_report_writer.py` (2026-09-23 패키지화 이후: Writer_Agent / Visualization_Agent) | `build_html_report_payload` 73 |
+| `Visualization Agent/chart_builders.py` (2026-09-23 패키지화 이후: Writer_Agent / Visualization_Agent) | `_safe_category_label` 785 |
 | `Financial_Agent/handoff_builder.py` | `build_single_report_canonical` 124, `build_2y_handoff` 370 |
 | `Financial_Agent/report_resolver.py` | `resolve_reports` 222, `resolve_primary_report` 238 |
 | `Financial_Agent/main.py` | `_build_master` 225 |
@@ -137,7 +137,7 @@ cd /home/tkim298/agent2/Financial_Agent && .venv/bin/python -m pytest -q -rs
 | `real_report_evaluation/discovery.py`, `runner.py` 의 `main`, `run_real_report_evaluation.py` | `_compute_bert_scores` 만 사용 | 엔트리 | `runner.py` 는 해시 동결 대상이라 **손대지 않음**. `discovery.py`·`run_real_report_evaluation.py` 는 삭제 후보 |
 | `run_config/prepare_cited_judge_pilot.py` | 산출물 미존재 | 없음 | 파일럿이 최종 Judge 설계에 흡수됨. **삭제 후보** |
 | `run_config/recover_amore_writer_r03.py` | 75개 중 1개의 최종 산출에 관여 | 없음 | 실행 기록이므로 **유지** |
-| `Writer Agent/html_report_validator.py` | 미사용. `writer_agent.py:346` 은 오히려 검증 파일을 삭제 | scripts 2, tests 7 | 테스트 전용 검증기. **유지**, 위치만 재고 |
+| `Writer Agent/html_report_validator.py` (2026-09-23 패키지화 이후: Writer_Agent / Visualization_Agent) | 미사용. `writer_agent.py:346` 은 오히려 검증 파일을 삭제 | scripts 2, tests 7 | 테스트 전용 검증기. **유지**, 위치만 재고 |
 | `scripts/*.py` 6개 | 미관여 | docs 근거 생성 | 문서 재현용. **유지** |
 | 테스트·스크립트만 참조하는 함수 30건 (예: `langgraph_flow.build_financial_trends`, `company_resolver.resolve_naver_market`, `end_to_end_loop.AgentTeamOrchestrator`) | 미실행 | tests | 테스트를 같이 지우지 않는 한 **유지** |
 | `contracts_v2.validate_strategy_decision_v2`, `PacketOverflowError` 등 `__all__` 에만 있는 4건 | 호출 0 | `__all__` | v2 블록 제거와 함께 정리 (이름 변경 이후: `contracts_v2` → `packet`) |
@@ -156,7 +156,7 @@ cd /home/tkim298/agent2/Financial_Agent && .venv/bin/python -m pytest -q -rs
 ## 3. 통일 방향
 
 - **Strategy**: v5 단일 경로. 모듈 3개(`contracts_v2`·`v4`·`v5`)는 이름을 유지한 채 각각 "패킷·카드", "컨텍스트 골격", "투영·검증" 역할만 남긴다. 파일을 합치거나 이름을 바꾸는 것은 sitecustomize·테스트·파일명 제약 때문에 이번 범위에서 뺀다. (이름 변경 이후: `contracts_v2` → `packet`)
-- **Writer**: v5 결정 입력 단일 경로. 패킷 버전 상수(`writer_editorial_packet_v3`)와 파일명은 유지.
+- **Writer**: v5 결정 입력 단일 경로. 패킷 버전 상수(`writer_editorial_packet_v3`)와 파일명은 유지. → 2026-09-23 결정 변경: 2층도 버전 없는 이름으로 통일(깨끗한 단절)
 - **접미사 `_v2`·`_v4`·`_v5` 제거**: 하지 않는다. 파일명·캐시 키·패치 대상·테스트 import 에 묶여 있어 이름을 바꾸면 산출물이나 테스트가 바뀐다. 논문 제출 뒤 별도 작업으로 미룬다.
 - **중복 유틸**(`_load_json` 7곳, `_dict` 7곳, `_load_env_file` 4곳 등 66개 이름): 동작이 파일마다 미묘하게 다를 수 있어 이번 범위에서 뺀다. 필요하면 별도 단계.
 
@@ -196,7 +196,7 @@ cd /home/tkim298/agent2/Financial_Agent && .venv/bin/python -m pytest -q -rs
 
 - `agent.py` 의 `from .contracts_v4 import build_strategy_context_package_v4` 는 이제 쓰이지 않지만 import 순서 앵커로 주석과 함께 유지. 검토 결과 sitecustomize 는 모듈 실행 직후 패치하므로 순서와 무관하게 패치본이 바인딩되지만, 제약을 임의로 풀지 않았다. → 2026-09-23 2라운드에서 제거, one-team 바인딩 동일 확인. (이름 변경 이후: `build_strategy_context_package_v4` → `build_base_strategy_context`)
 - `financial_analysis_agent.py`·`reporting.py` 의 `from openai import OpenAI` 는 `try/except ImportError` 로 의존성 검사 역할이라 유지.
-- `writer_agent.py` 의 입력 탐색 폴백(`strategy_decision_output_v5.json` → `_v4` → `_v2`)과 파일명 분기는 기존 산출 디렉터리 호환에 관여하므로 유지.
+- `writer_agent.py` 의 입력 탐색 폴백(`strategy_decision_output_v5.json` → `_v4` → `_v2`)과 파일명 분기는 기존 산출 디렉터리 호환에 관여하므로 유지. → 2026-09-23 결정 변경: 2층도 버전 없는 이름으로 통일(깨끗한 단절)
 - `writer_handoff.py` 의 `_selected_date`, `_contrary_evidence`, `_compact_evidence_refs`, `_remove_path_metadata` 는 정리 전부터 호출자 0 이던 v1 유물. → 2026-09-23 2라운드에서 제거.
 - `html_report_writer.py` 에서 `_is_label_free_writer_packet` 이 거짓인 분기와 `single_call_llm_with_compact_handoff` 분기. → 2026-09-23 2라운드에서 제거. Writer 입력은 `strategy_contract_version` 이 현행 결정 계약이 아니면 명시적 오류.
 - `tests/test_one_team.py` 러너 테스트 3개의 스킵 조건과 `YFinance_Agent/reporting.py:31` 의 `from valuation import` 잠재 결함은 동작 변경 범위라 손대지 않음.

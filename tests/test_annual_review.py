@@ -24,7 +24,7 @@ from orchestration.paths import resolve_run_paths
 from orchestration.end_to_end_loop import AgentTeamOrchestrator, materialize_reused_dart_snapshot, materialize_reused_domain_snapshot, build_parser
 from shared.subdata import financial_subdata
 from shared.time_windows import monthly_windows
-from writer_handoff import _reader_observation
+from Agent_Team.Writer_Agent.writer_handoff import _reader_observation
 
 
 def write_json(path, payload):

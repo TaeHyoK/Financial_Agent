@@ -9,11 +9,11 @@ from Agent_Team.Strategy_Agent.decision import (
     build_strategy_context_package, strategy_decision_response_format,
     align_strategy_decision_evidence_plan, validate_strategy_decision,
 )
-from writer_handoff import build_writer_editorial_packet
-from html_report_writer import _build_context, _editorial_system_prompt, normalize_report_payload
+from Agent_Team.Writer_Agent.writer_handoff import build_writer_editorial_packet
+from Agent_Team.Writer_Agent.html_report_writer import _build_context, _editorial_system_prompt, normalize_report_payload
 from test_optional_limits import writer_fixture
-from formatted_html_renderer import build_complete_html
-from html_report_validator import _validate_compact_text_sections
+from Agent_Team.Writer_Agent.formatted_html_renderer import build_complete_html
+from Agent_Team.Writer_Agent.html_report_validator import _validate_compact_text_sections
 
 
 class NewsUsageHandoffTests(unittest.TestCase):

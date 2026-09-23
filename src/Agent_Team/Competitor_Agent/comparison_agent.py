@@ -24,6 +24,8 @@ from shared.llm_clients import (
     execute_with_telemetry,
     is_transient_transport_error,
 )
+from shared.coerce import as_dict as _dict
+from shared.schema import strict_object as _strict_object
 
 from . import AGENT_DIR
 
@@ -551,21 +553,8 @@ def _load_env_file(path: Path) -> None:
             os.environ.setdefault(key, value)
 
 
-def _strict_object(properties: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "type": "object",
-        "properties": properties,
-        "required": list(properties),
-        "additionalProperties": False,
-    }
-
-
 def _nonempty_string_schema() -> dict[str, Any]:
     return {"type": "string", "minLength": 1}
-
-
-def _dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
 
 
 def _dict_list(value: Any) -> list[dict[str, Any]]:

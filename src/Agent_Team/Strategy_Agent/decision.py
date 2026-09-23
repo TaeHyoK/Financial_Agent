@@ -10,12 +10,14 @@ from shared.evidence_cards import (
     assert_no_opaque_ids,
 )
 
-from .packet import _dedupe_strings, _dict, _list, _nonempty_string_schema, _strict_object
+from shared.schema import strict_object as _strict_object
+
+from .packet import _dedupe_strings, _dict, _list, _nonempty_string_schema
 from .context import build_base_strategy_context
 
 
-CONTEXT_VERSION = "strategy_context_package_v5"
-DECISION_VERSION = "strategy_decision_output_v5"
+CONTEXT_VERSION = "strategy_context_package"
+DECISION_VERSION = "strategy_decision_output"
 STRATEGY_CACHE_VERSION = "19"
 SCHEMA_REVISION = "12m_v3"
 # Counts are editorial guidance, not limits on preserving valid citations.
@@ -127,7 +129,7 @@ def validate_strategy_context_package(context: dict[str, Any]) -> None:
         unknown = sorted(set(_dedupe_strings(card_keys)) - set(cards))
         if unknown:
             raise ValueError(f"Unknown coverage card(s) for {dimension}: {unknown}")
-    assert_no_opaque_ids(context, location="strategy_context_package_v5")
+    assert_no_opaque_ids(context, location=CONTEXT_VERSION)
 
 
 def strategy_decision_response_format(
@@ -314,7 +316,7 @@ def strategy_decision_response_format(
     return {
         "type": "json_schema",
         "json_schema": {
-            "name": "strategy_decision_v5_agent_led",
+            "name": "strategy_decision_agent_led",
             "strict": True,
             "schema": schema,
         },
@@ -433,11 +435,11 @@ def validate_strategy_decision(
     assert_no_internal_references_in_reader_text(
         _reader_text(output),
         card_keys=cards,
-        location="strategy_decision_output_v5.reader_text",
+        location=f"{DECISION_VERSION}.reader_text",
     )
-    assert_no_opaque_ids(output, location="strategy_decision_output_v5")
+    assert_no_opaque_ids(output, location=DECISION_VERSION)
     return {
-        "evaluation": "strategy_decision_v5_integrity",
+        "evaluation": "strategy_decision_integrity",
         "status": "pass",
         "decision_version": DECISION_VERSION,
         "available_card_count": len(cards),

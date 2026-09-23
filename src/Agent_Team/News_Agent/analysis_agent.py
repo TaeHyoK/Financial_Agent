@@ -6,7 +6,6 @@ from shared.subdata_guidance import context_guidance, context_ref_schema, valida
 import argparse
 import copy
 import json
-import math
 import os
 import re
 import time
@@ -23,6 +22,7 @@ from shared.evidence_contracts import (
     validate_secondary_context_assessments,
 )
 from shared.domain_llm import domain_request, call_domain_response
+from shared.env import load_env_file as _load_env_file
 from shared.news_selection import (MONTHLY_NEWS_POLICY, MONTHLY_NEWS_LABEL, ANNUAL_NEWS_LIMIT,
     SUMMARY_CITED_NEWS_POLICY, SUMMARY_CITED_NEWS_LABEL, validate_monthly_news)
 from tqdm.auto import tqdm
@@ -1137,10 +1137,6 @@ def _build_evidence_map(
     return evidence_map
 
 
-def _finite_number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
-
-
 def _resolve_analysis_periods(
     paths: AnalysisPaths,
     as_of_date: date,
@@ -1235,20 +1231,6 @@ def _load_json_if_exists(path: Path) -> Any:
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _load_env_file(path: Path) -> None:
-    if not path.exists():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key, value = stripped.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
-            os.environ[key] = value
 
 
 if __name__ == "__main__":

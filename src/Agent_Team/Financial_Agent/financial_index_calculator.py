@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Literal
 
+from shared.jsonio import dump_json as _dump_json
+
 try:
     from . import AGENT_DIR, DEFAULT_OUTPUT_ROOT
 except ImportError:  # pragma: no cover - supports direct script execution
@@ -1037,12 +1039,6 @@ def _load_json(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"{path} must contain a JSON object")
     return payload
-
-
-def _dump_json(path: Path, payload: dict[str, Any]) -> None:
-    with path.open("w", encoding="utf-8") as file:
-        json.dump(payload, file, ensure_ascii=False, indent=2)
-        file.write("\n")
 
 
 def main() -> None:

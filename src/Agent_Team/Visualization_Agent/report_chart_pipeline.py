@@ -11,7 +11,7 @@ import pandas as pd
 
 from orchestration.config import agent_output_dir
 
-from chart_builders import (
+from .chart_builders import (
     build_fundamental_margin_trend_chart,
     build_indexed_stock_vs_kospi_chart,
     build_liquidity_leverage_peer_comparison_chart,
@@ -20,7 +20,7 @@ from chart_builders import (
     build_revenue_profit_sga_trend_chart,
     build_stock_price_ma_volume_chart,
 )
-from data_loader import (
+from .data_loader import (
     extract_financial_health_snapshot,
     extract_income_trend,
     extract_margin_trend,
@@ -30,7 +30,7 @@ from data_loader import (
     load_json_file,
     load_market_dataset,
 )
-from manifest_builder import build_chart_manifest
+from .manifest_builder import build_chart_manifest
 
 
 CATALOG_VERSION = "writer_chart_catalog_v3"

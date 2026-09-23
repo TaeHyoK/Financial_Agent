@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal
 
+from shared.coerce import iso_date as _iso_date
+
 try:
     from .models import Filing, SectionJson, TargetReport
     from .normalizer import STATEMENT_NAMES, isolate_previous_fiscal_year
@@ -615,13 +617,6 @@ def _collection_context(
         ),
         "reports_used": reports,
     }
-
-
-def _iso_date(value: str) -> str:
-    digits = re.sub(r"\D", "", value or "")
-    if len(digits) == 8:
-        return f"{digits[:4]}-{digits[4:6]}-{digits[6:]}"
-    return str(value or "")
 
 
 def _build_pair_statement(

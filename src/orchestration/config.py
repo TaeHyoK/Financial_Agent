@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -142,6 +143,13 @@ def split_run_key(run_key: str) -> tuple[str, str]:
     if not separator or not label:
         raise ValueError(f"run_key must end with _YYYYMMDD: {run_key}")
     return label, normalize_date(date_suffix)
+
+
+def company_from_run_key(run_key: str) -> str:
+    """Infer company name from a run key."""
+
+    match = re.match(r"^(?P<name>.+)_(?P<date>\d{8})$", run_key)
+    return match.group("name") if match else run_key
 
 
 def company_output_dir(output_root: str | Path, company_name: str) -> Path:

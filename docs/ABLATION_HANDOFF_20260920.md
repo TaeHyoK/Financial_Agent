@@ -164,3 +164,5 @@ python run_config/final_report_llm_judge.py aggregate
 | e084754 | Strategy v1~v4 실행 경로·결정 계약·프롬프트 제거, v5 단일화 | 5,681줄 |
 | 0599ef3 | Writer 의 v1 handoff·v2 폴백·v4 분기 제거 | 822줄 |
 | e119baf | 구 ablation·평가 스택과 미사용 엔트리포인트 삭제 | 3,757줄 |
+
+2026-09-23 추가: 산출물 파일명과 계약 문자열에서 Strategy·Writer 의 버전 접미사를 없앴다. `strategy_decision_output_v5.json` 은 `strategy_decision_output.json`, `writer_editorial_packet_v3.json` 은 `writer_editorial_packet.json` 처럼 이름이 바뀌었고 `decision_version`·`packet_version` 같은 계약 값도 같은 규칙으로 바뀌었다. 새 코드는 새 이름만 읽고 쓰므로 생성 시점에 만든 `ablation_results/` 아래 산출 디렉터리는 이 트리의 코드로 다시 읽을 수 없다. 계약 값이 캐시 지문에 들어가므로 Strategy·Writer 의 캐시 지문도 생성 시점과 달라졌고, 같은 입력이라도 캐시가 다시 맞지 않는다. 생성 시점 산출물을 그대로 다루려면 정리 이전 커밋을 본다.

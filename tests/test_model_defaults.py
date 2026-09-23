@@ -20,7 +20,7 @@ class ModelDefaultsTests(unittest.TestCase):
             ("src/Agent_Team/News_Agent/analysis_agent.py", "DEFAULT_MODEL"),
             ("src/Agent_Team/Competitor_Agent/comparison_agent.py", "DEFAULT_MODEL"),
             ("src/Agent_Team/Strategy_Agent/agent.py", "DEFAULT_OPENAI_MODEL"),
-            ("src/Agent_Team/Writer Agent/html_report_writer.py", "DEFAULT_LLM_MODEL"),
+            ("src/Agent_Team/Writer_Agent/html_report_writer.py", "DEFAULT_LLM_MODEL"),
         ):
             tree = ast.parse((ROOT / path).read_text())
             values = [ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)

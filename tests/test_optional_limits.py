@@ -9,11 +9,11 @@ from Agent_Team.Strategy_Agent.decision import (
     validate_strategy_decision, strategy_decision_response_format,
     align_strategy_decision_evidence_plan,
 )
-from writer_handoff import build_writer_editorial_packet, _reader_observation, _select_limitations, _writer_card
-from html_report_writer import normalize_report_payload, _writer_report_schema
-from html_report_spec import REPORT_SECTIONS
-from formatted_html_renderer import build_complete_html
-from html_report_validator import validate_html_report
+from Agent_Team.Writer_Agent.writer_handoff import build_writer_editorial_packet, _reader_observation, _select_limitations, _writer_card
+from Agent_Team.Writer_Agent.html_report_writer import normalize_report_payload, _writer_report_schema
+from Agent_Team.Writer_Agent.html_report_spec import REPORT_SECTIONS
+from Agent_Team.Writer_Agent.formatted_html_renderer import build_complete_html
+from Agent_Team.Writer_Agent.html_report_validator import validate_html_report
 
 
 def writer_fixture(limit="", refs=False):

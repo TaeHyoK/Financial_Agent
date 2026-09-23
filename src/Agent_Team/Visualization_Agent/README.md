@@ -41,7 +41,7 @@ Output_total/Visualization/{run_key}/figures/{chart_key}.pdf
 먼저 차트 목록을 작성한다.
 
 ```bash
-python "src/Agent_Team/Visualization Agent/report_chart_cli.py" catalog \
+PYTHONPATH=src python -m Agent_Team.Visualization_Agent.report_chart_cli catalog \
   --output-root Output_total \
   --run-key 현대모비스_20251031 \
   --company-name 현대모비스 \
@@ -52,7 +52,7 @@ python "src/Agent_Team/Visualization Agent/report_chart_cli.py" catalog \
 Writer의 `writer_report_payload.json`이 만들어진 뒤 선택된 차트를 생성한다.
 
 ```bash
-python "src/Agent_Team/Visualization Agent/report_chart_cli.py" generate \
+PYTHONPATH=src python -m Agent_Team.Visualization_Agent.report_chart_cli generate \
   --output-root Output_total \
   --run-key 현대모비스_20251031 \
   --company-name 현대모비스 \

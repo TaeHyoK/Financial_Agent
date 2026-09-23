@@ -6,7 +6,8 @@ from html import unescape
 import re
 from typing import Any
 
-from html_report_spec import (
+from shared.coerce import as_dict as _dict, as_list as _list, as_text_list as _text_list
+from .html_report_spec import (
     INVESTMENT_THESIS_ITEM_KEY,
     INVESTMENT_THESIS_SECTION_KEY,
     REPORT_DISCLAIMER,
@@ -16,7 +17,7 @@ from html_report_spec import (
     investment_horizon_heading,
     has_data_limit_content,
 )
-from html_report_writer import (
+from .html_report_writer import (
     _uses_narrative_evidence,
     _evidence_display_columns,
     _evidence_interpretation_column,
@@ -24,8 +25,7 @@ from html_report_writer import (
     _qualify_partial_product_scope,
     _strategy_role_label,
 )
-from writer_handoff import (
-    LEGACY_EDITORIAL_PACKET_VERSION,
+from .writer_handoff import (
     EDITORIAL_PACKET_VERSION,
     STRATEGY_DECISION_VERSION,
 )
@@ -627,7 +627,7 @@ def _validate_required_limitation_coverage(
         )
     )
     errors = []
-    if (writer_handoff.get("strategy_contract_version") == "strategy_decision_output_v5"
+    if (writer_handoff.get("strategy_contract_version") == STRATEGY_DECISION_VERSION
             and str(_dict(writer_handoff.get("recommendation_bridge")).get("residual_uncertainty") or "").strip()
             and not has_data_limit_content(report_payload)):
         errors.append("Strategy supplied a decision limitation but Writer omitted its explanation")
@@ -864,23 +864,8 @@ def _large_integer_tokens(value: Any) -> list[tuple[str, int]]:
     return tokens
 
 
-def _dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
-
-
-def _text_list(value: Any) -> list[str]:
-    return [str(item).strip() for item in _list(value) if str(item).strip()]
-
-
 def _is_editorial_packet(value: Any) -> bool:
-    return isinstance(value, dict) and value.get("packet_version") in {
-        LEGACY_EDITORIAL_PACKET_VERSION,
-        EDITORIAL_PACKET_VERSION,
-    }
+    return isinstance(value, dict) and value.get("packet_version") == EDITORIAL_PACKET_VERSION
 
 
 def _pass_fail(condition: bool) -> str:

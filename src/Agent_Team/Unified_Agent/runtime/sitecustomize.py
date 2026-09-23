@@ -15,7 +15,7 @@ from types import ModuleType
 from typing import Any
 
 
-_WRITER_TARGET = "html_report_writer"
+_WRITER_TARGET = "Agent_Team.Writer_Agent.html_report_writer"
 
 
 def _patch_writer(module: ModuleType) -> None:
@@ -72,7 +72,7 @@ class _PatchFinder(importlib.abc.MetaPathFinder):
             "Agent_Team.Strategy_Agent.agent",
             "Agent_Team.Strategy_Agent.packet",
             "Agent_Team.Strategy_Agent.context",
-            "data_loader",
+            "Agent_Team.Visualization_Agent.data_loader",
         }
         single_report = os.getenv("ONE_TEAM_SINGLE_REPORT") == "1"
         if fullname not in {_WRITER_TARGET, "shared.domain_llm"} and not (single_report and fullname in integrated_targets):

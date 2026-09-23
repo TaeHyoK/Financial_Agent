@@ -15,13 +15,13 @@ from Agent_Team.Strategy_Agent.decision import (
 )
 from Agent_Team.Strategy_Agent.agent import preserve_and_validate_strategy
 from Agent_Team.Strategy_Agent.packet import _news_cards, _reader_limitations
-from writer_handoff import build_writer_editorial_packet
-from html_report_writer import (
+from Agent_Team.Writer_Agent.writer_handoff import build_writer_editorial_packet
+from Agent_Team.Writer_Agent.html_report_writer import (
     _normalize_text, _ensure_claim_units_visible, writer_report_response_format,
     _normalize_requested_chart_keys,
 )
-from html_report_validator import _validate_chart_selection_grounding, _validate_compact_text_sections
-from formatted_html_renderer import build_complete_html
+from Agent_Team.Writer_Agent.html_report_validator import _validate_chart_selection_grounding, _validate_compact_text_sections
+from Agent_Team.Writer_Agent.formatted_html_renderer import build_complete_html
 from jsonschema import Draft202012Validator
 from orchestration.full_report_pipeline import validate_full_pipeline_outputs, FullPipelineError
 
@@ -103,7 +103,7 @@ class EvidencePreservationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     preserve_and_validate_strategy(decision, context=context, output_dir=root,
                         fingerprint="test_fingerprint", decision_horizon_profile="annual", required_horizon="12개월")
-            failure = json.loads((root / "strategy_failure_report_v5.json").read_text())
+            failure = json.loads((root / "strategy_failure_report.json").read_text())
             raw = json.loads(Path(failure["raw_response_path"]).read_text())
             self.assertEqual(raw["decision_output"], decision)
             self.assertEqual(failure["stage"], "decision_alignment_or_validation")
@@ -155,12 +155,12 @@ class EvidencePreservationTests(unittest.TestCase):
             paths = SimpleNamespace(output_root=root, peer_output_root=root,
                 strategy_dir=root, visualization_dir=root, writer_dir=root,
                 published_report=root / "published.html")
-            for name in ("strategy_decision_output_v5.json", "chart_catalog.json", "report.html", "published.html", "chart.png"):
+            for name in ("strategy_decision_output.json", "chart_catalog.json", "report.html", "published.html", "chart.png"):
                 (root / name).write_text("test")
             keys = ["a", "b", "c"]
             data = {
                 "run_manifest.json": {"status": "success"},
-                "strategy_decision_output_v5.json": {"decision_version": "strategy_decision_output_v5"},
+                "strategy_decision_output.json": {"decision_version": "strategy_decision_output"},
                 "chart_catalog.json": {"available_charts": [{"chart_key": key} for key in keys]},
                 "chart_manifest.json": {"charts": [{"chart_key": key, "asset_abs_path_png": str(root / "chart.png")} for key in keys]},
                 "writer_report_payload.json": {"requested_chart_keys": keys, "chart_selection_details": [{

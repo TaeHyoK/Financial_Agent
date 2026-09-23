@@ -24,7 +24,11 @@ from html_report_writer import (
     _qualify_partial_product_scope,
     _strategy_role_label,
 )
-from writer_handoff import LEGACY_EDITORIAL_PACKET_VERSION, EDITORIAL_PACKET_VERSION
+from writer_handoff import (
+    LEGACY_EDITORIAL_PACKET_VERSION,
+    EDITORIAL_PACKET_VERSION,
+    STRATEGY_DECISION_VERSION,
+)
 
 
 REQUIRED_TABLE_SECTION_IDS = {
@@ -43,6 +47,8 @@ def validate_html_report(
 
     if not _is_editorial_packet(writer_handoff):
         raise ValueError("writer input must be a writer editorial packet")
+    if writer_handoff.get("strategy_contract_version") != STRATEGY_DECISION_VERSION:
+        raise ValueError(f"writer input requires a {STRATEGY_DECISION_VERSION} Strategy decision")
     notes: list[str] = []
     hard_checks = {
         "complete_html_document": _pass_fail(
@@ -371,7 +377,6 @@ def _validate_strategy_meaning_preservation(
 ) -> str:
     errors: list[str] = []
     cards = _dict(writer_handoff.get("cards"))
-    label_free = _is_label_free_writer_packet(writer_handoff)
     required = _dict(writer_handoff.get("required_card_keys_by_component"))
     sections = _dict(report_payload.get("sections"))
     evidence_item = _dict(_dict(sections.get("key_evidence_table")).get("evidence_table"))
@@ -397,11 +402,8 @@ def _validate_strategy_meaning_preservation(
         if _uses_narrative_evidence(writer_handoff):
             if "_strategy_role" in row or "판단상 역할" in row:
                 errors.append(f"Unexpected categorical role in narrative evidence: {card_key}")
-        elif label_free:
-            if row.get("_strategy_role") != card.get("strategy_role"):
-                errors.append(f"Strategy role metadata changed: {card_key}")
-        elif row.get("_investment_effect") != card.get("investment_effect"):
-            errors.append(f"Investment effect metadata changed: {card_key}")
+        elif row.get("_strategy_role") != card.get("strategy_role"):
+            errors.append(f"Strategy role metadata changed: {card_key}")
         if not str(row.get("확인된 수치·사실") or "").strip():
             errors.append(f"Key evidence observation is empty: {card_key}")
 
@@ -449,7 +451,6 @@ def _validate_strategy_presentation_preservation(
 
     errors: list[str] = []
     cards = _dict(writer_handoff.get("cards"))
-    label_free = _is_label_free_writer_packet(writer_handoff)
     required = _dict(writer_handoff.get("required_card_keys_by_component"))
     sections = _dict(report_payload.get("sections"))
     evidence_item = _dict(_dict(sections.get("key_evidence_table")).get("evidence_table"))
@@ -479,16 +480,10 @@ def _validate_strategy_presentation_preservation(
         ).strip()
         if str(row.get(_evidence_interpretation_column(writer_handoff)) or "").strip() != expected_visible_interpretation:
             errors.append(f"Visible Strategy interpretation was paraphrased: {card_key}")
-        if _uses_narrative_evidence(writer_handoff):
-            pass
-        elif label_free:
+        if not _uses_narrative_evidence(writer_handoff):
             expected_role_label = _strategy_role_label(card.get("strategy_role"))
             if str(row.get("판단상 역할") or "").strip() != expected_role_label:
                 errors.append(f"Visible Strategy role label changed: {card_key}")
-        else:
-            expected_effect_label = _effect_label(str(card.get("investment_effect") or ""))
-            if str(row.get("영향") or "").strip() != expected_effect_label:
-                errors.append(f"Visible investment effect label changed: {card_key}")
 
     risk_item = _dict(_dict(sections.get("risk_monitoring_matrix")).get("risk_monitoring_table"))
     risk_rows = [row for row in _list(risk_item.get("rows")) if isinstance(row, dict)]
@@ -496,10 +491,9 @@ def _validate_strategy_presentation_preservation(
         errors.append("risk_monitoring_matrix display columns changed")
     risk_factors = [risk for risk in _list(writer_handoff.get("risk_factors")) if isinstance(risk, dict)]
     for index, (row, risk) in enumerate(zip(risk_rows, risk_factors)):
-        if label_free:
-            expected_title = str(risk.get("display_title") or "").strip()
-            if str(row.get("리스크 요인") or "").strip() != expected_title:
-                errors.append(f"risk row {index} Strategy risk title changed")
+        expected_title = str(risk.get("display_title") or "").strip()
+        if str(row.get("리스크 요인") or "").strip() != expected_title:
+            errors.append(f"risk row {index} Strategy risk title changed")
         expected_summary = str(risk.get("risk_summary") or "").strip()
         reader_summary = str(risk.get("reader_summary") or expected_summary).strip()
         qualifier = str(risk.get("scope_qualifier") or "").strip()
@@ -887,26 +881,6 @@ def _is_editorial_packet(value: Any) -> bool:
         LEGACY_EDITORIAL_PACKET_VERSION,
         EDITORIAL_PACKET_VERSION,
     }
-
-
-def _is_label_free_writer_packet(value: Any) -> bool:
-    return (
-        _is_editorial_packet(value)
-        and value.get("strategy_contract_version") in {
-            "strategy_decision_output_v4",
-            "strategy_decision_output_v5",
-        }
-    )
-
-
-def _effect_label(value: Any) -> str:
-    return {
-        "positive": "긍정 요인",
-        "negative": "부담 요인",
-        "mixed": "혼합",
-        "neutral": "중립",
-        "reference": "참고",
-    }.get(str(value or ""), "참고")
 
 
 def _pass_fail(condition: bool) -> str:

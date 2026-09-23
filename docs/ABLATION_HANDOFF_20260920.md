@@ -12,7 +12,7 @@
 - 브랜치에는 기존 Financial Agent 전체 코드와 함께 다음을 추가한다.
   - `run_config/`: Ablation 생성·반복·평가·LLM Judge 실행 코드 및 기업 설정
   - `ablation_suite/`, `ablation_evaluation/`, `real_report_evaluation/`: 기존 Ablation 생성·평가 라이브러리
-  - `ablation_results/`: 소형 상태 파일과 BERTScore·ROUGE-L 결과
+  - `ablation_results/`: 소형 상태 파일과 BERTScore·ROUGE-L 결과 (2026-09-23 이후: 최종 75개 지표 `repeated_standard_5companies/` 만 추적, 상태 파일·r01 단독 결과·Judge 상태는 제외)
   - `docs/ablation_handoff/`: 이전 실험·Judge 설계 기록
   - `scripts/prepare_ablation_handoff.py`: 보고서 이동용 ZIP 재생성 스크립트
 
@@ -37,7 +37,7 @@
 
 - 5개 기업 × 3회 × 5조건, 총 75개 본문에 대한 BERTScore·ROUGE-L 평가 완료
 - 결과 위치: `ablation_results/repeated_standard_5companies/`
-- r01 One-team gpt-5.4 검증 결과: `ablation_results/with_one_team_gpt54/`
+- r01 One-team gpt-5.4 검증 결과: `ablation_results/with_one_team_gpt54/` (2026-09-23 이후 Git 에서 제외, 이동용 ZIP 에 보존)
 - 자동 지표 결과와 LLM Judge 결과는 서로 다른 품질 개념이므로 하나의 점수로 합치지 않는다.
 
 ## 4. LLM-as-a-Judge 현재 상태
@@ -166,3 +166,5 @@ python run_config/final_report_llm_judge.py aggregate
 | e119baf | 구 ablation·평가 스택과 미사용 엔트리포인트 삭제 | 3,757줄 |
 
 2026-09-23 추가: 산출물 파일명과 계약 문자열에서 Strategy·Writer 의 버전 접미사를 없앴다. `strategy_decision_output_v5.json` 은 `strategy_decision_output.json`, `writer_editorial_packet_v3.json` 은 `writer_editorial_packet.json` 처럼 이름이 바뀌었고 `decision_version`·`packet_version` 같은 계약 값도 같은 규칙으로 바뀌었다. 새 코드는 새 이름만 읽고 쓰므로 생성 시점에 만든 `ablation_results/` 아래 산출 디렉터리는 이 트리의 코드로 다시 읽을 수 없다. 계약 값이 캐시 지문에 들어가므로 Strategy·Writer 의 캐시 지문도 생성 시점과 달라졌고, 같은 입력이라도 캐시가 다시 맞지 않는다. 생성 시점 산출물을 그대로 다루려면 정리 이전 커밋을 본다.
+
+2026-09-23 추가: 최종 보고서 HTML 75개를 `final_reports/` 로 Git 에 추적한다. 그 외 중간 산출물(생성 상태 파일, r01 단독 지표, Judge 요청·응답·상태)은 Git 에서 빼고 이동용 ZIP 과 Release 로만 배포한다.

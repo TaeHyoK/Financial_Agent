@@ -7,17 +7,17 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "src/Agent_Team/Writer Agent")]
+sys.path.insert(0, str(ROOT / "src"))
 from Agent_Team.Strategy_Agent.agent import run_decision_agent, decision_prompt
 from Agent_Team.Strategy_Agent.packet import build_compact_strategy_packet
 from Agent_Team.Strategy_Agent.decision import (
     build_strategy_context_package, align_strategy_decision_evidence_plan,
     validate_strategy_decision,
 )
-from writer_handoff import build_writer_editorial_packet
-from html_report_writer import request_html_report_payload, validate_raw_writer_payload, normalize_report_payload, _build_context
-from html_report_validator import validate_html_report
-from formatted_html_renderer import build_complete_html
+from Agent_Team.Writer_Agent.writer_handoff import build_writer_editorial_packet
+from Agent_Team.Writer_Agent.html_report_writer import request_html_report_payload, validate_raw_writer_payload, normalize_report_payload, _build_context
+from Agent_Team.Writer_Agent.html_report_validator import validate_html_report
+from Agent_Team.Writer_Agent.formatted_html_renderer import build_complete_html
 from orchestration.usage_summary import summarize_execution_usage
 
 

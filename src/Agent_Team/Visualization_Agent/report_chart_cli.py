@@ -6,7 +6,7 @@ import argparse
 import logging
 from pathlib import Path
 
-from report_chart_pipeline import (
+from .report_chart_pipeline import (
     ReportChartConfig,
     build_report_chart_catalog,
     generate_requested_report_charts,

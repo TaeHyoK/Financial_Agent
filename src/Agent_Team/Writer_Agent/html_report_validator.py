@@ -6,7 +6,7 @@ from html import unescape
 import re
 from typing import Any
 
-from html_report_spec import (
+from .html_report_spec import (
     INVESTMENT_THESIS_ITEM_KEY,
     INVESTMENT_THESIS_SECTION_KEY,
     REPORT_DISCLAIMER,
@@ -16,7 +16,7 @@ from html_report_spec import (
     investment_horizon_heading,
     has_data_limit_content,
 )
-from html_report_writer import (
+from .html_report_writer import (
     _uses_narrative_evidence,
     _evidence_display_columns,
     _evidence_interpretation_column,
@@ -24,7 +24,7 @@ from html_report_writer import (
     _qualify_partial_product_scope,
     _strategy_role_label,
 )
-from writer_handoff import (
+from .writer_handoff import (
     LEGACY_EDITORIAL_PACKET_VERSION,
     EDITORIAL_PACKET_VERSION,
     STRATEGY_DECISION_VERSION,

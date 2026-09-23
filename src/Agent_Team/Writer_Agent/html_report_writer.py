@@ -9,14 +9,14 @@ import os
 import re
 from typing import Any
 
-from html_report_spec import (
+from .html_report_spec import (
     LABEL_FREE_KEY_EVIDENCE_DISPLAY_COLUMNS,
     REPORT_SECTIONS,
     RISK_DISPLAY_COLUMNS,
 )
 from shared.evidence_cards import PRODUCT_DISCLOSURE_SCOPE_LABEL
 from shared.llm_clients import compact_json, execute_with_telemetry, is_transient_transport_error
-from writer_handoff import (
+from .writer_handoff import (
     LEGACY_EDITORIAL_PACKET_VERSION,
     EDITORIAL_PACKET_VERSION,
     STRATEGY_DECISION_VERSION,

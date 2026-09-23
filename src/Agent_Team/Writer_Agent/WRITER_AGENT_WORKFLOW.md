@@ -109,7 +109,7 @@ Output_total/Writer/{run_key}/assets/*.png
 ## 실행
 
 ```bash
-PYTHONPATH=src python 'src/Agent_Team/Writer Agent/writer_agent.py' \
+PYTHONPATH=src python -m Agent_Team.Writer_Agent.writer_agent \
   --phase generate \
   --run-key SK바이오팜_20251031 \
   --strategy-packet Output_total/Strategy/SK바이오팜_20251031/strategy_compact_packet_v2.json \
@@ -123,15 +123,9 @@ PYTHONPATH=src python 'src/Agent_Team/Writer Agent/writer_agent.py' \
 선택 차트가 생성된 뒤 최종 HTML을 렌더링한다.
 
 ```bash
-PYTHONPATH=src python 'src/Agent_Team/Writer Agent/writer_agent.py' \
+PYTHONPATH=src python -m Agent_Team.Writer_Agent.writer_agent \
   --phase render \
   --run-key SK바이오팜_20251031 \
   --output-dir Output_total/Writer/SK바이오팜_20251031 \
   --chart-manifest Output_total/Visualization/SK바이오팜_20251031/chart_manifest.json
-```
-
-## 테스트
-
-```bash
-pytest -q 'src/Agent_Team/Writer Agent/tests'
 ```

@@ -10,18 +10,17 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 from unittest.mock import patch
 
 import run_repeated_reports as run
+# run_repeated_reports puts the source root on sys.path before these imports run.
+from Agent_Team.Writer_Agent import writer_agent
+from Agent_Team.Writer_Agent import html_report_writer as writer
 
 KEY = "r03/one_team/아모레퍼시픽"
 ROOT = run.BATCH / "replicate_03/one_team/아모레퍼시픽"
 WRITER = ROOT / "Writer/20251107"
 ARCHIVE = ROOT / "recovery/chart_basis_links"
-sys.path.insert(0, str(run.REPO / "src/Agent_Team/Writer Agent"))
-import writer_agent
-import html_report_writer as writer
 
 
 def correction():

@@ -61,7 +61,7 @@ cd /home/tkim298/agent2/Financial_Agent && .venv/bin/python -m pytest -q -rs
 | `src/Agent_Team/YFinance_Agent/report.py` | 어떤 코드도 import 안 함. README 에만 등장 |
 | `src/Agent_Team/Strategy_Agent/contracts_v3.py` (597줄) | `agent.py:33-38` 이 import 만 함. v3 실행 경로 제거와 함께 삭제 |
 | `ablation_suite/legacy_unified.py` (124줄) | import 하는 곳 0. 의존 방향이 legacy→unified 라 삭제해도 unified 무영향 |
-| `src/Agent_Team/Writer Agent/__init__.py`, `src/Agent_Team/Visualization Agent/__init__.py` | 폴더명에 공백이 있어 패키지 import 자체가 불가. `from .writer_agent import` 는 영원히 실행 안 됨 |
+| `src/Agent_Team/Writer Agent/__init__.py`, `src/Agent_Team/Visualization Agent/__init__.py` | 폴더명에 공백이 있어 패키지 import 자체가 불가. `from .writer_agent import` 는 영원히 실행 안 됨 (2026-09-23 패키지화 이후: Writer_Agent / Visualization_Agent) |
 
 함수·클래스 (외부 참조 0, 파일 내부 호출 0):
 
@@ -69,9 +69,9 @@ cd /home/tkim298/agent2/Financial_Agent && .venv/bin/python -m pytest -q -rs
 |---|---|
 | `Strategy_Agent/agent.py` | `normalize_strategy_decision_output` 2878, `dedupe_paths` 5249 |
 | `Strategy_Agent/contracts_v2.py` | `_preserve_news_counterevidence` 2449-2484 (이름 변경 이후: `contracts_v2` → `packet`) |
-| `Writer Agent/writer_handoff.py` | `build_writer_handoff` 1649-1745, `handoff_json_size` 1789-1792, `reformat_financial_reader_observations` 1169-1185 (v1 유물). `validate_writer_handoff` 1748 은 html_report_writer 레거시 가지가 부르므로 3단계에서 함께 제거 |
-| `Writer Agent/html_report_writer.py` | `build_html_report_payload` 73 |
-| `Visualization Agent/chart_builders.py` | `_safe_category_label` 785 |
+| `Writer Agent/writer_handoff.py` (2026-09-23 패키지화 이후: Writer_Agent / Visualization_Agent) | `build_writer_handoff` 1649-1745, `handoff_json_size` 1789-1792, `reformat_financial_reader_observations` 1169-1185 (v1 유물). `validate_writer_handoff` 1748 은 html_report_writer 레거시 가지가 부르므로 3단계에서 함께 제거 |
+| `Writer Agent/html_report_writer.py` (2026-09-23 패키지화 이후: Writer_Agent / Visualization_Agent) | `build_html_report_payload` 73 |
+| `Visualization Agent/chart_builders.py` (2026-09-23 패키지화 이후: Writer_Agent / Visualization_Agent) | `_safe_category_label` 785 |
 | `Financial_Agent/handoff_builder.py` | `build_single_report_canonical` 124, `build_2y_handoff` 370 |
 | `Financial_Agent/report_resolver.py` | `resolve_reports` 222, `resolve_primary_report` 238 |
 | `Financial_Agent/main.py` | `_build_master` 225 |
@@ -137,7 +137,7 @@ cd /home/tkim298/agent2/Financial_Agent && .venv/bin/python -m pytest -q -rs
 | `real_report_evaluation/discovery.py`, `runner.py` 의 `main`, `run_real_report_evaluation.py` | `_compute_bert_scores` 만 사용 | 엔트리 | `runner.py` 는 해시 동결 대상이라 **손대지 않음**. `discovery.py`·`run_real_report_evaluation.py` 는 삭제 후보 |
 | `run_config/prepare_cited_judge_pilot.py` | 산출물 미존재 | 없음 | 파일럿이 최종 Judge 설계에 흡수됨. **삭제 후보** |
 | `run_config/recover_amore_writer_r03.py` | 75개 중 1개의 최종 산출에 관여 | 없음 | 실행 기록이므로 **유지** |
-| `Writer Agent/html_report_validator.py` | 미사용. `writer_agent.py:346` 은 오히려 검증 파일을 삭제 | scripts 2, tests 7 | 테스트 전용 검증기. **유지**, 위치만 재고 |
+| `Writer Agent/html_report_validator.py` (2026-09-23 패키지화 이후: Writer_Agent / Visualization_Agent) | 미사용. `writer_agent.py:346` 은 오히려 검증 파일을 삭제 | scripts 2, tests 7 | 테스트 전용 검증기. **유지**, 위치만 재고 |
 | `scripts/*.py` 6개 | 미관여 | docs 근거 생성 | 문서 재현용. **유지** |
 | 테스트·스크립트만 참조하는 함수 30건 (예: `langgraph_flow.build_financial_trends`, `company_resolver.resolve_naver_market`, `end_to_end_loop.AgentTeamOrchestrator`) | 미실행 | tests | 테스트를 같이 지우지 않는 한 **유지** |
 | `contracts_v2.validate_strategy_decision_v2`, `PacketOverflowError` 등 `__all__` 에만 있는 4건 | 호출 0 | `__all__` | v2 블록 제거와 함께 정리 (이름 변경 이후: `contracts_v2` → `packet`) |

@@ -120,7 +120,7 @@ def assemble_writer_projection(context, analysis, decision):
 
 
 def writer_context_with_analysis(handoff, analysis, effective, decision):
-    from html_report_writer import _build_context
+    from Agent_Team.Writer_Agent.html_report_writer import _build_context
     context = _build_context(writer_handoff=handoff)
     context["preserved_analysis"] = copy.deepcopy(effective)
     context["analysis_provenance"] = {"version": "preserved_analysis_handoff_v1",
@@ -138,7 +138,6 @@ def writer_context_with_analysis(handoff, analysis, effective, decision):
 
 
 def run(args):
-    sys.path.insert(0, str(ROOT / "src/Agent_Team/Writer Agent"))
     prior = Path(args.prior_run).resolve()
     sources = [prior / "strategy_context.json", prior / "analysis_raw.json",
                Path(args.domain_run).resolve() / "normalized_domain_bundle.json"]
@@ -191,11 +190,11 @@ def run(args):
         status.update(status="decision_completed", recommendation=decision["strategy_brief"]["recommendation"],
             correction_count=len(decision["analysis_corrections"]), decision_elapsed_seconds=round(time.perf_counter()-start, 3))
         if args.with_writer:
-            from writer_handoff import build_writer_editorial_packet
-            from html_report_writer import (_call_openai_writer, writer_report_response_format,
-                                            validate_raw_writer_payload, normalize_report_payload)
-            from formatted_html_renderer import build_complete_html
-            from html_report_validator import validate_html_report
+            from Agent_Team.Writer_Agent.writer_handoff import build_writer_editorial_packet
+            from Agent_Team.Writer_Agent.html_report_writer import (_call_openai_writer, writer_report_response_format,
+                                                                    validate_raw_writer_payload, normalize_report_payload)
+            from Agent_Team.Writer_Agent.formatted_html_renderer import build_complete_html
+            from Agent_Team.Writer_Agent.html_report_validator import validate_html_report
             handoff, _ = build_writer_editorial_packet(strategy_packet=packet, strategy_decision=projection, strategy_provenance=provenance)
             writer_context = writer_context_with_analysis(handoff, analysis, effective, decision)
             save(output / "writer_handoff.json", handoff)

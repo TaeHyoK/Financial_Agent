@@ -180,5 +180,5 @@ def patch_module(module):
         patch_cards(module)
     elif name.endswith("Strategy_Agent.context"):
         patch_strategy_context(module)
-    elif name == "data_loader":
+    elif name.endswith("Visualization_Agent.data_loader"):
         patch_fact_loader(module, "load_json_file")

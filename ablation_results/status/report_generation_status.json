@@ -12,142 +12,142 @@
     {
       "company": "현대건설",
       "condition": "full",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/full/replicate_01/현대건설/report_현대건설.html"
+      "report": "${ABLATION_WORKSPACE}/reports/full/replicate_01/현대건설/report_현대건설.html"
     },
     {
       "company": "삼성전자",
       "condition": "full",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/full/replicate_01/삼성전자/report_삼성전자.html"
+      "report": "${ABLATION_WORKSPACE}/reports/full/replicate_01/삼성전자/report_삼성전자.html"
     },
     {
       "company": "SK바이오팜",
       "condition": "full",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/full/replicate_01/SK바이오팜/report_SK바이오팜.html"
+      "report": "${ABLATION_WORKSPACE}/reports/full/replicate_01/SK바이오팜/report_SK바이오팜.html"
     },
     {
       "company": "BGF리테일",
       "condition": "full",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/full/replicate_01/BGF리테일/report_BGF리테일.html"
+      "report": "${ABLATION_WORKSPACE}/reports/full/replicate_01/BGF리테일/report_BGF리테일.html"
     },
     {
       "company": "아모레퍼시픽",
       "condition": "full",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/full/replicate_01/아모레퍼시픽/report_아모레퍼시픽.html"
+      "report": "${ABLATION_WORKSPACE}/reports/full/replicate_01/아모레퍼시픽/report_아모레퍼시픽.html"
     },
     {
       "company": "코웨이",
       "condition": "full",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/full/replicate_01/코웨이/report_코웨이.html"
+      "report": "${ABLATION_WORKSPACE}/reports/full/replicate_01/코웨이/report_코웨이.html"
     },
     {
       "company": "두산",
       "condition": "full",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/full/replicate_01/두산/report_두산.html"
+      "report": "${ABLATION_WORKSPACE}/reports/full/replicate_01/두산/report_두산.html"
     },
     {
       "company": "현대건설",
       "condition": "random_news",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/random_news/replicate_01/현대건설/report_현대건설.html"
+      "report": "${ABLATION_WORKSPACE}/reports/random_news/replicate_01/현대건설/report_현대건설.html"
     },
     {
       "company": "삼성전자",
       "condition": "random_news",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/random_news/replicate_01/삼성전자/report_삼성전자.html"
+      "report": "${ABLATION_WORKSPACE}/reports/random_news/replicate_01/삼성전자/report_삼성전자.html"
     },
     {
       "company": "SK바이오팜",
       "condition": "random_news",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/random_news/replicate_01/SK바이오팜/report_SK바이오팜.html"
+      "report": "${ABLATION_WORKSPACE}/reports/random_news/replicate_01/SK바이오팜/report_SK바이오팜.html"
     },
     {
       "company": "BGF리테일",
       "condition": "random_news",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/random_news/replicate_01/BGF리테일/report_BGF리테일.html"
+      "report": "${ABLATION_WORKSPACE}/reports/random_news/replicate_01/BGF리테일/report_BGF리테일.html"
     },
     {
       "company": "아모레퍼시픽",
       "condition": "random_news",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/random_news/replicate_01/아모레퍼시픽/report_아모레퍼시픽.html"
+      "report": "${ABLATION_WORKSPACE}/reports/random_news/replicate_01/아모레퍼시픽/report_아모레퍼시픽.html"
     },
     {
       "company": "코웨이",
       "condition": "random_news",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/random_news/replicate_01/코웨이/report_코웨이.html"
+      "report": "${ABLATION_WORKSPACE}/reports/random_news/replicate_01/코웨이/report_코웨이.html"
     },
     {
       "company": "두산",
       "condition": "random_news",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/random_news/replicate_01/두산/report_두산.html"
+      "report": "${ABLATION_WORKSPACE}/reports/random_news/replicate_01/두산/report_두산.html"
     },
     {
       "company": "현대건설",
       "condition": "no_subdata",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/no_subdata/replicate_01/현대건설/report_현대건설.html"
+      "report": "${ABLATION_WORKSPACE}/reports/no_subdata/replicate_01/현대건설/report_현대건설.html"
     },
     {
       "company": "삼성전자",
       "condition": "no_subdata",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/no_subdata/replicate_01/삼성전자/report_삼성전자.html"
+      "report": "${ABLATION_WORKSPACE}/reports/no_subdata/replicate_01/삼성전자/report_삼성전자.html"
     },
     {
       "company": "SK바이오팜",
       "condition": "no_subdata",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/no_subdata/replicate_01/SK바이오팜/report_SK바이오팜.html"
+      "report": "${ABLATION_WORKSPACE}/reports/no_subdata/replicate_01/SK바이오팜/report_SK바이오팜.html"
     },
     {
       "company": "BGF리테일",
       "condition": "no_subdata",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/no_subdata/replicate_01/BGF리테일/report_BGF리테일.html"
+      "report": "${ABLATION_WORKSPACE}/reports/no_subdata/replicate_01/BGF리테일/report_BGF리테일.html"
     },
     {
       "company": "아모레퍼시픽",
       "condition": "no_subdata",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/no_subdata/replicate_01/아모레퍼시픽/report_아모레퍼시픽.html"
+      "report": "${ABLATION_WORKSPACE}/reports/no_subdata/replicate_01/아모레퍼시픽/report_아모레퍼시픽.html"
     },
     {
       "company": "코웨이",
       "condition": "no_subdata",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/no_subdata/replicate_01/코웨이/report_코웨이.html"
+      "report": "${ABLATION_WORKSPACE}/reports/no_subdata/replicate_01/코웨이/report_코웨이.html"
     },
     {
       "company": "두산",
       "condition": "no_subdata",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/no_subdata/replicate_01/두산/report_두산.html"
+      "report": "${ABLATION_WORKSPACE}/reports/no_subdata/replicate_01/두산/report_두산.html"
     },
     {
       "company": "현대건설",
       "condition": "no_peer",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/no_peer/replicate_01/현대건설/report_현대건설.html"
+      "report": "${ABLATION_WORKSPACE}/reports/no_peer/replicate_01/현대건설/report_현대건설.html"
     },
     {
       "company": "삼성전자",
       "condition": "no_peer",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/no_peer/replicate_01/삼성전자/report_삼성전자.html"
+      "report": "${ABLATION_WORKSPACE}/reports/no_peer/replicate_01/삼성전자/report_삼성전자.html"
     },
     {
       "company": "SK바이오팜",
       "condition": "no_peer",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/no_peer/replicate_01/SK바이오팜/report_SK바이오팜.html"
+      "report": "${ABLATION_WORKSPACE}/reports/no_peer/replicate_01/SK바이오팜/report_SK바이오팜.html"
     },
     {
       "company": "BGF리테일",
       "condition": "no_peer",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/no_peer/replicate_01/BGF리테일/report_BGF리테일.html"
+      "report": "${ABLATION_WORKSPACE}/reports/no_peer/replicate_01/BGF리테일/report_BGF리테일.html"
     },
     {
       "company": "아모레퍼시픽",
       "condition": "no_peer",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/no_peer/replicate_01/아모레퍼시픽/report_아모레퍼시픽.html"
+      "report": "${ABLATION_WORKSPACE}/reports/no_peer/replicate_01/아모레퍼시픽/report_아모레퍼시픽.html"
     },
     {
       "company": "코웨이",
       "condition": "no_peer",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/no_peer/replicate_01/코웨이/report_코웨이.html"
+      "report": "${ABLATION_WORKSPACE}/reports/no_peer/replicate_01/코웨이/report_코웨이.html"
     },
     {
       "company": "두산",
       "condition": "no_peer",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/no_peer/replicate_01/두산/report_두산.html"
+      "report": "${ABLATION_WORKSPACE}/reports/no_peer/replicate_01/두산/report_두산.html"
     }
   ],
   "stages": [
@@ -2255,7 +2255,7 @@
       "resumed_at": "2026-09-16T14:02:35.773928+00:00",
       "previous_error": {
         "type": "RuntimeError",
-        "message": "코웨이/full/charts failed; inspect /data/agent2/financial_agent_ablation_2025h2/reports/full/replicate_01/코웨이/runs/20251110/executions/h2_2025_full_021240_r01/logs/charts.log before retrying"
+        "message": "코웨이/full/charts failed; inspect ${ABLATION_WORKSPACE}/reports/full/replicate_01/코웨이/runs/20251110/executions/h2_2025_full_021240_r01/logs/charts.log before retrying"
       },
       "previous_stop": "2026-09-16T08:26:05.931462+00:00"
     }

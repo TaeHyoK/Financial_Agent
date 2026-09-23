@@ -29,7 +29,6 @@ Output_total*/
 
 # Portable ablation data bundle (kept in Google Drive, never Git)
 evaluation/
-final_reports/
 references/
 reports/
 status/

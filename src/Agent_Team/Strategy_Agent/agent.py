@@ -25,9 +25,6 @@ from orchestration.config import agent_output_dir
 from . import AGENT_DIR, DEFAULT_TARGET_CONFIG, OUTPUT_ROOT
 from .packet import build_compact_strategy_packet
 
-# context must be imported before decision, which binds
-# build_base_strategy_context at import time.
-from .context import build_base_strategy_context
 from .decision import (
     CONTEXT_VERSION,
     DECISION_VERSION,

@@ -348,7 +348,7 @@ def _artifact_from_manifest(
         raise ValueError(f"Selected-date mismatch: {manifest_path}")
     outputs = manifest.get("outputs") if isinstance(manifest.get("outputs"), dict) else {}
     report = Path(str(outputs.get("writer_report") or (state or {}).get("writer_report") or ""))
-    strategy_packet = Path(str(outputs.get("strategy_compact_packet_v2") or ""))
+    strategy_packet = Path(str(outputs.get("strategy_compact_packet") or ""))
     usage_value = str(outputs.get("llm_usage_summary") or "").strip()
     usage_summary = Path(usage_value).expanduser().resolve() if usage_value else None
     preprocessing_value = str(outputs.get("random_news_preprocessing_usage_summary") or (state or {}).get("random_news_preprocessing_usage_summary") or "").strip()

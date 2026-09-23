@@ -13,13 +13,10 @@ from shared.evidence_cards import (
 )
 
 
-LEGACY_EDITORIAL_PACKET_VERSION = "writer_editorial_packet_v2"
-EDITORIAL_PACKET_VERSION = "writer_editorial_packet_v3"
-LEGACY_WRITER_PROVENANCE_VERSION = "writer_packet_provenance_v2"
-WRITER_PROVENANCE_VERSION = "writer_packet_provenance_v3"
+EDITORIAL_PACKET_VERSION = "writer_editorial_packet"
+WRITER_PROVENANCE_VERSION = "writer_packet_provenance"
 FINAL_RECOMMENDATIONS = {"Buy", "Hold", "Sell"}
-LEGACY_LABEL_FREE_STRATEGY_VERSION = "strategy_decision_output_v4"
-STRATEGY_DECISION_VERSION = "strategy_decision_output_v5"
+STRATEGY_DECISION_VERSION = "strategy_decision_output"
 WRITER_COMPONENTS = (
     "investment_call_thesis",
     "business_market_context",
@@ -416,7 +413,7 @@ def _writer_provenance_for_cards(
     source_cards: dict[str, Any],
     strategy_provenance: dict[str, Any],
     target_run_key: Any,
-    provenance_version: str = LEGACY_WRITER_PROVENANCE_VERSION,
+    provenance_version: str = WRITER_PROVENANCE_VERSION,
 ) -> dict[str, Any]:
     source_provenance = _dict(strategy_provenance.get("cards"))
     provenance_cards: dict[str, Any] = {}
@@ -449,10 +446,9 @@ def validate_writer_editorial_packet(
     """Validate the Writer editorial packet without judging free-form Korean prose."""
 
     packet_version = str(_dict(packet).get("packet_version") or "")
-    if packet_version not in {LEGACY_EDITORIAL_PACKET_VERSION, EDITORIAL_PACKET_VERSION}:
+    if packet_version != EDITORIAL_PACKET_VERSION:
         raise ValueError(
-            "writer editorial packet version must be "
-            f"{LEGACY_EDITORIAL_PACKET_VERSION} or {EDITORIAL_PACKET_VERSION}."
+            f"writer editorial packet version must be {EDITORIAL_PACKET_VERSION}."
         )
     target = _require_dict(packet.get("target"), "target")
     for key in ("company_name", "run_key", "selected_date"):
@@ -460,9 +456,8 @@ def validate_writer_editorial_packet(
             raise ValueError(f"writer editorial target.{key} is required.")
     decision = _require_dict(packet.get("decision"), "decision")
     strategy_version = packet.get("strategy_contract_version")
-    label_free = strategy_version in {LEGACY_LABEL_FREE_STRATEGY_VERSION, STRATEGY_DECISION_VERSION}
     is_strategy_decision = strategy_version == STRATEGY_DECISION_VERSION
-    if label_free:
+    if is_strategy_decision:
         if not str(decision.get("judgment") or "").strip():
             raise ValueError("writer editorial decision.judgment is required for label-free Strategy.")
         if packet.get("schema_revision") in {"12m_v1", "12m_v2", "12m_v3"}:
@@ -528,9 +523,6 @@ def validate_writer_editorial_packet(
                 "limitation_context",
             }:
                 raise ValueError(f"Writer card evidence tier is invalid: {card_key}")
-        elif label_free:
-            if card.get("strategy_role") not in {"primary", "counter", "monitoring", "context"}:
-                raise ValueError(f"Writer card Strategy role is invalid: {card_key}")
         elif card.get("investment_effect") not in {"positive", "negative", "mixed", "neutral", "reference"}:
             raise ValueError(f"Writer card investment effect is invalid: {card_key}")
         if not str(card.get("evidence_family") or "").strip():
@@ -538,7 +530,7 @@ def validate_writer_editorial_packet(
     for index, risk in enumerate(_list(packet.get("risk_factors"))):
         if not isinstance(risk, dict):
             raise ValueError(f"risk_factors[{index}] must be an object.")
-        if label_free and not str(risk.get("display_title") or "").strip():
+        if is_strategy_decision and not str(risk.get("display_title") or "").strip():
             raise ValueError(
                 f"risk_factors[{index}].display_title is required for label-free Strategy."
             )
@@ -585,16 +577,6 @@ def validate_writer_editorial_packet(
         if selected_peer_cards != seen_peer_cards:
             raise ValueError(
                 "Every structured Strategy v5 peer basis requires one target_peer_context entry."
-            )
-    elif label_free:
-        selected_peer_cards = {
-            card_key
-            for card_key, card in cards.items()
-            if isinstance(card, dict) and card.get("domain") == "peer"
-        }
-        if selected_peer_cards != seen_peer_cards:
-            raise ValueError(
-                "Every label-free Writer peer card requires one target_peer_context entry."
             )
     limitation_categories: set[str] = set()
     for index, limitation in enumerate(_list(packet.get("required_limitations"))):

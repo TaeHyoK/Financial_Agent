@@ -103,7 +103,7 @@ class EvidencePreservationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     preserve_and_validate_strategy(decision, context=context, output_dir=root,
                         fingerprint="test_fingerprint", decision_horizon_profile="annual", required_horizon="12개월")
-            failure = json.loads((root / "strategy_failure_report_v5.json").read_text())
+            failure = json.loads((root / "strategy_failure_report.json").read_text())
             raw = json.loads(Path(failure["raw_response_path"]).read_text())
             self.assertEqual(raw["decision_output"], decision)
             self.assertEqual(failure["stage"], "decision_alignment_or_validation")
@@ -155,12 +155,12 @@ class EvidencePreservationTests(unittest.TestCase):
             paths = SimpleNamespace(output_root=root, peer_output_root=root,
                 strategy_dir=root, visualization_dir=root, writer_dir=root,
                 published_report=root / "published.html")
-            for name in ("strategy_decision_output_v5.json", "chart_catalog.json", "report.html", "published.html", "chart.png"):
+            for name in ("strategy_decision_output.json", "chart_catalog.json", "report.html", "published.html", "chart.png"):
                 (root / name).write_text("test")
             keys = ["a", "b", "c"]
             data = {
                 "run_manifest.json": {"status": "success"},
-                "strategy_decision_output_v5.json": {"decision_version": "strategy_decision_output_v5"},
+                "strategy_decision_output.json": {"decision_version": "strategy_decision_output"},
                 "chart_catalog.json": {"available_charts": [{"chart_key": key} for key in keys]},
                 "chart_manifest.json": {"charts": [{"chart_key": key, "asset_abs_path_png": str(root / "chart.png")} for key in keys]},
                 "writer_report_payload.json": {"requested_chart_keys": keys, "chart_selection_details": [{

@@ -10,8 +10,7 @@ from shared.evidence_cards import assert_no_opaque_ids
 from .packet import _dict
 
 
-CONTEXT_VERSION = "strategy_context_package_v4"
-DECISION_VERSION = "strategy_decision_output_v4"
+CONTEXT_VERSION = "strategy_context_package"
 STRATEGY_CACHE_VERSION = "6"
 MAX_SELECTED_BASIS_CARDS = 6
 MAX_TARGET_PEER_CONTEXTS = 2
@@ -85,7 +84,7 @@ def validate_base_strategy_context(context: dict[str, Any]) -> None:
             raise ValueError(f"Strategy context card has no domain: {card_key}")
         if "primary_observation" not in card:
             raise ValueError(f"Strategy context card has no observation: {card_key}")
-    assert_no_opaque_ids(context, location="strategy_context_package_v4")
+    assert_no_opaque_ids(context, location=CONTEXT_VERSION)
 
 
 def _neutralize_card(card: dict[str, Any]) -> dict[str, Any]:

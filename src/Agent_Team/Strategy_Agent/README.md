@@ -16,7 +16,7 @@ Strategy Agent는 Financial, News, YFinance 분석과 비교기업 자료를 바
 
 ## 추론 계약
 
-입력 구성기는 하위 에이전트의 주요 분석, 교차 자료 판단과 사실 기반 근거 카드를 하나의 `strategy_context_package_v5`로 전달한다. 날짜·기간·단위·비교 대상·자료의 적용 범위는 유지하지만, 카드의 투자 방향과 중요도는 미리 결정하지 않는다.
+입력 구성기는 하위 에이전트의 주요 분석, 교차 자료 판단과 사실 기반 근거 카드를 하나의 `strategy_context_package`로 전달한다. 날짜·기간·단위·비교 대상·자료의 적용 범위는 유지하지만, 카드의 투자 방향과 중요도는 미리 결정하지 않는다.
 
 - Financial: 일반 기업 4~6개, 다사업 예외 최대 7개
 - News: 기본 6개, 일반 최대 8개, 중요 반대 사건 overflow 최대 10개
@@ -67,16 +67,16 @@ PYTHONPATH=src python -m Agent_Team.Strategy_Agent.cli \
 
 ```text
 strategy_input_bundle.json
-strategy_compact_packet_v2.json
-strategy_packet_provenance_v2.json
-strategy_context_package_v5.json
-strategy_context_telemetry_v5.json
-strategy_generation_context_v5.json
-strategy_decision_output_v5.json
-strategy_decision_profile_v5.json
-strategy_decision_cache_v5.json
+strategy_compact_packet.json
+strategy_packet_provenance.json
+strategy_context_package.json
+strategy_context_telemetry.json
+strategy_generation_context.json
+strategy_decision_output.json
+strategy_decision_profile.json
+strategy_decision_cache.json
 strategy_report.json
 strategy_report.md
 ```
 
-`decision_basis_card.json`은 앞선 계약에서 판단 근거를 Writer와 Visualization 단계에 전달하던 파일이다. 현재는 `strategy_decision_output_v5.json`의 `decision_basis_cards`, 파생된 `report_context_cards`와 외부 provenance 파일이 그 역할을 나누어 맡으므로 이 파일을 생성하거나 downstream 입력으로 사용하지 않는다. 판단 성공 후 같은 output directory의 이전 판단 산출물은 제거된다. 서로 다른 버전의 판단 파일을 하나의 downstream 입력으로 혼합하지 않는다.
+`decision_basis_card.json`은 앞선 계약에서 판단 근거를 Writer와 Visualization 단계에 전달하던 파일이다. 현재는 `strategy_decision_output.json`의 `decision_basis_cards`, 파생된 `report_context_cards`와 외부 provenance 파일이 그 역할을 나누어 맡으므로 이 파일을 생성하거나 downstream 입력으로 사용하지 않는다. 판단 성공 후 같은 output directory의 이전 판단 산출물은 제거된다. 서로 다른 버전의 판단 파일을 하나의 downstream 입력으로 혼합하지 않는다.

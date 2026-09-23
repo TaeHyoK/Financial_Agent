@@ -18,10 +18,18 @@ from .html_report_writer import (
     validate_raw_writer_payload,
     writer_request_fingerprint,
 )
+from Agent_Team.Strategy_Agent.artifacts import (
+    COMPACT_PACKET_FILENAME,
+    DECISION_OUTPUT_FILENAME,
+    PACKET_PROVENANCE_FILENAME,
+)
 from orchestration.config import DEFAULT_ENV_FILE, agent_output_dir, load_project_env
+from .artifacts import (
+    EDITORIAL_PACKET_FILENAME,
+    EXECUTION_CACHE_FILENAME,
+    PACKET_PROVENANCE_FILENAME as WRITER_PACKET_PROVENANCE_FILENAME,
+)
 from .writer_handoff import (
-    EDITORIAL_PACKET_VERSION,
-    WRITER_PROVENANCE_VERSION,
     build_writer_editorial_packet,
     validate_writer_editorial_packet,
 )
@@ -34,8 +42,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 OUTPUT_ROOT = REPO_ROOT / "Output_total"
 DEFAULT_RUN_KEY = ""
 REQUIRED_STRATEGY_INPUT_FILES = (
-    "strategy_compact_packet_v2.json",
-    "strategy_packet_provenance_v2.json",
+    COMPACT_PACKET_FILENAME,
+    PACKET_PROVENANCE_FILENAME,
+    DECISION_OUTPUT_FILENAME,
 )
 WRITER_NORMALIZATION_VERSION = "12"
 WRITER_RUNTIME_VERSION = "4"
@@ -53,27 +62,11 @@ def discover_default_run_key(output_root: Path = OUTPUT_ROOT) -> str:
         for path in (company_dir / "Strategy").glob("*")
         if path.is_dir()
         and all((path / filename).exists() for filename in REQUIRED_STRATEGY_INPUT_FILES)
-        and any(
-            (path / filename).exists()
-            for filename in (
-                "strategy_decision_output_v5.json",
-                "strategy_decision_output_v4.json",
-                "strategy_decision_output_v2.json",
-            )
-        )
     ]
     if not candidates:
         return ""
     candidates.sort(
-        key=lambda path: max(
-            (path / filename).stat().st_mtime
-            for filename in (
-                "strategy_decision_output_v5.json",
-                "strategy_decision_output_v4.json",
-                "strategy_decision_output_v2.json",
-            )
-            if (path / filename).exists()
-        ),
+        key=lambda path: (path / DECISION_OUTPUT_FILENAME).stat().st_mtime,
         reverse=True,
     )
     return f"{candidates[0].parents[1].name}_{candidates[0].name}"
@@ -82,9 +75,9 @@ def discover_default_run_key(output_root: Path = OUTPUT_ROOT) -> str:
 @dataclass(frozen=True)
 class WriterAgentConfig:
     run_key: str = DEFAULT_RUN_KEY
-    strategy_packet: Path = OUTPUT_ROOT / "Strategy" / DEFAULT_RUN_KEY / "strategy_compact_packet_v2.json"
-    strategy_provenance: Path = OUTPUT_ROOT / "Strategy" / DEFAULT_RUN_KEY / "strategy_packet_provenance_v2.json"
-    strategy_decision: Path = OUTPUT_ROOT / "Strategy" / DEFAULT_RUN_KEY / "strategy_decision_output_v5.json"
+    strategy_packet: Path = OUTPUT_ROOT / "Strategy" / DEFAULT_RUN_KEY / COMPACT_PACKET_FILENAME
+    strategy_provenance: Path = OUTPUT_ROOT / "Strategy" / DEFAULT_RUN_KEY / PACKET_PROVENANCE_FILENAME
+    strategy_decision: Path = OUTPUT_ROOT / "Strategy" / DEFAULT_RUN_KEY / DECISION_OUTPUT_FILENAME
     output_dir: Path = OUTPUT_ROOT / "Writer" / DEFAULT_RUN_KEY
     market_charts: tuple[Path, ...] = ()
     chart_catalog: Path | None = None
@@ -110,8 +103,8 @@ def run_writer_generation(config: WriterAgentConfig | dict[str, Any]) -> dict[st
     output_dir = Path(cfg.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    strategy_packet = load_json(cfg.strategy_packet, "Strategy compact packet v2")
-    strategy_provenance = load_json(cfg.strategy_provenance, "Strategy packet provenance v2")
+    strategy_packet = load_json(cfg.strategy_packet, "Strategy compact packet")
+    strategy_provenance = load_json(cfg.strategy_provenance, "Strategy packet provenance")
     strategy_decision = load_json(cfg.strategy_decision, "Strategy decision output")
     writer_handoff, writer_provenance = build_writer_editorial_packet(
         strategy_packet=strategy_packet,
@@ -141,24 +134,19 @@ def run_writer_generation(config: WriterAgentConfig | dict[str, Any]) -> dict[st
         "env_file": env_status["env_file"] if env_status.get("env_file_exists") else "",
     }
 
-    is_current_packet = writer_handoff.get("packet_version") == EDITORIAL_PACKET_VERSION
-    editorial_packet_path = output_dir / (
-        "writer_editorial_packet_v3.json" if is_current_packet else "writer_editorial_packet_v2.json"
-    )
-    provenance_path = output_dir / (
-        "writer_packet_provenance_v3.json"
-        if writer_provenance.get("provenance_version") == WRITER_PROVENANCE_VERSION
-        else "writer_packet_provenance_v2.json"
-    )
+    editorial_packet_path = output_dir / EDITORIAL_PACKET_FILENAME
+    provenance_path = output_dir / WRITER_PACKET_PROVENANCE_FILENAME
     source_files_path = output_dir / "source_files.json"
     failure_path = output_dir / "writer_failure_report.json"
     save_json(editorial_packet_path, writer_handoff)
     save_json(provenance_path, writer_provenance)
     save_json(source_files_path, source_files)
     retired_packets = (
-        ("writer_editorial_packet_v2.json", "writer_packet_provenance_v2.json")
-        if is_current_packet
-        else ("writer_editorial_packet_v3.json", "writer_packet_provenance_v3.json")
+        "writer_editorial_packet_v3.json",
+        "writer_packet_provenance_v3.json",
+        "writer_editorial_packet_v2.json",
+        "writer_packet_provenance_v2.json",
+        "writer_execution_cache_v2.json",
     )
     for filename in retired_packets:
         retired = output_dir / filename
@@ -171,7 +159,7 @@ def run_writer_generation(config: WriterAgentConfig | dict[str, Any]) -> dict[st
         writer_mode=cfg.writer_mode,
         chart_catalog=chart_catalog,
     )
-    cache_path = output_dir / "writer_execution_cache_v2.json"
+    cache_path = output_dir / EXECUTION_CACHE_FILENAME
     payload_path = output_dir / "writer_report_payload.json"
     llm_output_path = output_dir / "llm_writer_output.json"
     cached = load_cached_writer_outputs(
@@ -366,7 +354,7 @@ def load_cached_writer_outputs(
 
 
 def _remove_legacy_writer_artifacts(output_dir: Path) -> None:
-    for filename in ("writer_handoff.json", "writer_execution_cache.json"):
+    for filename in ("writer_handoff.json",):
         path = output_dir / filename
         if path.exists():
             path.unlink()
@@ -384,17 +372,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--strategy-packet",
         default=str(WriterAgentConfig.strategy_packet),
-        help="Override strategy_compact_packet_v2.json path.",
+        help=f"Override {COMPACT_PACKET_FILENAME} path.",
     )
     parser.add_argument(
         "--strategy-provenance",
         default=str(WriterAgentConfig.strategy_provenance),
-        help="Override strategy_packet_provenance_v2.json path.",
+        help=f"Override {PACKET_PROVENANCE_FILENAME} path.",
     )
     parser.add_argument(
         "--strategy-decision",
         default=str(WriterAgentConfig.strategy_decision),
-        help="Override Strategy decision output path (v5 by default).",
+        help="Override Strategy decision output path.",
     )
     parser.add_argument(
         "--market-chart",
@@ -486,13 +474,7 @@ def _coerce_config(config: WriterAgentConfig | dict[str, Any]) -> WriterAgentCon
 
 
 def _strategy_decision_path(run_key: str) -> Path:
-    strategy_dir = agent_output_dir(OUTPUT_ROOT, run_key, "Strategy")
-    candidates = (
-        strategy_dir / "strategy_decision_output_v5.json",
-        strategy_dir / "strategy_decision_output_v4.json",
-        strategy_dir / "strategy_decision_output_v2.json",
-    )
-    return next((path for path in candidates if path.exists()), candidates[0])
+    return agent_output_dir(OUTPUT_ROOT, run_key, "Strategy") / DECISION_OUTPUT_FILENAME
 
 
 def _resolve_config_paths(config: WriterAgentConfig) -> WriterAgentConfig:
@@ -501,8 +483,8 @@ def _resolve_config_paths(config: WriterAgentConfig) -> WriterAgentConfig:
         return config
     default_for_run = WriterAgentConfig(
         run_key=run_key,
-        strategy_packet=agent_output_dir(OUTPUT_ROOT, run_key, "Strategy") / "strategy_compact_packet_v2.json",
-        strategy_provenance=agent_output_dir(OUTPUT_ROOT, run_key, "Strategy") / "strategy_packet_provenance_v2.json",
+        strategy_packet=agent_output_dir(OUTPUT_ROOT, run_key, "Strategy") / COMPACT_PACKET_FILENAME,
+        strategy_provenance=agent_output_dir(OUTPUT_ROOT, run_key, "Strategy") / PACKET_PROVENANCE_FILENAME,
         strategy_decision=_strategy_decision_path(run_key),
         output_dir=agent_output_dir(OUTPUT_ROOT, run_key, "Writer"),
         market_charts=_default_market_charts(run_key),

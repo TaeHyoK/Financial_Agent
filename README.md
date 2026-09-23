@@ -85,7 +85,7 @@ Output_total/
     ├── Y_Finance/{selected_date}/final_report.json
     ├── Competitor/{selected_date}/peer_comparison_dataset.json
     ├── Competitor/{selected_date}/peer_comparison_report.json
-    ├── Strategy/{selected_date}/strategy_decision_output_v5.json
+    ├── Strategy/{selected_date}/strategy_decision_output.json
     ├── Visualization/{selected_date}/chart_manifest.json
     ├── Writer/{selected_date}/report.html
     ├── 비교기업/{peer_company_name}/

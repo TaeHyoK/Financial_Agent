@@ -1,4 +1,6 @@
-"""Audited offline recovery of the saved r03 one-team Amore Writer response.
+"""이 스크립트는 2026-09 생성 당시 산출물 이름과 Writer 캐시 지문에 묶여 있어 산출물 이름을 바꾼 정리 이후 트리에서는 동작하지 않는다. 생성 시점 기록으로만 보존한다.
+
+Audited offline recovery of the saved r03 one-team Amore Writer response.
 
 Only two chart-link metadata arrays change. No prompt, prose, source evidence,
 model setting or shared validator is changed. No API call is permitted here.

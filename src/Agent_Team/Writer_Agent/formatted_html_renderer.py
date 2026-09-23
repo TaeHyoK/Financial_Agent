@@ -8,6 +8,7 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+from shared.coerce import as_dict as _dict
 from .html_report_spec import (
     REPORT_DISCLAIMER,
     REPORT_SECTIONS,
@@ -458,10 +459,6 @@ def _table_cell(row: dict[str, Any], column: str) -> Any:
 
 def _normalize_key(value: Any) -> str:
     return str(value).strip().lower().replace(" ", "_").replace("/", "_")
-
-
-def _dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
 
 
 def _clean_list(value: Any) -> list[str]:

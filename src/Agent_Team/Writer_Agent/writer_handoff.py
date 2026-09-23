@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from shared.coerce import as_dict as _dict, as_list as _list, as_text_list as _text_list
 from shared.evidence_cards import (
     assert_no_internal_references_in_reader_text,
     assert_no_opaque_ids,
@@ -1110,20 +1111,6 @@ def _metric_display(value: Any, unit: str) -> str:
 
 def _dedupe(values: Any) -> list[str]:
     return list(dict.fromkeys(str(value) for value in values if str(value).strip()))
-
-
-def _text_list(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [str(item).strip() for item in value if str(item).strip()]
-
-
-def _dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
 
 
 def _require_dict(value: Any, label: str) -> dict[str, Any]:

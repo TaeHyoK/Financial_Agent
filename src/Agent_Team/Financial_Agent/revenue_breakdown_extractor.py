@@ -10,6 +10,8 @@ from typing import Any
 
 from bs4 import BeautifulSoup, Tag, XMLParsedAsHTMLWarning
 
+from shared.coerce import iso_date as _iso_date
+
 try:
     from .models import Filing, TargetReport
     from .table_parser import parse_table_matrix
@@ -347,10 +349,3 @@ def _normalized_label(value: str) -> str:
 
 def _clean_text(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").replace("\u3000", " ")).strip()
-
-
-def _iso_date(value: str) -> str:
-    digits = re.sub(r"\D", "", value or "")
-    if len(digits) == 8:
-        return f"{digits[:4]}-{digits[4:6]}-{digits[6:]}"
-    return str(value or "")

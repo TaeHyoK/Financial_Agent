@@ -6,6 +6,7 @@ from html import unescape
 import re
 from typing import Any
 
+from shared.coerce import as_dict as _dict, as_list as _list, as_text_list as _text_list
 from .html_report_spec import (
     INVESTMENT_THESIS_ITEM_KEY,
     INVESTMENT_THESIS_SECTION_KEY,
@@ -862,18 +863,6 @@ def _large_integer_tokens(value: Any) -> list[tuple[str, int]]:
         if abs(number) >= 100_000_000:
             tokens.append((token, number))
     return tokens
-
-
-def _dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
-
-
-def _text_list(value: Any) -> list[str]:
-    return [str(item).strip() for item in _list(value) if str(item).strip()]
 
 
 def _is_editorial_packet(value: Any) -> bool:

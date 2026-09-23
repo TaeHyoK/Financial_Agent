@@ -122,8 +122,8 @@ def run_writer_generation(config: WriterAgentConfig | dict[str, Any]) -> dict[st
         else None
     )
     source_files = {
-        "strategy_compact_packet_v2": str(Path(cfg.strategy_packet).expanduser().resolve()),
-        "strategy_packet_provenance_v2": str(Path(cfg.strategy_provenance).expanduser().resolve()),
+        "strategy_compact_packet": str(Path(cfg.strategy_packet).expanduser().resolve()),
+        "strategy_packet_provenance": str(Path(cfg.strategy_provenance).expanduser().resolve()),
         "strategy_decision_output": str(Path(cfg.strategy_decision).expanduser().resolve()),
         "market_charts": [str(Path(path).expanduser().resolve()) for path in cfg.market_charts],
         "chart_catalog": (

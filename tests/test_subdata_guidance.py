@@ -6,8 +6,7 @@ import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "src/Agent_Team/Writer Agent"),
-               str(ROOT / "src/Agent_Team/YFinance_Agent")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "src/Agent_Team/YFinance_Agent")]
 from jsonschema import Draft202012Validator
 from shared.subdata_guidance import (
     CONTEXT_USAGE, COMMON_GUIDANCE, context_issue_schema, flatten_context_issues, validate_context_refs,
@@ -21,7 +20,7 @@ from Agent_Team.Strategy_Agent.packet import _card, _attach_secondary_context
 from Agent_Team.Strategy_Agent.decision import build_strategy_context_package
 from Agent_Team.Strategy_Agent.agent import sanitize_strategy_input_report
 from shared.evidence_cards import assert_no_opaque_ids
-from writer_handoff import _reader_observation
+from Agent_Team.Writer_Agent.writer_handoff import _reader_observation
 
 
 def issue(number=1, **updates):

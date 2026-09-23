@@ -8,14 +8,15 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
-from html_report_spec import (
+from shared.coerce import as_dict as _dict
+from .html_report_spec import (
     REPORT_DISCLAIMER,
     REPORT_SECTIONS,
     TABLE_ITEM_KEYS,
     resolve_report_item_title,
     has_data_limit_content,
 )
-from writer_io import write_text
+from .writer_io import write_text
 
 
 MISSING_VALUE = "데이터 추가 필요"
@@ -458,10 +459,6 @@ def _table_cell(row: dict[str, Any], column: str) -> Any:
 
 def _normalize_key(value: Any) -> str:
     return str(value).strip().lower().replace(" ", "_").replace("/", "_")
-
-
-def _dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
 
 
 def _clean_list(value: Any) -> list[str]:

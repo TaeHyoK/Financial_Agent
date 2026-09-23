@@ -9,15 +9,15 @@ import os
 import re
 from typing import Any
 
-from html_report_spec import (
+from .html_report_spec import (
     LABEL_FREE_KEY_EVIDENCE_DISPLAY_COLUMNS,
     REPORT_SECTIONS,
     RISK_DISPLAY_COLUMNS,
 )
+from shared.coerce import as_dict as _dict
 from shared.evidence_cards import PRODUCT_DISCLOSURE_SCOPE_LABEL
 from shared.llm_clients import compact_json, execute_with_telemetry, is_transient_transport_error
-from writer_handoff import (
-    LEGACY_EDITORIAL_PACKET_VERSION,
+from .writer_handoff import (
     EDITORIAL_PACKET_VERSION,
     STRATEGY_DECISION_VERSION,
     validate_writer_editorial_packet,
@@ -203,9 +203,9 @@ def normalize_report_payload(
     contract_version = _writer_contract_version(writer_handoff)
     normalized["generation"] = {
         "mode": (
-            "single_call_llm_free_form_writer_ablation_v2"
+            "single_call_llm_free_form_writer_ablation"
             if writer_mode == FREE_FORM_WRITER_MODE
-            else "single_call_llm_with_editorial_cards_v2"
+            else "single_call_llm_with_editorial_cards"
         ),
         "contract_version": contract_version,
         "missing_value_policy": MISSING_VALUE,
@@ -341,11 +341,11 @@ def _build_editorial_context(
     required = _dict(writer_packet.get("required_card_keys_by_component"))
     free_form = writer_mode == FREE_FORM_WRITER_MODE
     is_strategy_decision = (
-        writer_packet.get("strategy_contract_version") == "strategy_decision_output_v5"
+        writer_packet.get("strategy_contract_version") == STRATEGY_DECISION_VERSION
     )
     decision = _dict(writer_packet.get("decision"))
     return {
-        "contract_version": str(writer_packet.get("packet_version") or LEGACY_EDITORIAL_PACKET_VERSION),
+        "contract_version": str(writer_packet.get("packet_version") or EDITORIAL_PACKET_VERSION),
         "label_free_strategy": True,
         "writer_mode": writer_mode,
         "task": "Strategy의 분석과 투자 의견을 보존해 한국어 기업 분석보고서를 편집한다.",
@@ -548,10 +548,7 @@ def _with_chart_selection_context(
     output_contract["requested_chart_keys"] = (
         f"available_charts의 chart_key 중 중복 없이 최대 {max_selected}개인 문자열 배열"
     )
-    if str(context.get("contract_version") or "") in {
-        LEGACY_EDITORIAL_PACKET_VERSION,
-        EDITORIAL_PACKET_VERSION,
-    }:
+    if str(context.get("contract_version") or "") == EDITORIAL_PACKET_VERSION:
         output_contract["chart_selection_details"] = (
             "requested_chart_keys와 같은 순서의 배열. 각 항목은 chart_key, "
             "최종 판단에 실제 사용된 basis_card_keys, 내부용 선택 이유, 차트에서 직접 확인되는 관찰, "
@@ -976,7 +973,7 @@ def _output_contract(
                     if isinstance(item, dict) and item.get("category")
                 ]
                 if (component == "data_limits" and limitation_claim_units
-                        and writer_packet.get("strategy_contract_version") != "strategy_decision_output_v5"):
+                        and writer_packet.get("strategy_contract_version") != STRATEGY_DECISION_VERSION):
                     section_items[item_key] = {
                         "_limitation_claims": {
                             str(item.get("category")): {
@@ -1039,7 +1036,7 @@ def writer_report_response_format(
     return {
         "type": "json_schema",
         "json_schema": {
-            "name": "writer_report_payload_v2",
+            "name": "writer_report_payload",
             "strict": True,
             "schema": _writer_report_schema(
                 writer_handoff,
@@ -1169,7 +1166,7 @@ def _writer_report_schema(
                 continue
 
             if (component == "data_limits" and limitation_categories
-                    and writer_packet.get("strategy_contract_version") != "strategy_decision_output_v5"):
+                    and writer_packet.get("strategy_contract_version") != STRATEGY_DECISION_VERSION):
                 item_properties[item_key] = _strict_schema_object(
                     {
                         "_limitation_claims": _strict_schema_object(
@@ -1314,7 +1311,7 @@ def _system_prompt(
     writer_mode: str = DETERMINISTIC_WRITER_MODE,
 ) -> str:
     writer_mode = _normalize_writer_mode(writer_mode)
-    if contract_version not in {LEGACY_EDITORIAL_PACKET_VERSION, EDITORIAL_PACKET_VERSION}:
+    if contract_version != EDITORIAL_PACKET_VERSION:
         raise ValueError("writer contract_version must be an editorial packet version")
     return _editorial_system_prompt(writer_mode=writer_mode)
 
@@ -1394,10 +1391,7 @@ def _editorial_system_prompt(
 
 
 def _is_editorial_packet(value: Any) -> bool:
-    return isinstance(value, dict) and value.get("packet_version") in {
-        LEGACY_EDITORIAL_PACKET_VERSION,
-        EDITORIAL_PACKET_VERSION,
-    }
+    return isinstance(value, dict) and value.get("packet_version") == EDITORIAL_PACKET_VERSION
 
 
 def _uses_narrative_evidence(value: Any) -> bool:
@@ -1415,7 +1409,7 @@ def _evidence_display_columns(packet: dict[str, Any]) -> tuple[str, ...]:
 
 
 def _writer_contract_version(value: dict[str, Any]) -> str:
-    return str(value.get("packet_version") or LEGACY_EDITORIAL_PACKET_VERSION)
+    return str(value.get("packet_version") or EDITORIAL_PACKET_VERSION)
 
 
 def _normalize_writer_mode(value: str) -> str:
@@ -1617,7 +1611,7 @@ def _materialize_data_limit_claims(
     """Attach trusted limitation metadata to category-keyed Writer prose."""
 
     normalized = json.loads(json.dumps(payload, ensure_ascii=False))
-    if writer_packet.get("strategy_contract_version") == "strategy_decision_output_v5":
+    if writer_packet.get("strategy_contract_version") == STRATEGY_DECISION_VERSION:
         # The Writer authors the visible paragraphs and their source links.
         # Do not append the Strategy's original wording after paraphrasing.
         return normalized
@@ -1627,7 +1621,7 @@ def _materialize_data_limit_claims(
         if isinstance(item, dict) and str(item.get("category") or "").strip()
     ]
     is_strategy_decision = (
-        writer_packet.get("strategy_contract_version") == "strategy_decision_output_v5"
+        writer_packet.get("strategy_contract_version") == STRATEGY_DECISION_VERSION
     )
     bridge = _dict(writer_packet.get("recommendation_bridge"))
     strategy_claim = (
@@ -2022,10 +2016,6 @@ def _normalize_table(value: Any, *, preserve_strategy_values: bool = False) -> d
     if "card_keys" in payload:
         result["card_keys"] = _clean_identifiers(payload.get("card_keys"))
     return result
-
-
-def _dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
 
 
 def _clean_list(value: Any) -> list[str]:

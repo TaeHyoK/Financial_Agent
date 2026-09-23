@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from pathlib import Path
 from typing import Any
+
+from shared.jsonio import atomic_write_text as _atomic_write_text
 
 
 def ensure_file_exists(path: str | Path, label: str) -> Path:
@@ -35,22 +35,3 @@ def save_json(path: str | Path, payload: Any) -> None:
 def write_text(path: str | Path, content: str) -> None:
     resolved = Path(path).expanduser().resolve()
     _atomic_write_text(resolved, content)
-
-
-def _atomic_write_text(resolved: Path, content: str) -> None:
-    resolved.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(
-        prefix=f".{resolved.name}.",
-        suffix=".tmp",
-        dir=resolved.parent,
-    )
-    temporary_path = Path(temporary)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
-            file.write(content)
-            file.flush()
-            os.fsync(file.fileno())
-        os.replace(temporary_path, resolved)
-    finally:
-        if temporary_path.exists():
-            temporary_path.unlink()

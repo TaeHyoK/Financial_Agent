@@ -14,8 +14,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "src/Agent_Team/YFinance_Agent"),
-                str(ROOT / "src/Agent_Team/Writer Agent")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "src/Agent_Team/YFinance_Agent")]
 
 from shared.time_windows import monthly_windows
 from shared.subdata import financial_subdata, market_subdata, news_subdata
@@ -32,11 +31,11 @@ from Agent_Team.Strategy_Agent.decision import (
     align_strategy_decision_evidence_plan, validate_strategy_decision,
     strategy_decision_response_format,
 )
-from writer_handoff import build_writer_editorial_packet
-from html_report_writer import normalize_report_payload
-from formatted_html_renderer import build_complete_html
-from html_report_spec import REPORT_SECTIONS
-from html_report_validator import validate_html_report
+from Agent_Team.Writer_Agent.writer_handoff import build_writer_editorial_packet
+from Agent_Team.Writer_Agent.html_report_writer import normalize_report_payload
+from Agent_Team.Writer_Agent.formatted_html_renderer import build_complete_html
+from Agent_Team.Writer_Agent.html_report_spec import REPORT_SECTIONS
+from Agent_Team.Writer_Agent.html_report_validator import validate_html_report
 
 
 def financial_fixture():
@@ -89,7 +88,7 @@ def strategy_fixture(opinion="Hold"):
     context = {"evidence_cards": {key: card}, "coverage_dimensions": dimensions}
     linked = lambda text: {"text": text, "card_keys": [key]}
     decision = {
-        "decision_version": "strategy_decision_output_v5", "schema_revision": "12m_v3",
+        "decision_version": "strategy_decision_output", "schema_revision": "12m_v3",
         "evidence_plan": {
             "decision_basis_cards": [{"card_key": key, "importance": "high",
                                       "investment_implication": "실적 개선의 지속성을 확인할 필요가 있다.", "target_peer_context": None}],
@@ -191,7 +190,7 @@ class AnnualContextTests(unittest.TestCase):
     def test_market_annual_values_reach_strategy_cards_and_reader_labels(self):
         from Agent_Team.Strategy_Agent.packet import _market_cards
         from Agent_Team.YFinance_Agent.reporting import build_market_summary, build_market_primary_evidence_catalog
-        from writer_handoff import _reader_observation
+        from Agent_Team.Writer_Agent.writer_handoff import _reader_observation
         frames, config = market_fixture()
         full = build_full_dataset(frames, pipeline_input=config)
         full["date"] = pd.to_datetime(full["date"])

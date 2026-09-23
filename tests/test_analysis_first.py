@@ -10,10 +10,10 @@ from Agent_Team.Strategy_Agent.decision import (
     build_strategy_context_package, strategy_decision_response_format,
     validate_strategy_decision, align_strategy_decision_evidence_plan,
 )
-from writer_handoff import build_writer_editorial_packet
-from html_report_writer import normalize_report_payload, _writer_report_schema, _output_contract
-from formatted_html_renderer import build_complete_html
-from html_report_validator import validate_html_report
+from Agent_Team.Writer_Agent.writer_handoff import build_writer_editorial_packet
+from Agent_Team.Writer_Agent.html_report_writer import normalize_report_payload, _writer_report_schema, _output_contract
+from Agent_Team.Writer_Agent.formatted_html_renderer import build_complete_html
+from Agent_Team.Writer_Agent.html_report_validator import validate_html_report
 
 
 class AnalysisFirstTests(unittest.TestCase):

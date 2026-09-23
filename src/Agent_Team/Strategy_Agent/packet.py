@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import math
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
@@ -18,13 +17,14 @@ from shared.evidence_cards import (
     validate_self_contained_card,
 )
 from shared.llm_clients import compact_json, estimate_text_tokens, measure_top_level_fields
+from shared.coerce import as_dict as _dict, as_list as _list, is_finite_number as _finite
 from orchestration.ablation import config_from_mapping
 from .context_links import build_context_links
 from shared.subdata_guidance import CONTEXT_USAGE
 
 
-PACKET_VERSION = "strategy_compact_packet_v2"
-PROVENANCE_VERSION = "strategy_packet_provenance_v2"
+PACKET_VERSION = "strategy_compact_packet"
+PROVENANCE_VERSION = "strategy_packet_provenance"
 
 STRATEGY_SECTIONS = (
     "investment_thesis",
@@ -189,7 +189,7 @@ def build_compact_strategy_packet(
 
     telemetry = _packet_telemetry(packet, model=model)
     input_summary = {
-        "contract": "strategy_input_v2",
+        "contract": "strategy_input",
         "status": "pass",
         "packet_version": PACKET_VERSION,
         "machine_limitations": machine_records,
@@ -235,7 +235,7 @@ def validate_compact_strategy_packet(
             card = cards.get(card_key)
             if not isinstance(card, dict) or section not in (card.get("allowed_sections") or []):
                 raise ValueError(f"Card {card_key} is not allowed in section {section}")
-    assert_no_opaque_ids(packet, location="strategy_compact_packet_v2")
+    assert_no_opaque_ids(packet, location=PACKET_VERSION)
     validate_provenance_map(cards, provenance)
 
 
@@ -244,15 +244,6 @@ def _requires_product_scope_label(card: dict[str, Any]) -> bool:
         return False
     reconciliation = _dict(_dict(card.get("primary_observation")).get("reconciliation"))
     return reconciliation.get("reconciliation_status") != "matched"
-
-
-def _strict_object(properties: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "type": "object",
-        "properties": properties,
-        "required": list(properties),
-        "additionalProperties": False,
-    }
 
 
 def _nonempty_string_schema() -> dict[str, Any]:
@@ -1652,20 +1643,8 @@ def _path(value: Any, path: str) -> Any:
     return current
 
 
-def _finite(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
-
-
 def _dedupe_strings(values: Iterable[Any]) -> list[str]:
     return list(dict.fromkeys(str(value).strip() for value in values if str(value).strip()))
-
-
-def _dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
 
 
 __all__ = [

@@ -11,17 +11,17 @@ Writer Agent는 Strategy v5가 작성한 판단 방향, 기존 편입자·신규
 보고서 생성에는 Strategy 산출물 세 개와 Visualization Agent의 차트 목록이 필요하다.
 
 ```text
-Output_total/Strategy/{run_key}/strategy_compact_packet_v2.json
-Output_total/Strategy/{run_key}/strategy_packet_provenance_v2.json
-Output_total/Strategy/{run_key}/strategy_decision_output_v5.json
+Output_total/Strategy/{run_key}/strategy_compact_packet.json
+Output_total/Strategy/{run_key}/strategy_packet_provenance.json
+Output_total/Strategy/{run_key}/strategy_decision_output.json
 Output_total/Visualization/{run_key}/chart_catalog.json
 ```
 
-`writer_handoff.py`는 Strategy가 실제 사용한 판단 근거와 보고서 문맥의 합집합만 선별해 `writer_editorial_packet_v3`를 만든다.
+`writer_handoff.py`는 Strategy가 실제 사용한 판단 근거와 보고서 문맥의 합집합만 선별해 `writer_editorial_packet`를 만든다.
 
 ```json
 {
-  "packet_version": "writer_editorial_packet_v3",
+  "packet_version": "writer_editorial_packet",
   "target": {},
   "decision": {},
   "recommendation_bridge": {},
@@ -49,7 +49,7 @@ Output_total/Visualization/{run_key}/chart_catalog.json
 }
 ```
 
-raw evidence ID와 원천 경로는 LLM 입력에서 제외하고 `writer_packet_provenance_v3.json`에만 저장한다. `reader_observation`은 원시값을 없애지 않으면서 재무 금액을 억원, 비율을 %, valuation을 배 단위로 미리 표시한다.
+raw evidence ID와 원천 경로는 LLM 입력에서 제외하고 `writer_packet_provenance.json`에만 저장한다. `reader_observation`은 원시값을 없애지 않으면서 재무 금액을 억원, 비율을 %, valuation을 배 단위로 미리 표시한다.
 
 ## 처리 순서
 
@@ -93,11 +93,11 @@ Writer handoff를 만들 때 Strategy의 recommendation bridge, assessment 해�
 ## 산출물
 
 ```text
-Output_total/Writer/{run_key}/writer_editorial_packet_v3.json
-Output_total/Writer/{run_key}/writer_packet_provenance_v3.json
+Output_total/Writer/{run_key}/writer_editorial_packet.json
+Output_total/Writer/{run_key}/writer_packet_provenance.json
 Output_total/Writer/{run_key}/writer_report_payload.json
 Output_total/Writer/{run_key}/llm_writer_output.json
-Output_total/Writer/{run_key}/writer_execution_cache_v2.json
+Output_total/Writer/{run_key}/writer_execution_cache.json
 Output_total/Writer/{run_key}/source_files.json
 Output_total/Writer/{run_key}/writer_run_status.json
 Output_total/Writer/{run_key}/report.html
@@ -109,12 +109,12 @@ Output_total/Writer/{run_key}/assets/*.png
 ## 실행
 
 ```bash
-PYTHONPATH=src python 'src/Agent_Team/Writer Agent/writer_agent.py' \
+PYTHONPATH=src python -m Agent_Team.Writer_Agent.writer_agent \
   --phase generate \
   --run-key SK바이오팜_20251031 \
-  --strategy-packet Output_total/Strategy/SK바이오팜_20251031/strategy_compact_packet_v2.json \
-  --strategy-provenance Output_total/Strategy/SK바이오팜_20251031/strategy_packet_provenance_v2.json \
-  --strategy-decision Output_total/Strategy/SK바이오팜_20251031/strategy_decision_output_v5.json \
+  --strategy-packet Output_total/Strategy/SK바이오팜_20251031/strategy_compact_packet.json \
+  --strategy-provenance Output_total/Strategy/SK바이오팜_20251031/strategy_packet_provenance.json \
+  --strategy-decision Output_total/Strategy/SK바이오팜_20251031/strategy_decision_output.json \
   --output-dir Output_total/Writer/SK바이오팜_20251031 \
   --chart-catalog Output_total/Visualization/SK바이오팜_20251031/chart_catalog.json \
   --env-file configs/.env
@@ -123,15 +123,9 @@ PYTHONPATH=src python 'src/Agent_Team/Writer Agent/writer_agent.py' \
 선택 차트가 생성된 뒤 최종 HTML을 렌더링한다.
 
 ```bash
-PYTHONPATH=src python 'src/Agent_Team/Writer Agent/writer_agent.py' \
+PYTHONPATH=src python -m Agent_Team.Writer_Agent.writer_agent \
   --phase render \
   --run-key SK바이오팜_20251031 \
   --output-dir Output_total/Writer/SK바이오팜_20251031 \
   --chart-manifest Output_total/Visualization/SK바이오팜_20251031/chart_manifest.json
-```
-
-## 테스트
-
-```bash
-pytest -q 'src/Agent_Team/Writer Agent/tests'
 ```

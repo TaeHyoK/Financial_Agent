@@ -33,7 +33,7 @@ class StrategyStageComparisonTests(unittest.TestCase):
         before = copy.deepcopy(context)
         single = experiment.decision_payload(context)
         split = experiment.decision_payload(context, memo)
-        self.assertEqual(single["strategy_context_package_v5"], split["strategy_context_package_v5"])
+        self.assertEqual(single[experiment.CONTEXT_VERSION], split[experiment.CONTEXT_VERSION])
         self.assertEqual(split["preliminary_analysis"], memo)
         self.assertEqual(context, before)
         self.assertEqual(len(split["preliminary_analysis"]["earnings_review"]["card_keys"]), 16)

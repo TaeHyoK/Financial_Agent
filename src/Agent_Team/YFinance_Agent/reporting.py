@@ -25,6 +25,7 @@ from shared.evidence_contracts import (
     validate_evidence_catalog,
     validate_secondary_context_assessments,
 )
+from shared.coerce import is_finite_number as _is_finite_number
 from shared.domain_llm import domain_request, call_domain_response
 from shared.llm_clients import compact_json
 
@@ -427,10 +428,6 @@ def _market_metric_unit(metric: str) -> str:
     if any(token in metric for token in ("return", "strength", "volatility", "drawdown", "to_ma", "obv", "bb_width", "change_20d", "position_52w")):
         return "ratio"
     return "number"
-
-
-def _is_finite_number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
 
 
 def yfinance_agent_json_schema(

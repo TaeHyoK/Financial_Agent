@@ -13,37 +13,37 @@
     {
       "company": "현대건설",
       "condition": "one_team",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/one_team/one_team_gpt54_r01/현대건설/report_현대건설.html"
+      "report": "${ABLATION_WORKSPACE}/reports/one_team/one_team_gpt54_r01/현대건설/report_현대건설.html"
     },
     {
       "company": "삼성전자",
       "condition": "one_team",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/one_team/one_team_gpt54_r01/삼성전자/report_삼성전자.html"
+      "report": "${ABLATION_WORKSPACE}/reports/one_team/one_team_gpt54_r01/삼성전자/report_삼성전자.html"
     },
     {
       "company": "SK바이오팜",
       "condition": "one_team",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/one_team/one_team_gpt54_r01/SK바이오팜/report_SK바이오팜.html"
+      "report": "${ABLATION_WORKSPACE}/reports/one_team/one_team_gpt54_r01/SK바이오팜/report_SK바이오팜.html"
     },
     {
       "company": "BGF리테일",
       "condition": "one_team",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/one_team/one_team_gpt54_r01/BGF리테일/report_BGF리테일.html"
+      "report": "${ABLATION_WORKSPACE}/reports/one_team/one_team_gpt54_r01/BGF리테일/report_BGF리테일.html"
     },
     {
       "company": "아모레퍼시픽",
       "condition": "one_team",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/one_team/one_team_gpt54_r01/아모레퍼시픽/report_아모레퍼시픽.html"
+      "report": "${ABLATION_WORKSPACE}/reports/one_team/one_team_gpt54_r01/아모레퍼시픽/report_아모레퍼시픽.html"
     },
     {
       "company": "코웨이",
       "condition": "one_team",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/one_team/one_team_gpt54_r01/코웨이/report_코웨이.html"
+      "report": "${ABLATION_WORKSPACE}/reports/one_team/one_team_gpt54_r01/코웨이/report_코웨이.html"
     },
     {
       "company": "두산",
       "condition": "one_team",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/one_team/one_team_gpt54_r01/두산/report_두산.html"
+      "report": "${ABLATION_WORKSPACE}/reports/one_team/one_team_gpt54_r01/두산/report_두산.html"
     }
   ],
   "stages": [

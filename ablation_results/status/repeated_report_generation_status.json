@@ -5,304 +5,304 @@
   "completed": [
     {
       "key": "r02/full/현대건설",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/full/현대건설/report_현대건설.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/full/현대건설/report_현대건설.html",
       "sha256": "014bc183321a5d47b659c97a2f1801f4577004d3870b28dd5b9b59480d2922ce",
       "completed_at": "2026-09-17T14:30:44.405399+00:00"
     },
     {
       "key": "r02/full/두산",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/full/두산/report_두산.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/full/두산/report_두산.html",
       "sha256": "7c51ec3c96f914351c14da85e152df6a64b9e895b281974d8406afbc03c98678",
       "completed_at": "2026-09-17T14:37:42.230914+00:00"
     },
     {
       "key": "r02/full/BGF리테일",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/full/BGF리테일/report_BGF리테일.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/full/BGF리테일/report_BGF리테일.html",
       "sha256": "11b0f3cf4da75a9a3b127ef3ea8541298d4856937ca2d8a28c66f544450ae16e",
       "completed_at": "2026-09-17T14:44:32.956999+00:00"
     },
     {
       "key": "r02/full/아모레퍼시픽",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/full/아모레퍼시픽/report_아모레퍼시픽.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/full/아모레퍼시픽/report_아모레퍼시픽.html",
       "sha256": "c599c7046ac41088e78b48a58598d59d79db0e1e5185dad67b766ce25a5e8db3",
       "completed_at": "2026-09-17T14:51:41.940363+00:00"
     },
     {
       "key": "r02/full/SK바이오팜",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/full/SK바이오팜/report_SK바이오팜.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/full/SK바이오팜/report_SK바이오팜.html",
       "sha256": "319be89a605e4d670318b028459b20219d708aa264a920f5afb019bf623c0d0e",
       "completed_at": "2026-09-17T14:59:03.888145+00:00"
     },
     {
       "key": "r02/random_news/현대건설",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/random_news/현대건설/report_현대건설.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/random_news/현대건설/report_현대건설.html",
       "sha256": "27949678c1f29ecaf6615acdd89b36de93ab2dfe4f3f7e0d7e865c02adb309d0",
       "completed_at": "2026-09-17T15:06:58.316587+00:00"
     },
     {
       "key": "r02/random_news/두산",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/random_news/두산/report_두산.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/random_news/두산/report_두산.html",
       "sha256": "e8d06bd17b6d91aa019a2dfef290f662d9cea7b6d92d83864068ea93361d317f",
       "completed_at": "2026-09-17T15:13:52.904486+00:00"
     },
     {
       "key": "r02/random_news/BGF리테일",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/random_news/BGF리테일/report_BGF리테일.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/random_news/BGF리테일/report_BGF리테일.html",
       "sha256": "b5f38a59be791c2a5c39469c74a8f3a699917c5553f25d2f1a330f6151e18ba4",
       "completed_at": "2026-09-17T15:21:10.072929+00:00"
     },
     {
       "key": "r02/random_news/아모레퍼시픽",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/random_news/아모레퍼시픽/report_아모레퍼시픽.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/random_news/아모레퍼시픽/report_아모레퍼시픽.html",
       "sha256": "49de0f9250aeba752d52d983c86a566f59a22d4d9edf1e9aba86b2de62400134",
       "completed_at": "2026-09-17T15:27:48.811779+00:00"
     },
     {
       "key": "r02/random_news/SK바이오팜",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/random_news/SK바이오팜/report_SK바이오팜.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/random_news/SK바이오팜/report_SK바이오팜.html",
       "sha256": "73ddb639c1375ca5687101f41caa3a9c60348d2f1856c0356e614911b1ceccb3",
       "completed_at": "2026-09-17T15:34:06.672216+00:00"
     },
     {
       "key": "r02/no_subdata/현대건설",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/no_subdata/현대건설/report_현대건설.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/no_subdata/현대건설/report_현대건설.html",
       "sha256": "a99a5f5abf690797b7383d43c6dfe38a26bc49ccd8a61b211edf20bc5da5ef93",
       "completed_at": "2026-09-17T15:40:48.554063+00:00"
     },
     {
       "key": "r02/no_subdata/두산",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/no_subdata/두산/report_두산.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/no_subdata/두산/report_두산.html",
       "sha256": "f03f47ac9f55194c458fbb6f105b5ac6ef11af48280e44b2716d7ab665890720",
       "completed_at": "2026-09-17T15:45:23.065437+00:00"
     },
     {
       "key": "r02/no_subdata/BGF리테일",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/no_subdata/BGF리테일/report_BGF리테일.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/no_subdata/BGF리테일/report_BGF리테일.html",
       "sha256": "7fe59611ea23348ca19101c26f2782d3922acbb125b9452c1e4a7af5d23b7b57",
       "completed_at": "2026-09-17T15:50:28.812227+00:00"
     },
     {
       "key": "r02/no_subdata/아모레퍼시픽",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/no_subdata/아모레퍼시픽/report_아모레퍼시픽.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/no_subdata/아모레퍼시픽/report_아모레퍼시픽.html",
       "sha256": "ff711099357114645b3a1d6310e32ccf8b8c46d30432b6125ddf3ffec0d6e4eb",
       "completed_at": "2026-09-17T15:55:29.838041+00:00"
     },
     {
       "key": "r02/no_subdata/SK바이오팜",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/no_subdata/SK바이오팜/report_SK바이오팜.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/no_subdata/SK바이오팜/report_SK바이오팜.html",
       "sha256": "e479b6ce83b99cec6e7dec838088bb3dc9bd1b9824638963895846338b572932",
       "completed_at": "2026-09-17T16:01:49.898162+00:00"
     },
     {
       "key": "r02/no_peer/현대건설",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/no_peer/현대건설/report_현대건설.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/no_peer/현대건설/report_현대건설.html",
       "sha256": "f45aa80b15e8b7569f1b4785b8e1d7da63cbee66998f19428f4daacfa3649431",
       "completed_at": "2026-09-17T16:03:40.863875+00:00"
     },
     {
       "key": "r02/no_peer/두산",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/no_peer/두산/report_두산.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/no_peer/두산/report_두산.html",
       "sha256": "350b85b90001bcc077a5bc2dac0ce6dfe1941d9a95339c60f0ac30069c1cf5ef",
       "completed_at": "2026-09-17T16:06:25.913606+00:00"
     },
     {
       "key": "r02/no_peer/BGF리테일",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/no_peer/BGF리테일/report_BGF리테일.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/no_peer/BGF리테일/report_BGF리테일.html",
       "sha256": "35589cfc8775023cfd2e176b084f22bad71e9000ec70414afcd0c2040adb3243",
       "completed_at": "2026-09-17T16:08:27.515070+00:00"
     },
     {
       "key": "r02/no_peer/아모레퍼시픽",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/no_peer/아모레퍼시픽/report_아모레퍼시픽.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/no_peer/아모레퍼시픽/report_아모레퍼시픽.html",
       "sha256": "439eb399c6cb4a863d4cd21ba2944dcec3da0cadc53203b4f7a56d4cd7b4878e",
       "completed_at": "2026-09-17T16:10:26.183652+00:00"
     },
     {
       "key": "r02/no_peer/SK바이오팜",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/no_peer/SK바이오팜/report_SK바이오팜.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/no_peer/SK바이오팜/report_SK바이오팜.html",
       "sha256": "d223acff1669be6f56b55237c84188d533a250ed3d8be2250f107c7a6a2f1bf4",
       "completed_at": "2026-09-17T16:12:18.858839+00:00"
     },
     {
       "key": "r02/one_team/현대건설",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/one_team/현대건설/report_현대건설.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/one_team/현대건설/report_현대건설.html",
       "sha256": "176eb410586d159d132179f0a0ad6f06492ad0181b551b4ebdb875d8e355b20a",
       "completed_at": "2026-09-17T16:16:03.888846+00:00"
     },
     {
       "key": "r02/one_team/두산",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/one_team/두산/report_두산.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/one_team/두산/report_두산.html",
       "sha256": "e555f555f940d0e788d809e1801bd0af96813d3f98d5be08fedc8b387e6fa1f0",
       "completed_at": "2026-09-17T16:19:58.027343+00:00"
     },
     {
       "key": "r02/one_team/BGF리테일",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/one_team/BGF리테일/report_BGF리테일.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/one_team/BGF리테일/report_BGF리테일.html",
       "sha256": "bb84d6fcba73519a8d64dcc383930c4d0f30c0c491cd14a563a7d28c7d903744",
       "completed_at": "2026-09-17T16:25:41.241010+00:00"
     },
     {
       "key": "r02/one_team/아모레퍼시픽",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/one_team/아모레퍼시픽/report_아모레퍼시픽.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/one_team/아모레퍼시픽/report_아모레퍼시픽.html",
       "sha256": "d2c608f5e53a6d1ae801cfa36213094d7450ca802b3fb3883f5de5f46fe2e770",
       "completed_at": "2026-09-17T16:29:19.350057+00:00"
     },
     {
       "key": "r02/one_team/SK바이오팜",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_02/one_team/SK바이오팜/report_SK바이오팜.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_02/one_team/SK바이오팜/report_SK바이오팜.html",
       "sha256": "d29f0a07b3f39678863dd1e20420c130e3098f44a4d488442df2a8853497a60d",
       "completed_at": "2026-09-17T16:33:17.595410+00:00"
     },
     {
       "key": "r03/full/현대건설",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/full/현대건설/report_현대건설.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/full/현대건설/report_현대건설.html",
       "sha256": "d3deb63d0e5b39f5c59332d9717262ccfc4ab068e3d0dd924b647b5327e05d4c",
       "completed_at": "2026-09-17T16:39:55.606947+00:00"
     },
     {
       "key": "r03/full/두산",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/full/두산/report_두산.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/full/두산/report_두산.html",
       "sha256": "7accbba1d21cdc4d86629c1f3f786511b8882f89d97214113aca8b574d15d831",
       "completed_at": "2026-09-17T16:45:45.583846+00:00"
     },
     {
       "key": "r03/full/BGF리테일",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/full/BGF리테일/report_BGF리테일.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/full/BGF리테일/report_BGF리테일.html",
       "sha256": "b33684341123a55a3a4902cbbf44a4e7516d5536e533e4a33d41dff1f3ad4126",
       "completed_at": "2026-09-17T16:53:12.222178+00:00"
     },
     {
       "key": "r03/full/아모레퍼시픽",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/full/아모레퍼시픽/report_아모레퍼시픽.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/full/아모레퍼시픽/report_아모레퍼시픽.html",
       "sha256": "d7981076a66b7ed7c7a12fcdf3995ffffdff440b5744df9cc297c5977329b80b",
       "completed_at": "2026-09-17T17:00:35.299649+00:00"
     },
     {
       "key": "r03/full/SK바이오팜",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/full/SK바이오팜/report_SK바이오팜.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/full/SK바이오팜/report_SK바이오팜.html",
       "sha256": "db03339507b482ea14449735633af5935940719d7badc05d19949909e75fc278",
       "completed_at": "2026-09-17T17:07:23.708449+00:00"
     },
     {
       "key": "r03/random_news/현대건설",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/random_news/현대건설/report_현대건설.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/random_news/현대건설/report_현대건설.html",
       "sha256": "9ef4b68b5e28b2d6c6a1cab4235bdb855dcfebde1ca1792598f30bf459d8ef1c",
       "completed_at": "2026-09-17T17:15:49.086038+00:00"
     },
     {
       "key": "r03/random_news/두산",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/random_news/두산/report_두산.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/random_news/두산/report_두산.html",
       "sha256": "fdb1d03056b000ec2c615ef7996db758b0a3f23a74b7cd8c979447b6ce71164f",
       "completed_at": "2026-09-17T17:22:27.334072+00:00"
     },
     {
       "key": "r03/random_news/BGF리테일",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/random_news/BGF리테일/report_BGF리테일.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/random_news/BGF리테일/report_BGF리테일.html",
       "sha256": "bbd9f36090ad6d3224a340850f7db4be8f1a2124a600424d210d0db4b60bdbb5",
       "completed_at": "2026-09-17T17:28:36.065979+00:00"
     },
     {
       "key": "r03/random_news/아모레퍼시픽",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/random_news/아모레퍼시픽/report_아모레퍼시픽.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/random_news/아모레퍼시픽/report_아모레퍼시픽.html",
       "sha256": "6f3fce5a828f686c2fc4153ba42d8591d5b29d1de271496d5076fbee288275d6",
       "completed_at": "2026-09-17T17:34:39.207757+00:00"
     },
     {
       "key": "r03/random_news/SK바이오팜",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/random_news/SK바이오팜/report_SK바이오팜.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/random_news/SK바이오팜/report_SK바이오팜.html",
       "sha256": "35c0d32dc2c8061ecd083d3a950b6e8661599632071b7a1a189fedf1952eede2",
       "completed_at": "2026-09-17T17:40:08.466735+00:00"
     },
     {
       "key": "r03/no_subdata/현대건설",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/no_subdata/현대건설/report_현대건설.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/no_subdata/현대건설/report_현대건설.html",
       "sha256": "8dc2f8f42e434c6761a7d44481768af595a15a4ed8e0d23a4ab0af8ca422dacd",
       "completed_at": "2026-09-17T17:44:38.018733+00:00"
     },
     {
       "key": "r03/no_subdata/두산",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/no_subdata/두산/report_두산.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/no_subdata/두산/report_두산.html",
       "sha256": "9b1d8b0e26cc9d360ba15497a7cacd0348ca1cf958490d7f3577e3d3457a27c9",
       "completed_at": "2026-09-17T17:49:07.689990+00:00"
     },
     {
       "key": "r03/no_subdata/BGF리테일",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/no_subdata/BGF리테일/report_BGF리테일.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/no_subdata/BGF리테일/report_BGF리테일.html",
       "sha256": "5946facb6dcb5bd8a5a80c24647c694b8d2438fb9f8eee348df7f30a902cc99c",
       "completed_at": "2026-09-17T17:53:50.807770+00:00"
     },
     {
       "key": "r03/no_subdata/아모레퍼시픽",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/no_subdata/아모레퍼시픽/report_아모레퍼시픽.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/no_subdata/아모레퍼시픽/report_아모레퍼시픽.html",
       "sha256": "0fa8f650e131ad5ae4cf044a71aaca588b9383184fa0ce11da1d0eb4231c86ca",
       "completed_at": "2026-09-17T17:58:17.162636+00:00"
     },
     {
       "key": "r03/no_subdata/SK바이오팜",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/no_subdata/SK바이오팜/report_SK바이오팜.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/no_subdata/SK바이오팜/report_SK바이오팜.html",
       "sha256": "1e39a1ff7aab5a212bf170605c2cc920856e3a52e798ae367b6eb6c28e8e9257",
       "completed_at": "2026-09-17T18:03:12.187042+00:00"
     },
     {
       "key": "r03/no_peer/현대건설",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/no_peer/현대건설/report_현대건설.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/no_peer/현대건설/report_현대건설.html",
       "sha256": "f8dfba3fdadaab509d2acee684e744a4d25eace3444f1913c9a75abb01a88768",
       "completed_at": "2026-09-17T18:04:51.079245+00:00"
     },
     {
       "key": "r03/no_peer/두산",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/no_peer/두산/report_두산.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/no_peer/두산/report_두산.html",
       "sha256": "5c4d2192e4ccb064f2f8d0655d46239631d76e712fbdf2176124080e4fce0b86",
       "completed_at": "2026-09-17T18:06:10.916676+00:00"
     },
     {
       "key": "r03/no_peer/BGF리테일",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/no_peer/BGF리테일/report_BGF리테일.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/no_peer/BGF리테일/report_BGF리테일.html",
       "sha256": "486d2e54955e06446f3c32db10071856df40935bee5de144febe79eea3e8acfd",
       "completed_at": "2026-09-17T18:07:42.970094+00:00"
     },
     {
       "key": "r03/no_peer/아모레퍼시픽",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/no_peer/아모레퍼시픽/report_아모레퍼시픽.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/no_peer/아모레퍼시픽/report_아모레퍼시픽.html",
       "sha256": "65cb97cfdfb56a069d36bc0f2631a487603b854fcba9edde2f950b2b07b5e9e3",
       "completed_at": "2026-09-17T18:09:16.884653+00:00"
     },
     {
       "key": "r03/no_peer/SK바이오팜",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/no_peer/SK바이오팜/report_SK바이오팜.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/no_peer/SK바이오팜/report_SK바이오팜.html",
       "sha256": "2e0cb96ae92940ee3b02aa17e0d017f7328431bc6d1d0b511f22551ae4bb0dcf",
       "completed_at": "2026-09-17T18:10:43.046758+00:00"
     },
     {
       "key": "r03/one_team/현대건설",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/one_team/현대건설/report_현대건설.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/one_team/현대건설/report_현대건설.html",
       "sha256": "e3e6213ba677491d0154cd211645e3836e02b789f22f118a8229533b255b80a7",
       "completed_at": "2026-09-17T18:14:10.743460+00:00"
     },
     {
       "key": "r03/one_team/두산",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/one_team/두산/report_두산.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/one_team/두산/report_두산.html",
       "sha256": "f34342706e0ace8db543a5330230231ecbfee54309d4d1d3939c0d3ed46265e5",
       "completed_at": "2026-09-17T18:18:44.923649+00:00"
     },
     {
       "key": "r03/one_team/BGF리테일",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/one_team/BGF리테일/report_BGF리테일.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/one_team/BGF리테일/report_BGF리테일.html",
       "sha256": "0ff6264ce1f0452154d58371f68ab7910593cfe7a620be055fd996142faaf400",
       "completed_at": "2026-09-17T18:22:19.194146+00:00"
     },
     {
       "key": "r03/one_team/SK바이오팜",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/one_team/SK바이오팜/report_SK바이오팜.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/one_team/SK바이오팜/report_SK바이오팜.html",
       "sha256": "52cd5c6511b8ebb3f280789bf2b4d67079f1b50fa47eb5ab19f2ef71f8c4fad4",
       "completed_at": "2026-09-17T18:29:06.233575+00:00"
     },
     {
       "key": "r03/one_team/아모레퍼시픽",
-      "report": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/one_team/아모레퍼시픽/report_아모레퍼시픽.html",
+      "report": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/one_team/아모레퍼시픽/report_아모레퍼시픽.html",
       "sha256": "a585c2625418b37803b549e655da61578732fca6182bb641c200d31ace229f81",
       "completed_at": "2026-09-18T13:11:59.953331+00:00",
-      "offline_recovery": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/one_team/아모레퍼시픽/recovery/chart_basis_links/recovery_audit.json"
+      "offline_recovery": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/one_team/아모레퍼시픽/recovery/chart_basis_links/recovery_audit.json"
     }
   ],
   "stages": [
@@ -3395,7 +3395,7 @@
       "key": "r03/one_team/아모레퍼시픽",
       "stage": "writer",
       "completed_at": "2026-09-18T13:11:57.638412+00:00",
-      "offline_recovery": "/data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/one_team/아모레퍼시픽/recovery/chart_basis_links/recovery_audit.json"
+      "offline_recovery": "${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/one_team/아모레퍼시픽/recovery/chart_basis_links/recovery_audit.json"
     },
     {
       "key": "r03/one_team/아모레퍼시픽",
@@ -3413,7 +3413,7 @@
       "key": "r03/one_team/아모레퍼시픽",
       "stage": "writer",
       "type": "RuntimeError",
-      "message": "r03/one_team/아모레퍼시픽/writer failed: /data/agent2/financial_agent_ablation_2025h2/reports/repeated_standard_5companies/replicate_03/one_team/아모레퍼시픽/runs/20251107/executions/repeat_standard_one_team_090430_r03/logs/writer.log",
+      "message": "r03/one_team/아모레퍼시픽/writer failed: ${ABLATION_WORKSPACE}/reports/repeated_standard_5companies/replicate_03/one_team/아모레퍼시픽/runs/20251107/executions/repeat_standard_one_team_090430_r03/logs/writer.log",
       "at": "2026-09-17T18:25:31.596656+00:00",
       "resolved_at": "2026-09-18T13:11:59.953367+00:00",
       "resolution": "offline_chart_link_metadata_recovery"

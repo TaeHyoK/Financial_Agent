@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT / "src"), "/home/agent2/ABLATION"]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT)]
 from shared.news_selection import select_monthly_news, MONTHLY_NEWS_POLICY, event_period
 from shared.time_windows import monthly_windows
 from ablation_suite.annual_random import select_annual_random_events

@@ -23,8 +23,8 @@ from .context_links import build_context_links
 from shared.subdata_guidance import CONTEXT_USAGE
 
 
-PACKET_VERSION = "strategy_compact_packet_v2"
-PROVENANCE_VERSION = "strategy_packet_provenance_v2"
+PACKET_VERSION = "strategy_compact_packet"
+PROVENANCE_VERSION = "strategy_packet_provenance"
 
 STRATEGY_SECTIONS = (
     "investment_thesis",
@@ -189,7 +189,7 @@ def build_compact_strategy_packet(
 
     telemetry = _packet_telemetry(packet, model=model)
     input_summary = {
-        "contract": "strategy_input_v2",
+        "contract": "strategy_input",
         "status": "pass",
         "packet_version": PACKET_VERSION,
         "machine_limitations": machine_records,
@@ -235,7 +235,7 @@ def validate_compact_strategy_packet(
             card = cards.get(card_key)
             if not isinstance(card, dict) or section not in (card.get("allowed_sections") or []):
                 raise ValueError(f"Card {card_key} is not allowed in section {section}")
-    assert_no_opaque_ids(packet, location="strategy_compact_packet_v2")
+    assert_no_opaque_ids(packet, location=PACKET_VERSION)
     validate_provenance_map(cards, provenance)
 
 

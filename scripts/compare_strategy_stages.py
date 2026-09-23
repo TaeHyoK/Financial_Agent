@@ -16,7 +16,7 @@ from Agent_Team.Strategy_Agent.agent import (
     build_strategy_report_projection, render_strategy_projection_markdown,
 )
 from Agent_Team.Strategy_Agent.decision import (
-    validate_strategy_context_package, strategy_decision_response_format,
+    CONTEXT_VERSION, validate_strategy_context_package, strategy_decision_response_format,
     align_strategy_decision_evidence_plan, validate_strategy_decision,
 )
 from shared.llm_clients import compact_json
@@ -56,7 +56,7 @@ MEMO_INSTRUCTION = """
 
 ## 의견 선택 전 분석 자료
 preliminary_analysis는 같은 입력으로 별도 작성한 의견 없는 통합 분석이다. 원자료가 아니며 추가적인 독립 증거로 세지 않는다.
-원래 strategy_context_package_v5의 모든 근거도 함께 제공된다. 분석 자료를 근거와 대조해 수용·보완·수정하고, 그 해석에 따라 최종 의견을 선택한다.
+원래 strategy_context_package의 모든 근거도 함께 제공된다. 분석 자료를 근거와 대조해 수용·보완·수정하고, 그 해석에 따라 최종 의견을 선택한다.
 원래 근거를 분석 자료로 대체하지 않는다. 분석 자료에서 활용한 관계와 가정은 최종 분석에도 유지하되, 타당하지 않은 해석은 그대로 승계하지 않는다.
 최종 인용은 원래 카드 키에 연결하며 분석 자료 자체를 새로운 카드로 만들지 않는다. 기존 출력 계약을 그대로 따른다.
 """
@@ -75,7 +75,7 @@ def analysis_response_format(context):
 
 
 def decision_payload(context, memo=None):
-    payload = {"strategy_context_package_v5": copy.deepcopy(context)}
+    payload = {CONTEXT_VERSION: copy.deepcopy(context)}
     if memo is not None:
         payload["preliminary_analysis"] = copy.deepcopy(memo)
     return payload
@@ -139,7 +139,7 @@ def run(args):
             memo = call("analysis", ANALYSIS_PROMPT, decision_payload(context), ANALYSIS_SYSTEM, analysis_response_format(context))
             Draft202012Validator(analysis_response_format(context)["json_schema"]["schema"]).validate(memo)
         payload = decision_payload(context, memo)
-        assert payload["strategy_context_package_v5"] == context
+        assert payload[CONTEXT_VERSION] == context
         raw = call("strategy", prompt + (MEMO_INSTRUCTION if memo is not None else ""), payload, DECISION_SYSTEM, decision_format)
         Draft202012Validator(decision_format["json_schema"]["schema"]).validate(raw)
         aligned = align_strategy_decision_evidence_plan(raw, context=context)

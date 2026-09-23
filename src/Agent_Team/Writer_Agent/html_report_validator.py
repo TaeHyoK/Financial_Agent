@@ -26,7 +26,6 @@ from .html_report_writer import (
     _strategy_role_label,
 )
 from .writer_handoff import (
-    LEGACY_EDITORIAL_PACKET_VERSION,
     EDITORIAL_PACKET_VERSION,
     STRATEGY_DECISION_VERSION,
 )
@@ -628,7 +627,7 @@ def _validate_required_limitation_coverage(
         )
     )
     errors = []
-    if (writer_handoff.get("strategy_contract_version") == "strategy_decision_output_v5"
+    if (writer_handoff.get("strategy_contract_version") == STRATEGY_DECISION_VERSION
             and str(_dict(writer_handoff.get("recommendation_bridge")).get("residual_uncertainty") or "").strip()
             and not has_data_limit_content(report_payload)):
         errors.append("Strategy supplied a decision limitation but Writer omitted its explanation")
@@ -866,10 +865,7 @@ def _large_integer_tokens(value: Any) -> list[tuple[str, int]]:
 
 
 def _is_editorial_packet(value: Any) -> bool:
-    return isinstance(value, dict) and value.get("packet_version") in {
-        LEGACY_EDITORIAL_PACKET_VERSION,
-        EDITORIAL_PACKET_VERSION,
-    }
+    return isinstance(value, dict) and value.get("packet_version") == EDITORIAL_PACKET_VERSION
 
 
 def _pass_fail(condition: bool) -> str:

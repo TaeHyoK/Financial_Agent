@@ -88,7 +88,7 @@ def strategy_fixture(opinion="Hold"):
     context = {"evidence_cards": {key: card}, "coverage_dimensions": dimensions}
     linked = lambda text: {"text": text, "card_keys": [key]}
     decision = {
-        "decision_version": "strategy_decision_output_v5", "schema_revision": "12m_v3",
+        "decision_version": "strategy_decision_output", "schema_revision": "12m_v3",
         "evidence_plan": {
             "decision_basis_cards": [{"card_key": key, "importance": "high",
                                       "investment_implication": "실적 개선의 지속성을 확인할 필요가 있다.", "target_peer_context": None}],

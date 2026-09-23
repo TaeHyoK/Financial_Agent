@@ -24,6 +24,17 @@ from orchestration.config import agent_output_dir, company_from_run_key, normali
 
 from . import AGENT_DIR, DEFAULT_TARGET_CONFIG, OUTPUT_ROOT
 from .packet import build_compact_strategy_packet
+from .artifacts import (
+    COMPACT_PACKET_FILENAME,
+    CONTEXT_PACKAGE_FILENAME,
+    CONTEXT_TELEMETRY_FILENAME,
+    DECISION_CACHE_FILENAME,
+    DECISION_OUTPUT_FILENAME,
+    DECISION_PROFILE_FILENAME,
+    FAILURE_REPORT_FILENAME,
+    GENERATION_CONTEXT_FILENAME,
+    PACKET_PROVENANCE_FILENAME,
+)
 
 from .decision import (
     CONTEXT_VERSION,
@@ -197,10 +208,10 @@ def run_strategy_agent(
         decision_horizon_profile,
         context_mode=strategy_context_mode,
     )
-    save_json(output_dir / "strategy_compact_packet_v2.json", packet)
-    save_json(output_dir / "strategy_packet_provenance_v2.json", provenance)
-    save_json(output_dir / "strategy_context_package_v5.json", context)
-    save_json(output_dir / "strategy_generation_context_v5.json", generation_payload)
+    save_json(output_dir / COMPACT_PACKET_FILENAME, packet)
+    save_json(output_dir / PACKET_PROVENANCE_FILENAME, provenance)
+    save_json(output_dir / CONTEXT_PACKAGE_FILENAME, context)
+    save_json(output_dir / GENERATION_CONTEXT_FILENAME, generation_payload)
     context_telemetry = {
         "context_version": CONTEXT_VERSION,
         "decision_contract": DECISION_VERSION,
@@ -213,10 +224,10 @@ def run_strategy_agent(
         ),
         "source_packet_telemetry": packet_telemetry,
     }
-    save_json(output_dir / "strategy_context_telemetry_v5.json", context_telemetry)
+    save_json(output_dir / CONTEXT_TELEMETRY_FILENAME, context_telemetry)
 
-    decision_path = output_dir / "strategy_decision_output_v5.json"
-    cache_path = output_dir / "strategy_decision_cache_v5.json"
+    decision_path = output_dir / DECISION_OUTPUT_FILENAME
+    cache_path = output_dir / DECISION_CACHE_FILENAME
     fingerprint = strategy_fingerprint(
         context,
         llm_provider=llm_provider,
@@ -226,7 +237,7 @@ def run_strategy_agent(
         generation_prompt=generation_prompt,
     )
     decision_output = load_cached_llm_output(decision_path, cache_path, fingerprint)
-    failure_report_path = output_dir / "strategy_failure_report_v5.json"
+    failure_report_path = output_dir / FAILURE_REPORT_FILENAME
     if decision_output is None:
         try:
             decision_output = run_decision_agent(
@@ -270,7 +281,7 @@ def run_strategy_agent(
         {"fingerprint": fingerprint, "contract_version": DECISION_VERSION},
     )
     save_json(
-        output_dir / "strategy_decision_profile_v5.json",
+        output_dir / DECISION_PROFILE_FILENAME,
         {
             "profile": decision_horizon_profile,
             "required_horizon": profile["horizon"],
@@ -317,7 +328,7 @@ def preserve_and_validate_strategy(
             "required_horizon": required_horizon, "raw_response_path": str(raw_path),
         }
         save_json(raw_path.with_suffix(".failure.json"), failure)
-        save_json(output_dir / "strategy_failure_report_v5.json", failure)
+        save_json(output_dir / FAILURE_REPORT_FILENAME, failure)
         raise
 
 
@@ -349,8 +360,6 @@ def _remove_legacy_strategy_artifacts(output_dir: Path) -> None:
     for filename in (
         "strategy_content_plan.json",
         "strategy_content_plan_cache.json",
-        "strategy_decision_output.json",
-        "strategy_decision_cache.json",
         "strategy_decision_packet.json",
         "strategy_llm_packet.json",
         "decision_basis_by_section.json",
@@ -378,6 +387,15 @@ def _remove_legacy_strategy_artifacts(output_dir: Path) -> None:
         "strategy_semantic_validation_v4.json",
         "strategy_failure_report_v4.json",
         "strategy_decision_output_v4.failed.json",
+        "strategy_compact_packet_v2.json",
+        "strategy_packet_provenance_v2.json",
+        "strategy_context_package_v5.json",
+        "strategy_generation_context_v5.json",
+        "strategy_context_telemetry_v5.json",
+        "strategy_decision_output_v5.json",
+        "strategy_decision_cache_v5.json",
+        "strategy_decision_profile_v5.json",
+        "strategy_failure_report_v5.json",
     ):
         path = output_dir / filename
         if path.exists():
@@ -528,7 +546,7 @@ def strategy_fingerprint(
         "contract_version": DECISION_VERSION,
         "context": context,
         "generation_payload": generation_payload
-        or {"strategy_context_package_v5": context},
+        or {CONTEXT_VERSION: context},
         "decision_horizon_profile": decision_horizon_profile,
         "prompt": generation_prompt or decision_prompt(decision_horizon_profile),
         "response_format": strategy_decision_response_format(
@@ -772,7 +790,7 @@ def run_decision_agent(
     profile = resolve_decision_horizon_profile(decision_horizon_profile)
     output = call_llm_json(
         prompt=generation_prompt or decision_prompt(decision_horizon_profile),
-        payload=generation_payload or {"strategy_context_package_v5": context},
+        payload=generation_payload or {CONTEXT_VERSION: context},
         llm_provider=llm_provider,
         llm_model=llm_model,
         llm_timeout=llm_timeout,
@@ -803,7 +821,7 @@ def build_strategy_generation_payload(
 ) -> dict[str, Any]:
     """Build the decision generation payload for production and ablation runs."""
 
-    payload = {"strategy_context_package_v5": context}
+    payload = {CONTEXT_VERSION: context}
     if context_mode == "compact_cards":
         return payload
     if context_mode != "full_reports":
@@ -839,7 +857,7 @@ def decision_generation_prompt(
         prompt
         + "\n\n## 전체 문맥 제외 실험\n"
         + "이번 실험에서는 하위 에이전트 보고서와 검증 자료 전체도 추가로 제공된다. 근거 연결은 "
-        + "strategy_context_package_v5.evidence_cards 안의 카드로 한정하고, 추가 문맥에만 존재하는 "
+        + f"{CONTEXT_VERSION}.evidence_cards 안의 카드로 한정하고, 추가 문맥에만 존재하는 "
         + "사실이나 수치를 보고서에 새로 쓰지 않는다."
     )
 

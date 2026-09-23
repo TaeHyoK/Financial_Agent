@@ -17,10 +17,10 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from indicators import add_technical_indicators
 from Agent_Team.YFinance_Agent.annual_features import annual_features
+from Agent_Team.YFinance_Agent.indicators import add_technical_indicators
+from Agent_Team.YFinance_Agent.valuation import collect_historical_valuation, unavailable_direct_valuation
 from shared.subdata import MARKET_METRICS, market_subdata
-from valuation import collect_historical_valuation, unavailable_direct_valuation
 
 
 DEFAULT_FX_TICKER = "KRW=X"

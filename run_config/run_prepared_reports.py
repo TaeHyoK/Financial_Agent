@@ -17,7 +17,7 @@ REPO = WORKSPACE
 PREPARED = WORKSPACE / "prepared_inputs/replicate_01"
 STATUS = WORKSPACE / "status/report_generation_status.json"
 USAGE = WORKSPACE / "status/report_generation_usage.jsonl"
-sys.path[:0] = [str(REPO / "src"), str(REPO / "src/Agent_Team/YFinance_Agent")]
+sys.path.insert(0, str(REPO / "src"))
 from orchestration import full_report_pipeline as flow
 from orchestration.ablation import config_from_args
 from orchestration.company_resolver import CompanyIdentity

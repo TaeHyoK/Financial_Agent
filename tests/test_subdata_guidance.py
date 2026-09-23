@@ -1,12 +1,8 @@
 """Subdata can inform interpretation without changing facts or losing sources."""
 import copy
 import json
-from pathlib import Path
-import sys
 import unittest
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "src/Agent_Team/YFinance_Agent")]
 from jsonschema import Draft202012Validator
 from shared.subdata_guidance import (
     CONTEXT_USAGE, COMMON_GUIDANCE, context_issue_schema, flatten_context_issues, validate_context_refs,

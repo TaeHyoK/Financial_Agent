@@ -46,6 +46,9 @@ news-workflow = "Agent_Team.News_Agent.cli:main"
 news-analysis-agent = "Agent_Team.News_Agent.analysis_agent:main"
 strategy-agent = "Agent_Team.Strategy_Agent.cli:main"
 
+[tool.pytest.ini_options]
+testpaths = ["tests", "run_config/tests"]
+
 [tool.setuptools.package-dir]
 "" = "src"
 

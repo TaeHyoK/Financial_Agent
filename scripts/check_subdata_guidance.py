@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "src/Agent_Team/YFinance_Agent")]
+sys.path.insert(0, str(ROOT / "src"))
 from shared.domain_llm import call_domain_response
 from shared.llm_clients import measure_request
 from shared.subdata_guidance import CONTEXT_POLICY_VERSION

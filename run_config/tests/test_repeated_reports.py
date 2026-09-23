@@ -1,11 +1,9 @@
 """Offline checks: never call an LLM while testing repeat orchestration."""
 import copy
 from pathlib import Path
-import sys
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import run_repeated_reports as runner
 
 

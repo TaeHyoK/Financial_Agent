@@ -5,7 +5,6 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
-import sys
 import tempfile
 import unittest
 from datetime import date, timedelta
@@ -14,7 +13,6 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "src/Agent_Team/YFinance_Agent")]
 
 from shared.time_windows import monthly_windows
 from shared.subdata import financial_subdata, market_subdata, news_subdata

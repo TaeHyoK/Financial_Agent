@@ -11,7 +11,6 @@ from typing import Any
 
 from html_report_spec import (
     LABEL_FREE_KEY_EVIDENCE_DISPLAY_COLUMNS,
-    KEY_EVIDENCE_DISPLAY_COLUMNS,
     REPORT_SECTIONS,
     RISK_DISPLAY_COLUMNS,
 )
@@ -20,6 +19,7 @@ from shared.llm_clients import compact_json, execute_with_telemetry, is_transien
 from writer_handoff import (
     LEGACY_EDITORIAL_PACKET_VERSION,
     EDITORIAL_PACKET_VERSION,
+    STRATEGY_DECISION_VERSION,
     validate_writer_editorial_packet,
 )
 
@@ -156,8 +156,6 @@ def normalize_report_payload(
         payload = _materialize_data_limit_claims(payload, writer_handoff)
         payload = _enrich_writer_metadata(payload, writer_handoff)
         if writer_mode == DETERMINISTIC_WRITER_MODE:
-            if not _is_label_free_writer_packet(writer_handoff):
-                payload = _apply_locked_thesis(payload, writer_handoff)
             payload = _apply_deterministic_evidence_table(payload, writer_handoff)
             payload = _apply_deterministic_risk_table(payload, writer_handoff)
         payload = _replace_visible_card_keys(payload, writer_handoff)
@@ -205,13 +203,9 @@ def normalize_report_payload(
     contract_version = _writer_contract_version(writer_handoff)
     normalized["generation"] = {
         "mode": (
-            (
-                "single_call_llm_free_form_writer_ablation_v2"
-                if writer_mode == FREE_FORM_WRITER_MODE
-                else "single_call_llm_with_editorial_cards_v2"
-            )
-            if contract_version in {LEGACY_EDITORIAL_PACKET_VERSION, EDITORIAL_PACKET_VERSION}
-            else "single_call_llm_with_compact_handoff"
+            "single_call_llm_free_form_writer_ablation_v2"
+            if writer_mode == FREE_FORM_WRITER_MODE
+            else "single_call_llm_with_editorial_cards_v2"
         ),
         "contract_version": contract_version,
         "missing_value_policy": MISSING_VALUE,
@@ -346,14 +340,13 @@ def _build_editorial_context(
     writer_mode = _normalize_writer_mode(writer_mode)
     required = _dict(writer_packet.get("required_card_keys_by_component"))
     free_form = writer_mode == FREE_FORM_WRITER_MODE
-    label_free = _is_label_free_writer_packet(writer_packet)
     is_strategy_decision = (
         writer_packet.get("strategy_contract_version") == "strategy_decision_output_v5"
     )
     decision = _dict(writer_packet.get("decision"))
     return {
         "contract_version": str(writer_packet.get("packet_version") or LEGACY_EDITORIAL_PACKET_VERSION),
-        "label_free_strategy": label_free,
+        "label_free_strategy": True,
         "writer_mode": writer_mode,
         "task": "Strategy의 분석과 투자 의견을 보존해 한국어 기업 분석보고서를 편집한다.",
         "output_contract": _output_contract(writer_packet, writer_mode=writer_mode),
@@ -470,12 +463,6 @@ def _build_editorial_context(
                 "첫 문단에는 decision.investment_horizon을 표시된 그대로 한 번 포함한다. Strategy 문구를 "
                 "그대로 복사하지 말고 판단 의미와 최종 투자 의견을 보존하면서 중복되거나 어색한 표현을 "
                 "자연스러운 조사보고서 문장으로 편집한다."
-                if free_form or label_free
-                else (
-                    "investment_call_thesis는 빈 배열로 반환한다. 시스템은 Strategy가 확정한 thesis와 "
-                    "최종 투자 의견과 핵심 이유를 서두에 배치하며 가격 맥락, 반대 근거, 판단 한계를 "
-                    "같은 문단에 다시 붙이지 않는다."
-                )
             ),
             "product_scope_policy": (
                 f"reconciliation이 matched가 아닌 제품 card는 '{PRODUCT_DISCLOSURE_SCOPE_LABEL}'임을 "
@@ -876,8 +863,6 @@ def _output_contract(
 ) -> dict[str, Any]:
     writer_mode = _normalize_writer_mode(writer_mode)
     free_form = writer_mode == FREE_FORM_WRITER_MODE
-    label_free = _is_label_free_writer_packet(writer_packet)
-    writer_authored_thesis = free_form or label_free
     evidence_columns = _evidence_display_columns(writer_packet)
     required = _dict(writer_packet.get("required_card_keys_by_component"))
     cards = _dict(writer_packet.get("cards"))
@@ -909,13 +894,6 @@ def _output_contract(
                                         "판단상 역할": "strategy_role을 독자용 한국어로 작성",
                                         "_strategy_role": _dict(cards.get(card_key)).get("strategy_role"),
                                     }
-                                    if label_free
-                                    else {
-                                        "영향": "investment_effect를 독자용 한국어로 작성",
-                                        "_investment_effect": _dict(cards.get(card_key)).get(
-                                            "investment_effect"
-                                        ),
-                                    }
                                 ),
                                 "_card_key": card_key,
                                 "_strategy_interpretation": _dict(cards.get(card_key)).get(
@@ -929,7 +907,7 @@ def _output_contract(
                     ),
                     "card_keys": card_keys,
                 }
-                if label_free and not free_form:
+                if not free_form:
                     section_items[item_key]["_display_labels"] = [
                         {
                             "card_key": card_key,
@@ -971,27 +949,19 @@ def _output_contract(
             else:
                 if component == "investment_call_thesis":
                     section_items[item_key] = {
-                        "paragraphs": (
-                            [
-                                "Strategy의 판단 방향과 이유를 정리한 문단",
-                                "최종 투자 의견의 핵심 근거와 전망의 전제를 설명한 문단",
-                            ]
-                            if writer_authored_thesis
-                            else []
-                        ),
+                        "paragraphs": [
+                            "Strategy의 판단 방향과 이유를 정리한 문단",
+                            "최종 투자 의견의 핵심 근거와 전망의 전제를 설명한 문단",
+                        ],
                         "bullets": [],
                         "card_keys": card_keys,
-                        "_claim_units": (
-                            [
-                                {
-                                    "claim": "paragraphs에 실제로 작성한 완결 문장",
-                                    "card_keys": card_keys,
-                                    "limitation_categories": [],
-                                }
-                            ]
-                            if writer_authored_thesis
-                            else []
-                        ),
+                        "_claim_units": [
+                            {
+                                "claim": "paragraphs에 실제로 작성한 완결 문장",
+                                "card_keys": card_keys,
+                                "limitation_categories": [],
+                            }
+                        ],
                     }
                     continue
                 limitation_claim_units = [
@@ -1088,8 +1058,6 @@ def _writer_report_schema(
 ) -> dict[str, Any]:
     writer_mode = _normalize_writer_mode(writer_mode)
     free_form = writer_mode == FREE_FORM_WRITER_MODE
-    label_free = _is_label_free_writer_packet(writer_packet)
-    writer_authored_thesis = free_form or label_free
     evidence_columns = _evidence_display_columns(writer_packet)
     required_by_component = _dict(writer_packet.get("required_card_keys_by_component"))
     available_by_component = _dict(writer_packet.get("available_card_keys_by_component", required_by_component))
@@ -1139,20 +1107,11 @@ def _writer_report_schema(
                             },
                             "_strategy_interpretation": {"type": "string"},
                     }
-                    if _uses_narrative_evidence(writer_packet):
-                        pass
-                    elif label_free:
+                    if not _uses_narrative_evidence(writer_packet):
                         row_fields.update(
                             {
                                 "판단상 역할": {"type": "string"},
                                 "_strategy_role": {"type": "string"},
-                            }
-                        )
-                    else:
-                        row_fields.update(
-                            {
-                                "영향": {"type": "string"},
-                                "_investment_effect": {"type": "string"},
                             }
                         )
                     row_schema = _strict_schema_object(row_fields)
@@ -1188,7 +1147,7 @@ def _writer_report_schema(
                         exact_count=len(allowed_card_keys),
                     ),
                 }
-                if label_free and not free_form and component == "key_evidence_table":
+                if not free_form and component == "key_evidence_table":
                     table_properties["_display_labels"] = {
                         "type": "array",
                         "items": _strict_schema_object(
@@ -1225,9 +1184,6 @@ def _writer_report_schema(
                 )
                 continue
 
-            locked_thesis = (
-                component == "investment_call_thesis" and not writer_authored_thesis
-            )
             claim_unit = _strict_schema_object(
                 {
                     "claim": {"type": "string"},
@@ -1251,8 +1207,7 @@ def _writer_report_schema(
                 "paragraphs": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "minItems": 0 if locked_thesis or component == "data_limits" else 1,
-                    **({"maxItems": 0} if locked_thesis else {}),
+                    "minItems": 0 if component == "data_limits" else 1,
                 },
                 "bullets": {
                     "type": "array",
@@ -1268,8 +1223,7 @@ def _writer_report_schema(
                 "_claim_units": {
                     "type": "array",
                     "items": claim_unit,
-                    "minItems": 0 if locked_thesis or component == "data_limits" else 1,
-                    **({"maxItems": 0} if locked_thesis else {}),
+                    "minItems": 0 if component == "data_limits" else 1,
                 },
             }
             if component == "data_limits":
@@ -1446,16 +1400,6 @@ def _is_editorial_packet(value: Any) -> bool:
     }
 
 
-def _is_label_free_writer_packet(value: Any) -> bool:
-    return (
-        _is_editorial_packet(value)
-        and value.get("strategy_contract_version") in {
-            "strategy_decision_output_v4",
-            "strategy_decision_output_v5",
-        }
-    )
-
-
 def _uses_narrative_evidence(value: Any) -> bool:
     return isinstance(value, dict) and value.get("schema_revision") == "12m_v3"
 
@@ -1467,8 +1411,7 @@ def _evidence_interpretation_column(packet: dict[str, Any]) -> str:
 def _evidence_display_columns(packet: dict[str, Any]) -> tuple[str, ...]:
     if _uses_narrative_evidence(packet):
         return ("핵심 근거", "확인된 수치·사실", "투자 판단에 미치는 의미")
-    return (LABEL_FREE_KEY_EVIDENCE_DISPLAY_COLUMNS if _is_label_free_writer_packet(packet)
-            else KEY_EVIDENCE_DISPLAY_COLUMNS)
+    return LABEL_FREE_KEY_EVIDENCE_DISPLAY_COLUMNS
 
 
 def _writer_contract_version(value: dict[str, Any]) -> str:
@@ -1487,6 +1430,8 @@ def _normalize_writer_mode(value: str) -> str:
 def _validate_writer_input(value: dict[str, Any]) -> None:
     if not _is_editorial_packet(value):
         raise ValueError("writer input must be a writer editorial packet")
+    if value.get("strategy_contract_version") != STRATEGY_DECISION_VERSION:
+        raise ValueError(f"writer input requires a {STRATEGY_DECISION_VERSION} Strategy decision")
     validate_writer_editorial_packet(value)
 
 
@@ -1513,10 +1458,7 @@ def _enrich_writer_metadata(payload: dict[str, Any], writer_packet: dict[str, An
         card = _dict(cards.get(card_key))
         row["_card_key"] = card_key
         row["_strategy_interpretation"] = card.get("strategy_interpretation")
-        if _is_label_free_writer_packet(writer_packet):
-            row["_strategy_role"] = card.get("strategy_role")
-        else:
-            row["_investment_effect"] = card.get("investment_effect")
+        row["_strategy_role"] = card.get("strategy_role")
     if not evidence_item.get("card_keys"):
         inferred_keys = [
             str(row.get("_card_key") or "")
@@ -1550,96 +1492,6 @@ def _enrich_writer_metadata(payload: dict[str, Any], writer_packet: dict[str, An
             )
         )
     return enriched
-
-
-def _apply_locked_thesis(
-    payload: dict[str, Any],
-    writer_packet: dict[str, Any],
-) -> dict[str, Any]:
-    """Use the legacy validated Strategy bridge as the decision thesis."""
-
-    normalized = json.loads(json.dumps(payload, ensure_ascii=False))
-    sections = normalized.setdefault("sections", {})
-    thesis_section = sections.setdefault("investment_call_thesis", {})
-    thesis = thesis_section.setdefault("section_analysis", {})
-    decision = _dict(writer_packet.get("decision"))
-    bridge = _dict(writer_packet.get("recommendation_bridge"))
-    intro = f"판단 기간은 {decision.get('investment_horizon')}이다."
-    forward = str(bridge.get("forward_support") or "").strip()
-    current = str(bridge.get("current_price_rationale") or "").strip()
-    valuation = str(bridge.get("valuation_counterweight") or "").strip()
-    forward = _qualify_partial_product_scope(
-        forward,
-        writer_packet,
-        bridge.get("forward_support_card_keys"),
-    )
-    current = _qualify_partial_product_scope(
-        current,
-        writer_packet,
-        bridge.get("current_price_card_keys"),
-    )
-    valuation = _qualify_partial_product_scope(
-        valuation,
-        writer_packet,
-        bridge.get("valuation_card_keys"),
-    )
-    bridge_keys = _clean_identifiers(
-        [
-            *(_clean_identifiers(bridge.get("forward_support_card_keys"))),
-            *(_clean_identifiers(bridge.get("current_price_card_keys"))),
-            *(_clean_identifiers(bridge.get("valuation_card_keys"))),
-        ]
-    )
-    required_keys = _clean_identifiers(
-        _dict(writer_packet.get("required_card_keys_by_component")).get(
-            "investment_call_thesis"
-        )
-    )
-    cards = _dict(writer_packet.get("cards"))
-    orphan_keys = [card_key for card_key in required_keys if card_key not in bridge_keys]
-    orphan_claims = [
-        _qualify_partial_product_scope(
-            str(_dict(cards.get(card_key)).get("strategy_interpretation") or "").strip(),
-            writer_packet,
-            [card_key],
-        )
-        for card_key in orphan_keys
-        if str(_dict(cards.get(card_key)).get("strategy_interpretation") or "").strip()
-    ]
-    thesis["paragraphs"] = [
-        " ".join(value for value in (intro, forward) if value),
-        " ".join(value for value in (current, valuation, *orphan_claims) if value),
-    ]
-    thesis["bullets"] = []
-    thesis["card_keys"] = required_keys
-    thesis["_claim_units"] = [
-        {"claim": intro, "card_keys": [], "limitation_categories": []},
-        {
-            "claim": forward,
-            "card_keys": _clean_identifiers(bridge.get("forward_support_card_keys")),
-            "limitation_categories": [],
-        },
-        {
-            "claim": current,
-            "card_keys": _clean_identifiers(bridge.get("current_price_card_keys")),
-            "limitation_categories": [],
-        },
-        {
-            "claim": valuation,
-            "card_keys": _clean_identifiers(bridge.get("valuation_card_keys")),
-            "limitation_categories": [],
-        },
-        *[
-            {
-                "claim": str(_dict(cards.get(card_key)).get("strategy_interpretation") or "").strip(),
-                "card_keys": [card_key],
-                "limitation_categories": [],
-            }
-            for card_key in orphan_keys
-            if str(_dict(cards.get(card_key)).get("strategy_interpretation") or "").strip()
-        ],
-    ]
-    return normalized
 
 
 def _qualify_partial_product_scope(
@@ -1676,35 +1528,28 @@ def _apply_deterministic_evidence_table(
         _dict(writer_packet.get("required_card_keys_by_component")).get("key_evidence_table")
     )
     cards = _dict(writer_packet.get("cards"))
-    label_free = _is_label_free_writer_packet(writer_packet)
-    writer_labels: dict[str, str] = {}
-    if label_free:
-        label_rows = [
-            item
-            for item in evidence_item.get("_display_labels") or []
-            if isinstance(item, dict)
-        ]
-        label_keys = [str(item.get("card_key") or "").strip() for item in label_rows]
-        if label_keys != required:
-            raise HTMLReportWriterUnavailable(
-                "Writer evidence display labels must match required cards in order."
-            )
-        writer_labels = {
-            card_key: str(item.get("display_label") or "").strip()
-            for card_key, item in zip(required, label_rows)
-        }
-        if any(not value for value in writer_labels.values()):
-            raise HTMLReportWriterUnavailable(
-                "Writer evidence display labels must not be empty."
-            )
+    label_rows = [
+        item
+        for item in evidence_item.get("_display_labels") or []
+        if isinstance(item, dict)
+    ]
+    label_keys = [str(item.get("card_key") or "").strip() for item in label_rows]
+    if label_keys != required:
+        raise HTMLReportWriterUnavailable(
+            "Writer evidence display labels must match required cards in order."
+        )
+    writer_labels = {
+        card_key: str(item.get("display_label") or "").strip()
+        for card_key, item in zip(required, label_rows)
+    }
+    if any(not value for value in writer_labels.values()):
+        raise HTMLReportWriterUnavailable(
+            "Writer evidence display labels must not be empty."
+        )
     evidence_item["columns"] = list(_evidence_display_columns(writer_packet))
     evidence_item["rows"] = [
         {
-            "핵심 근거": (
-                writer_labels[card_key]
-                if label_free
-                else _evidence_display_label(card_key, card)
-            ),
+            "핵심 근거": writer_labels[card_key],
             "확인된 수치·사실": _evidence_observation_text(card_key, card),
             _evidence_interpretation_column(writer_packet): _plain_korean_text(
                 _qualify_partial_product_scope(
@@ -1718,11 +1563,6 @@ def _apply_deterministic_evidence_table(
                 {
                     "판단상 역할": _strategy_role_label(card.get("strategy_role")),
                     "_strategy_role": card.get("strategy_role"),
-                }
-                if label_free
-                else {
-                    "영향": _effect_label(card.get("investment_effect")),
-                    "_investment_effect": card.get("investment_effect"),
                 }
             ),
             "_card_key": card_key,
@@ -1750,11 +1590,7 @@ def _apply_deterministic_risk_table(
     risk_item["columns"] = list(RISK_DISPLAY_COLUMNS)
     risk_item["rows"] = [
         {
-            "리스크 요인": (
-                str(risk.get("display_title") or "").strip()
-                if _is_label_free_writer_packet(writer_packet)
-                else _risk_display_title(risk)
-            ),
+            "리스크 요인": str(risk.get("display_title") or "").strip(),
             "현재 확인된 내용": _plain_korean_text(_visible_risk_summary(risk)),
             "투자 판단에 미치는 영향": _plain_korean_text(
                 str(risk.get("current_implication") or risk.get("monitoring_point") or "")
@@ -1898,36 +1734,6 @@ def _limitation_card_assignments(
         target_category = candidates[-1] if candidates else str(limitations[-1].get("category"))
         assignments[target_category].append(card_key)
     return assignments
-
-
-def _evidence_display_label(card_key: str, card: dict[str, Any]) -> str:
-    aliases = {
-        "financial.same_period_trend": "실적 성장",
-        "financial.annual_trend": "중장기 실적 추세",
-        "financial.cash_flow": "현금창출력",
-        "financial.balance_sheet": "재무안정성",
-        "financial.product_breakdown": "매출 구성",
-        "financial.filing_basis": "공시 기준",
-        "market.absolute_trend": "주가 흐름",
-        "market.momentum_volume": "수급·모멘텀",
-        "valuation.selected_date": "기준일 밸류에이션",
-        "valuation.provider_reference": "밸류에이션 참고값",
-        "peer.revenue_growth": "비교기업 대비 성장성",
-        "peer.profitability": "비교기업 대비 수익성",
-        "peer.financial_position": "비교기업 대비 재무구조",
-        "peer.market_performance": "비교기업 대비 주가 성과",
-        "peer.valuation": "비교기업 대비 밸류에이션",
-    }
-    if card_key == "market.relative_performance":
-        benchmark = str(
-            _dict(card.get("comparison_entities")).get("benchmark_name")
-            or _dict(card.get("primary_observation")).get("benchmark_name")
-            or "시장"
-        ).strip()
-        return f"{benchmark} 상대성과"
-    if str(card.get("domain") or "") == "news":
-        return "주요 이벤트"
-    return aliases.get(card_key, str(card.get("label") or "핵심 근거"))
 
 
 def _evidence_observation_text(card_key: str, card: dict[str, Any]) -> str:
@@ -2114,16 +1920,6 @@ def _replace_visible_card_keys(payload: dict[str, Any], writer_packet: dict[str,
     return replace(payload)
 
 
-def _effect_label(value: Any) -> str:
-    return {
-        "positive": "긍정 요인",
-        "negative": "부담 요인",
-        "mixed": "혼합",
-        "neutral": "중립",
-        "reference": "참고",
-    }.get(str(value or ""), "참고")
-
-
 def _strategy_role_label(value: Any) -> str:
     return {
         "primary": "핵심 근거",
@@ -2134,25 +1930,6 @@ def _strategy_role_label(value: Any) -> str:
         "limits_confidence": "불확실성",
         "context": "판단 문맥",
     }.get(str(value or ""), "판단 문맥")
-
-
-def _risk_display_title(risk: dict[str, Any]) -> str:
-    basis = set(_clean_identifiers(risk.get("basis_card_keys")))
-    if "financial.product_breakdown" in basis:
-        return "제품 집중도"
-    if any(key.startswith("market.") for key in basis):
-        return "시장 상대성과"
-    if any(key.startswith("valuation.") or key == "peer.valuation" for key in basis):
-        return "밸류에이션 부담"
-    category = str(risk.get("category") or "").strip()
-    return {
-        "business": "사업 구조",
-        "financial": "재무 부담",
-        "regulatory": "규제·경쟁",
-        "market": "시장 변동성",
-        "valuation": "밸류에이션 부담",
-        "execution": "실행·수익화",
-    }.get(category, "주요 리스크")
 
 
 def _visible_risk_summary(risk: dict[str, Any]) -> str:

@@ -80,13 +80,6 @@ REPORT_SECTIONS: list[dict[str, Any]] = [
 ]
 
 
-KEY_EVIDENCE_DISPLAY_COLUMNS = (
-    "핵심 근거",
-    "확인된 수치·사실",
-    "투자 해석",
-    "영향",
-)
-
 LABEL_FREE_KEY_EVIDENCE_DISPLAY_COLUMNS = (
     "핵심 근거",
     "확인된 수치·사실",

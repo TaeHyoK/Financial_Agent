@@ -83,7 +83,7 @@ The existing frozen experiment can still be checked independently:
 ```bash
 python run_config/run_prepared_reports.py check
 cd repo
-PYTHONPATH=src:src/Agent_Team/YFinance_Agent python -m pytest -q tests
+PYTHONPATH=src python -m pytest -q tests
 ```
 
 ## Response audit and execution repairs

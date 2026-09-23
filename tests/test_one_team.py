@@ -136,7 +136,7 @@ assert set(comparison['basis_cards']) == {'target.integrated.analysis', 'peer.in
 print('single report reached comparison and Strategy')
 '''
             runtime = Path(integrated_report.__file__).parent / "runtime"
-            src = runtime.parents[3]
+            src = runtime.parents[2]
             env = {**os.environ, "ONE_TEAM_RUNTIME": "1", "ONE_TEAM_SINGLE_REPORT": "1",
                 "PYTHONPATH": os.pathsep.join([str(runtime), str(src)])}
             result = subprocess.run([sys.executable, "-c", script, str(paths.financial_final_report),
@@ -146,13 +146,13 @@ print('single report reached comparison and Strategy')
 
 
 @unittest.skipUnless(
-    (Path(__file__).resolve().parents[2] / "run_config/run_one_team_reports.py").is_file(),
+    (Path(__file__).resolve().parents[1] / "run_config/run_one_team_reports.py").is_file(),
     "Server experiment runner is outside this repository; native one-team tests still run.",
 )
 class OneTeamRunnerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        path = Path(__file__).resolve().parents[2] / "run_config/run_one_team_reports.py"
+        path = Path(__file__).resolve().parents[1] / "run_config/run_one_team_reports.py"
         spec = importlib.util.spec_from_file_location("one_team_runner_test", path)
         cls.runner = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = cls.runner

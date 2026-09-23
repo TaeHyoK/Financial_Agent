@@ -18,7 +18,7 @@ from types import SimpleNamespace
 WORKSPACE = Path(__file__).resolve().parents[1]
 REPO = WORKSPACE
 PACKAGE = REPO / "src/Agent_Team/Unified_Agent"
-sys.path[:0] = [str(REPO / "src"), str(REPO / "src/Agent_Team/YFinance_Agent")]
+sys.path.insert(0, str(REPO / "src"))
 from Agent_Team.Unified_Agent.io import read_json as read, write_json as save
 from Agent_Team.Unified_Agent.inputs import prepare_entity
 from Agent_Team.Unified_Agent.report import PROTOCOL, build_request, normalize_source_domains, validate_output, write_report

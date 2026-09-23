@@ -3,11 +3,9 @@ from copy import deepcopy
 from datetime import date, timedelta
 import json
 from pathlib import Path
-import sys
 import tempfile
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from shared.news_articles import ARTICLE_NEWS_POLICY, build_article_packet, article_catalog, articles_for_llm
 from shared.subdata import news_subdata, secondary_context_for_llm
 from orchestration.dependency_graph import STEP_SPECS

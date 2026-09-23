@@ -1,6 +1,4 @@
 """Missing peer financial values must not crash or become zero estimates."""
-from pathlib import Path
-import sys
 from unittest.mock import patch
 
 import matplotlib
@@ -9,8 +7,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 from Agent_Team.Visualization_Agent.chart_builders import build_peer_profitability_comparison_chart
 
 

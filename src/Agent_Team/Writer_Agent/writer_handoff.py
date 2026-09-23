@@ -69,7 +69,7 @@ def build_writer_editorial_packet(
     decision_keys = _dedupe(item.get("card_key") for item in decision_rows)
     context_keys = _dedupe(item.get("card_key") for item in context_rows)
     if not decision_keys:
-        raise ValueError("Writer requires at least one Strategy v5 decision-basis card.")
+        raise ValueError("Writer requires at least one Strategy decision-basis card.")
     overlap = sorted(set(decision_keys) & set(context_keys))
     if overlap:
         raise ValueError(f"Writer decision and report-context cards overlap: {overlap}")
@@ -576,7 +576,7 @@ def validate_writer_editorial_packet(
         }
         if selected_peer_cards != seen_peer_cards:
             raise ValueError(
-                "Every structured Strategy v5 peer basis requires one target_peer_context entry."
+                "Every structured Strategy peer basis requires one target_peer_context entry."
             )
     limitation_categories: set[str] = set()
     for index, limitation in enumerate(_list(packet.get("required_limitations"))):

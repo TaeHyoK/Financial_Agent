@@ -43,3 +43,10 @@ handoff/
 Thumbs.db
 .vscode/
 .idea/
+
+# Portable ablation bundle extracted at the repo root (kept out of Git)
+/financial_agent_ablation_report_bundle_*.zip
+/SHA256SUMS.txt
+/bundle_manifest.json
+/BUNDLE_README.md
+/ABLATION_HANDOFF_*.md

@@ -428,7 +428,7 @@ def _build_editorial_context(
                 "월별 배열 구간을 사건 발생일이나 실적 대상 기간으로 바꾸지 않는다. 보도일과 사건 발생일도 구분한다."
             ),
             "limitation_coverage_policy": (
-                "Strategy v5에서는 residual_uncertainty가 있으면 그 의미를 보존해 자연스럽게 편집한다. "
+                "Strategy에서는 residual_uncertainty가 있으면 그 의미를 보존해 자연스럽게 편집한다. "
                 "required_limitations의 자료 기준 설명은 _claim_units의 limitation_categories로 연결한다. "
                 "residual_uncertainty에 없는 새로운 판단 한계를 추가하지 않는다. required_limitations에 "
                 "지정되지 않은 정상 공시 시차나 후행 사건의 과거 재무표 미반영을 별도 문단으로 덧붙이지 않는다. "
@@ -1353,7 +1353,7 @@ def _editorial_system_prompt(
 {assembly_policy}
 - 밑줄로 시작하는 필드는 검증 전용이다. 그 값을 보이는 문장이나 표 셀에 노출하지 않는다.
 - 각 텍스트 item의 실제 완결 문장을 _claim_units.claim에 그대로 복사하고 문장별 사용 card_keys를 연결한다. 각 item의 _claim_units.card_keys 합집합은 item.card_keys와 정확히 같아야 한다.
-- Strategy v5의 data_limits는 residual_uncertainty의 의미와 required_limitations의 자료 기준을 독자용 문장으로 편집한다. 실제 작성 문장과 근거를 _claim_units에 연결하고 자료 기준의 category를 limitation_categories에 표시한다. 두 입력이 모두 비어 있으면 paragraphs와 _claim_units를 빈 배열로 둔다. 한계를 채우려고 새로운 불확실성을 만들지 않는다.
+- Strategy의 data_limits는 residual_uncertainty의 의미와 required_limitations의 자료 기준을 독자용 문장으로 편집한다. 실제 작성 문장과 근거를 _claim_units에 연결하고 자료 기준의 category를 limitation_categories에 표시한다. 두 입력이 모두 비어 있으면 paragraphs와 _claim_units를 빈 배열로 둔다. 한계를 채우려고 새로운 불확실성을 만들지 않는다.
 - data_limits에서 residual_uncertainty에 없는 판단 한계를 추가하지 않는다. required_limitations로 지정되지 않은 정상 공시 시차나 후행 사건의 과거 재무표 미반영을 별도 문단으로 붙이지 않는다. 문단 수를 채우지 말고 핵심 제약을 한 번 설명하는 것으로 충분하다.
 - 그 외 계약에서 data_limits의 _limitation_claims에는 스키마가 요구하는 category key를 정확히 유지하고, 각 claim은 해당 required limitation의 facts와 basis card를 사용해 독자가 이해할 수 있는 문장으로 실제 설명한다.
 - _limitation_claims의 category 이름이나 card key를 claim 문장에 노출하지 않는다. 검증용 category와 card key는 시스템이 원본 packet에서 연결한다.

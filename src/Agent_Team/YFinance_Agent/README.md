@@ -22,7 +22,17 @@ python src/Agent_Team/YFinance_Agent/main.py --input configs/company_input.json
 
 기본 env 파일은 `configs/.env`입니다. 기본 산출물 위치는 기업별 폴더인 `Output_total/Y_Finance/SK바이오팜_20251031`입니다.
 
-LLM 보고서는 `reporting.generate_analyst_report` 가 만들며, 최종 보고서 파이프라인 안에서 조건별 입력과 함께 호출됩니다. 단독 실행용 스크립트는 두지 않습니다.
+LLM 보고서는 `reporting.generate_analyst_report` 가 만들며, 최종 보고서 파이프라인 안에서 조건별 입력과 함께 호출됩니다. 이미 수집된 시장·DART·뉴스 JSON 만으로 보고서를 다시 만들 때는 `report.py` 를 씁니다. `agent-team-loop` 의 `yfinance_report` 단계가 이 스크립트를 부릅니다.
+
+```bash
+PYTHONPATH=src python src/Agent_Team/YFinance_Agent/report.py \
+  --market-json Output_total/Y_Finance/SK바이오팜_20251031/market_full_dataset.json \
+  --dart-json Output_total/Financial/SK바이오팜_20251031/dart_lightweight.json \
+  --news-json Output_total/News/SK바이오팜_20251031/context_exports/month/llm_period_summaries.json \
+  --report-md Output_total/Y_Finance/SK바이오팜_20251031/yfinance_analyst_report.md \
+  --report-json Output_total/Y_Finance/SK바이오팜_20251031/yfinance_analyst_report.json \
+  --company-name SK바이오팜 --ticker 326030.KS
+```
 
 ## Options
 

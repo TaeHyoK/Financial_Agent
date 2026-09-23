@@ -339,7 +339,7 @@ def validate_strategy_decision(
     decision_items = _list(plan.get("decision_basis_cards"))
     context_items = _list(plan.get("report_context_cards"))
     if not decision_items:
-        raise ValueError("Strategy v5 requires at least one decision-basis card.")
+        raise ValueError("Strategy requires at least one decision-basis card.")
 
     selected_decision = _unique_plan_keys(decision_items, allowed=decision_keys, location="decision_basis_cards")
     selected_context = _unique_plan_keys(context_items, allowed=set(cards), location="report_context_cards")

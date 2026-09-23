@@ -5,9 +5,9 @@ import unittest
 from pathlib import Path
 from jsonschema import Draft202012Validator, ValidationError
 from test_optional_limits import writer_fixture
-from html_report_writer import _writer_report_schema, normalize_report_payload
-from html_report_writer import _editorial_system_prompt, FREE_FORM_WRITER_MODE, DETERMINISTIC_WRITER_MODE
-from html_report_validator import _validate_card_key_coverage, _validate_claim_card_grounding
+from Agent_Team.Writer_Agent.html_report_writer import _writer_report_schema, normalize_report_payload
+from Agent_Team.Writer_Agent.html_report_writer import _editorial_system_prompt, FREE_FORM_WRITER_MODE, DETERMINISTIC_WRITER_MODE
+from Agent_Team.Writer_Agent.html_report_validator import _validate_card_key_coverage, _validate_claim_card_grounding
 from test_annual_context import strategy_fixture
 from Agent_Team.Financial_Agent.financial_analysis_agent import financial_analysis_json_schema
 from Agent_Team.YFinance_Agent.reporting import yfinance_agent_json_schema
@@ -18,7 +18,7 @@ from Agent_Team.News_Agent.context_export import (
 )
 from Agent_Team.Strategy_Agent.decision import align_strategy_decision_evidence_plan
 from shared.evidence_cards import card_content_sha256
-from writer_handoff import build_writer_editorial_packet, _reader_observation
+from Agent_Team.Writer_Agent.writer_handoff import build_writer_editorial_packet, _reader_observation
 from Agent_Team.News_Agent.analysis_agent import build_llm_request as build_news_request
 from shared.news_selection import MONTHLY_NEWS_POLICY, MONTHLY_NEWS_LABEL
 

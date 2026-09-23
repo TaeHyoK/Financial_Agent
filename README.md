@@ -111,8 +111,8 @@ src/
 │   ├── Competitor_Agent/      # 비교기업 선정과 1:1 비교
 │   ├── Strategy_Agent/        # 판단 방향·근거·위험 작성
 │   ├── Unified_Agent/         # One-team 실험의 통합 분석과 후속 단계 연결
-│   ├── Visualization Agent/   # 차트 목록과 선택 차트 생성
-│   └── Writer Agent/          # 최종 HTML 보고서 작성
+│   ├── Visualization_Agent/   # 차트 목록과 선택 차트 생성
+│   └── Writer_Agent/          # 최종 HTML 보고서 작성
 ├── orchestration/             # 전체 파이프라인 실행
 └── shared/                    # 공통 근거 계약과 모델 호출
 ```

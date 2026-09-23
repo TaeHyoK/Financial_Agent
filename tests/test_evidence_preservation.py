@@ -15,13 +15,13 @@ from Agent_Team.Strategy_Agent.decision import (
 )
 from Agent_Team.Strategy_Agent.agent import preserve_and_validate_strategy
 from Agent_Team.Strategy_Agent.packet import _news_cards, _reader_limitations
-from writer_handoff import build_writer_editorial_packet
-from html_report_writer import (
+from Agent_Team.Writer_Agent.writer_handoff import build_writer_editorial_packet
+from Agent_Team.Writer_Agent.html_report_writer import (
     _normalize_text, _ensure_claim_units_visible, writer_report_response_format,
     _normalize_requested_chart_keys,
 )
-from html_report_validator import _validate_chart_selection_grounding, _validate_compact_text_sections
-from formatted_html_renderer import build_complete_html
+from Agent_Team.Writer_Agent.html_report_validator import _validate_chart_selection_grounding, _validate_compact_text_sections
+from Agent_Team.Writer_Agent.formatted_html_renderer import build_complete_html
 from jsonschema import Draft202012Validator
 from orchestration.full_report_pipeline import validate_full_pipeline_outputs, FullPipelineError
 

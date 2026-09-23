@@ -952,13 +952,8 @@ def _build_visualization_command(
 ) -> list[str]:
     command = [
         sys.executable,
-        str(
-            PROJECT_ROOT
-            / "src"
-            / "Agent_Team"
-            / "Visualization Agent"
-            / "report_chart_cli.py"
-        ),
+        "-m",
+        "Agent_Team.Visualization_Agent.report_chart_cli",
         phase,
         "--output-root",
         str(paths.output_root),
@@ -985,7 +980,8 @@ def build_writer_generation_command(
 ) -> list[str]:
     command = [
         sys.executable,
-        str(PROJECT_ROOT / "src" / "Agent_Team" / "Writer Agent" / "writer_agent.py"),
+        "-m",
+        "Agent_Team.Writer_Agent.writer_agent",
         "--phase",
         "generate",
         "--run-key",
@@ -1020,7 +1016,8 @@ def build_writer_render_command(
     del ablation
     return [
         sys.executable,
-        str(PROJECT_ROOT / "src" / "Agent_Team" / "Writer Agent" / "writer_agent.py"),
+        "-m",
+        "Agent_Team.Writer_Agent.writer_agent",
         "--phase",
         "render",
         "--run-key",

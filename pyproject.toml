@@ -52,7 +52,7 @@ strategy-agent = "Agent_Team.Strategy_Agent.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["Agent_Team*", "shared*", "orchestration*"]
-exclude = ["__pycache__*"]
+exclude = ["*__pycache__*"]
 
 [tool.setuptools.package-data]
 "Agent_Team.Competitor_Agent" = ["prompts/*.md"]

@@ -9,9 +9,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-MODULE_DIR = Path(__file__).resolve().parents[1] / "src/Agent_Team/Visualization Agent"
-sys.path.insert(0, str(MODULE_DIR))
-from chart_builders import build_peer_profitability_comparison_chart
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+from Agent_Team.Visualization_Agent.chart_builders import build_peer_profitability_comparison_chart
 
 
 @pytest.mark.parametrize("eps", [[None, None], [100.0, None], [-100.0, 0.0]])
@@ -20,7 +20,7 @@ def test_missing_eps_preserved(tmp_path, eps):
                           "revenue_100m": [100.0, None], "contribution_margin_pct": [None, 10.0],
                           "sga_margin_pct": [5.0, None], "eps": eps})
     saved = []
-    with patch("chart_builders._save_figure", side_effect=lambda fig, *_: saved.append(fig)):
+    with patch("Agent_Team.Visualization_Agent.chart_builders._save_figure", side_effect=lambda fig, *_: saved.append(fig)):
         build_peer_profitability_comparison_chart(frame, tmp_path / "chart.pdf", tmp_path / "chart.png")
     heights = [bar.get_height() for bar in saved[0].axes[2].patches]
     for expected, actual in zip(eps, heights):

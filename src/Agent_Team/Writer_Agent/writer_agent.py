@@ -6,18 +6,12 @@ import argparse
 import logging
 import os
 import shutil
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-SRC_ROOT = REPO_ROOT / "src"
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
-
-from formatted_html_renderer import render_formatted_html_report
-from html_report_writer import (
+from .formatted_html_renderer import render_formatted_html_report
+from .html_report_writer import (
     DEFAULT_LLM_MODEL,
     normalize_report_payload,
     request_html_report_payload,
@@ -25,17 +19,18 @@ from html_report_writer import (
     writer_request_fingerprint,
 )
 from orchestration.config import DEFAULT_ENV_FILE, agent_output_dir, load_project_env
-from writer_handoff import (
+from .writer_handoff import (
     EDITORIAL_PACKET_VERSION,
     WRITER_PROVENANCE_VERSION,
     build_writer_editorial_packet,
     validate_writer_editorial_packet,
 )
-from writer_io import load_json, save_json
+from .writer_io import load_json, save_json
 
 
 logger = logging.getLogger(__name__)
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
 OUTPUT_ROOT = REPO_ROOT / "Output_total"
 DEFAULT_RUN_KEY = ""
 REQUIRED_STRATEGY_INPUT_FILES = (

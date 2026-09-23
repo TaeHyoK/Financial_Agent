@@ -8,14 +8,14 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
-from html_report_spec import (
+from .html_report_spec import (
     REPORT_DISCLAIMER,
     REPORT_SECTIONS,
     TABLE_ITEM_KEYS,
     resolve_report_item_title,
     has_data_limit_content,
 )
-from writer_io import write_text
+from .writer_io import write_text
 
 
 MISSING_VALUE = "데이터 추가 필요"

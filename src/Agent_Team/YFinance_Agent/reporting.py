@@ -228,23 +228,6 @@ def generate_agent_json_report_with_llm(
         raise RuntimeError("OPENAI_API_KEY is required to generate the report with an LLM.")
 
     model_name = model or os.getenv("OPENAI_MODEL") or DEFAULT_OPENAI_MODEL
-    evidence = build_llm_evidence_packet(payload, ticker=ticker)
-    secondary_catalog = _combined_secondary_catalog(payload.get("secondary_context") or {})
-    required_domains = sorted(
-        domain
-        for domain, context in (payload.get("secondary_context") or {}).items()
-        if domain in {"financial", "news"}
-        and isinstance(context, dict)
-        and context.get("status") == "available"
-    )
-    secondary_ids_by_domain = {
-        domain: sorted(
-            evidence_id
-            for evidence_id, item in secondary_catalog.items()
-            if isinstance(item, dict) and item.get("domain") == domain
-        )
-        for domain in required_domains
-    }
     request_payload = build_market_request(payload, ticker=ticker, model=model_name)
     response = call_domain_response(request_payload, step="yfinance:analyst_report")
     report = _parse_response_json(response)

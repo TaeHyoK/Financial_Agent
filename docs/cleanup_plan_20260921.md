@@ -194,11 +194,11 @@ cd /home/tkim298/agent2/Financial_Agent && .venv/bin/python -m pytest -q -rs
 
 ### 남긴 것과 이유
 
-- `agent.py` 의 `from .contracts_v4 import build_strategy_context_package_v4` 는 이제 쓰이지 않지만 import 순서 앵커로 주석과 함께 유지. 검토 결과 sitecustomize 는 모듈 실행 직후 패치하므로 순서와 무관하게 패치본이 바인딩되지만, 제약을 임의로 풀지 않았다. (이름 변경 이후: `build_strategy_context_package_v4` → `build_base_strategy_context`)
+- `agent.py` 의 `from .contracts_v4 import build_strategy_context_package_v4` 는 이제 쓰이지 않지만 import 순서 앵커로 주석과 함께 유지. 검토 결과 sitecustomize 는 모듈 실행 직후 패치하므로 순서와 무관하게 패치본이 바인딩되지만, 제약을 임의로 풀지 않았다. → 2026-09-23 2라운드에서 제거, one-team 바인딩 동일 확인. (이름 변경 이후: `build_strategy_context_package_v4` → `build_base_strategy_context`)
 - `financial_analysis_agent.py`·`reporting.py` 의 `from openai import OpenAI` 는 `try/except ImportError` 로 의존성 검사 역할이라 유지.
 - `writer_agent.py` 의 입력 탐색 폴백(`strategy_decision_output_v5.json` → `_v4` → `_v2`)과 파일명 분기는 기존 산출 디렉터리 호환에 관여하므로 유지.
-- `writer_handoff.py` 의 `_selected_date`, `_contrary_evidence`, `_compact_evidence_refs`, `_remove_path_metadata` 는 정리 전부터 호출자 0 이던 v1 유물. 이번 목록 밖이라 남김. 다음 라운드 후보.
-- `html_report_writer.py` 에서 `_is_label_free_writer_packet` 이 거짓인 분기(v2 Strategy 결정용)와 `normalize_report_payload` 의 `single_call_llm_with_compact_handoff` 분기는 도달 불가지만 최소 diff 원칙으로 남김. 다음 라운드 후보.
+- `writer_handoff.py` 의 `_selected_date`, `_contrary_evidence`, `_compact_evidence_refs`, `_remove_path_metadata` 는 정리 전부터 호출자 0 이던 v1 유물. → 2026-09-23 2라운드에서 제거.
+- `html_report_writer.py` 에서 `_is_label_free_writer_packet` 이 거짓인 분기와 `single_call_llm_with_compact_handoff` 분기. → 2026-09-23 2라운드에서 제거. Writer 입력은 `strategy_contract_version` 이 현행 결정 계약이 아니면 명시적 오류.
 - `tests/test_one_team.py` 러너 테스트 3개의 스킵 조건과 `YFinance_Agent/reporting.py:31` 의 `from valuation import` 잠재 결함은 동작 변경 범위라 손대지 않음.
 - `docs/annual_validation.json` 이 삭제된 `run_pipeline.py` 를 언급하지만 과거 검증 기록이라 그대로 둠.
 

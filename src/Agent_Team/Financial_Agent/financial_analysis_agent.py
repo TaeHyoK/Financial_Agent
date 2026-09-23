@@ -167,7 +167,6 @@ def generate_financial_analysis_with_llm(
     model_name = model or os.getenv("OPENAI_MODEL") or DEFAULT_OPENAI_MODEL
     packet = build_financial_llm_packet(report)
     primary_ids = sorted(packet["primary_financial_evidence"])
-    secondary_ids_by_domain = _secondary_ids_by_domain(packet.get("secondary_context") or {})
     request_payload = build_financial_request(report, model=model_name)
     response = call_domain_response(request_payload, step="financial:analyst_report")
     if str(getattr(response, "status", "completed") or "") == "incomplete":

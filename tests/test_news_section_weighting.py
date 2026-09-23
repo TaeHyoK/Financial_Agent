@@ -3,7 +3,6 @@ from datetime import date
 import json
 from pathlib import Path
 from types import SimpleNamespace
-import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -12,7 +11,6 @@ import numpy as np
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 from Agent_Team.News_Agent.ranking.section_weighting import (
     WEIGHTS, SECTION_TITLES, POLICY_VERSION, aggregate, configured_weights,
     dense_scores, extract_section_chunks, section_indices,

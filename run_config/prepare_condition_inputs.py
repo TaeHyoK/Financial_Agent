@@ -34,7 +34,7 @@ def run(args):
     workspace = args.workspace.resolve()
     repo = workspace
     src = repo / "src"
-    sys.path[:0] = [str(src), str(src / "Agent_Team/YFinance_Agent"), str(workspace)]
+    sys.path[:0] = [str(src), str(workspace)]
     # Reuse the existing matched sampler, but bind its source imports to this repo.
     import ablation_suite.config as sampling_config
     sampling_config.FINAL_SRC = src

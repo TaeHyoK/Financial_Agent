@@ -10,12 +10,14 @@ news:
   query_language: "ko"
   max_results: 200
   # After seven-day semantic duplicate merging, retain the top 3 weighted DART
-  # embedding matches per ISO week. All selected articles go to each domain
-  # agent, grouped by aligned month, without intermediate LLM summaries.
+  # embedding matches per ISO week. The News agent receives every selected
+  # article, grouped by aligned month. The financial and market agents receive
+  # monthly LLM summaries of the same articles as secondary context.
   weekly_top_k: 3
   raw_news_policy: monthly_selected_articles_v1
   monthly_top_k: null
-  # Legacy global mode is used only by an explicit --event-top-k override.
+  # The article-only policy rejects an --event-top-k override. Legacy global
+  # mode requires changing raw_news_policy.
   event_top_k: null
   # Deprecated compatibility key; event_top_k takes precedence as the final
   # global News-Agent event budget.

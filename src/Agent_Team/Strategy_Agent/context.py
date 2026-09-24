@@ -1,4 +1,4 @@
-"""Agent-led Strategy context and minimally constrained decision contract."""
+"""Base Strategy context package shared by the decision contract."""
 
 from __future__ import annotations
 
@@ -11,10 +11,6 @@ from .packet import _dict
 
 
 CONTEXT_VERSION = "strategy_context_package"
-STRATEGY_CACHE_VERSION = "6"
-MAX_SELECTED_BASIS_CARDS = 6
-MAX_TARGET_PEER_CONTEXTS = 2
-MAX_TARGET_PEER_METRICS = 2
 _INTERNAL_COMPARISON_CARD_KEYS = {"peer.agent_analysis"}
 
 _CARD_POLICY_FIELDS = {"allowed_sections", "decision_use", "eligibility"}

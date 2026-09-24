@@ -1,4 +1,4 @@
-"""Reproducible ablation runner for the frozen FINAL pipeline."""
+"""Frozen ablation configuration and helpers kept for evaluation and random-news sampling."""
 
 from .config import CONDITIONS, COMPANY_SPECS
 

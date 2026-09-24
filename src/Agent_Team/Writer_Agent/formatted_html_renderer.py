@@ -126,7 +126,7 @@ def build_complete_html(report_payload: dict[str, Any]) -> str:
       <div class="visual-sidebar">
         {_sidebar_header(metadata)}
 {_render_sidebar_key_data(metadata)}
-{_render_sidebar_signal_summary(report_payload)}
+
       </div>
     </div>
 {_render_report_charts(report_payload)}
@@ -179,58 +179,6 @@ def _render_sidebar_key_data(metadata: dict[str, Any]) -> str:
             <div><dt>자료 충실도</dt><dd>{_inline(coverage)}</dd></div>
             <div><dt>판단 확신도</dt><dd>{_inline(confidence)}</dd></div>
           </dl>
-        </section>
-"""
-
-
-def _render_sidebar_signal_summary(report_payload: dict[str, Any]) -> str:
-    sections = _dict(report_payload.get("sections"))
-    evidence = _dict(_dict(sections.get("key_evidence_table")).get("evidence_table"))
-    rows = [row for row in evidence.get("rows") or [] if isinstance(row, dict)]
-    role_based = any(str(row.get("_strategy_role") or "") for row in rows)
-    groups = ({
-        "판단 지지": [
-            str(row.get("핵심 근거") or "").strip()
-            for row in rows
-            if row.get("_strategy_role") in {"primary", "supports_decision"}
-        ][:3],
-        "반대 논리": [
-            str(row.get("핵심 근거") or "").strip()
-            for row in rows
-            if row.get("_strategy_role") in {"counter", "opposes_decision"}
-        ][:3],
-        "불확실성": [
-            str(row.get("핵심 근거") or "").strip()
-            for row in rows
-            if row.get("_strategy_role") in {"monitoring", "limits_confidence"}
-        ][:3],
-    } if role_based else {
-        "긍정 요인": [
-            str(row.get("핵심 근거") or "").strip()
-            for row in rows
-            if row.get("_investment_effect") == "positive"
-        ][:3],
-        "부담 요인": [
-            str(row.get("핵심 근거") or "").strip()
-            for row in rows
-            if row.get("_investment_effect") == "negative"
-        ][:3],
-    })
-    visible_groups = {label: values for label, values in groups.items() if values}
-    if not visible_groups:
-        return ""
-    content = "\n".join(
-        f"""
-          <div class="signal-group">
-            <h3>{_text(label)}</h3>
-            <ul>{''.join(f'<li>{_inline(value)}</li>' for value in values)}</ul>
-          </div>"""
-        for label, values in visible_groups.items()
-    )
-    return f"""
-        <section class="sidebar-panel signal-panel">
-          <h2>판단 요인</h2>
-{content}
         </section>
 """
 

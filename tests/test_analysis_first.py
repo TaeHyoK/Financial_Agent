@@ -97,15 +97,6 @@ class AnalysisFirstTests(unittest.TestCase):
         row = contract["sections"]["key_evidence_table"]["evidence_table"]["rows"][0]
         self.assertNotIn("_strategy_role", row)
 
-    def test_old_writer_packet_remains_readable(self):
-        packet, _, decision, provenance = strategy_fixture()
-        decision["schema_revision"] = "12m_v2"
-        decision["evidence_plan"]["decision_basis_cards"][0]["relation_to_decision"] = "supports"
-        handoff, _ = build_writer_editorial_packet(strategy_packet=packet, strategy_decision=decision, strategy_provenance=provenance)
-        self.assertEqual(next(iter(handoff["cards"].values()))["strategy_role"], "supports_decision")
-        row = _output_contract(handoff, writer_mode="free_form")["sections"]["key_evidence_table"]["evidence_table"]["rows"][0]
-        self.assertIn("판단상 역할", row)
-
 
 if __name__ == "__main__":
     unittest.main()

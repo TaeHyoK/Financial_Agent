@@ -10,7 +10,6 @@ import re
 from typing import Any
 
 from .html_report_spec import (
-    LABEL_FREE_KEY_EVIDENCE_DISPLAY_COLUMNS,
     REPORT_SECTIONS,
     RISK_DISPLAY_COLUMNS,
 )
@@ -885,13 +884,6 @@ def _output_contract(
                                 "핵심 근거": "card label을 독자용 한국어로 작성",
                                 "확인된 수치·사실": "reader_observation을 단위 변경 없이 작성",
                                 _evidence_interpretation_column(writer_packet): "strategy_interpretation 의미를 보존해 작성",
-                                **(
-                                    {} if _uses_narrative_evidence(writer_packet) else
-                                    {
-                                        "판단상 역할": "strategy_role을 독자용 한국어로 작성",
-                                        "_strategy_role": _dict(cards.get(card_key)).get("strategy_role"),
-                                    }
-                                ),
                                 "_card_key": card_key,
                                 "_strategy_interpretation": _dict(cards.get(card_key)).get(
                                     "strategy_interpretation"
@@ -972,21 +964,6 @@ def _output_contract(
                     for item in writer_packet.get("required_limitations") or []
                     if isinstance(item, dict) and item.get("category")
                 ]
-                if (component == "data_limits" and limitation_claim_units
-                        and writer_packet.get("strategy_contract_version") != STRATEGY_DECISION_VERSION):
-                    section_items[item_key] = {
-                        "_limitation_claims": {
-                            str(item.get("category")): {
-                                "claim": (
-                                    "이 category의 facts와 basis card를 사용해 한계만 설명하는 "
-                                    "독자용 한국어 완결 문장"
-                                )
-                            }
-                            for item in writer_packet.get("required_limitations") or []
-                            if isinstance(item, dict) and item.get("category")
-                        }
-                    }
-                    continue
                 section_items[item_key] = {
                     "paragraphs": [
                         "독립적인 논거·가정과 근거 연결을 보존하는 한국어 분석 문단"
@@ -1104,13 +1081,6 @@ def _writer_report_schema(
                             },
                             "_strategy_interpretation": {"type": "string"},
                     }
-                    if not _uses_narrative_evidence(writer_packet):
-                        row_fields.update(
-                            {
-                                "판단상 역할": {"type": "string"},
-                                "_strategy_role": {"type": "string"},
-                            }
-                        )
                     row_schema = _strict_schema_object(row_fields)
                     row_count = len(allowed_card_keys)
                 elif free_form and component == "risk_monitoring_matrix":
@@ -1163,22 +1133,6 @@ def _writer_report_schema(
                         "maxItems": len(allowed_card_keys),
                     }
                 item_properties[item_key] = _strict_schema_object(table_properties)
-                continue
-
-            if (component == "data_limits" and limitation_categories
-                    and writer_packet.get("strategy_contract_version") != STRATEGY_DECISION_VERSION):
-                item_properties[item_key] = _strict_schema_object(
-                    {
-                        "_limitation_claims": _strict_schema_object(
-                            {
-                                category: _strict_schema_object(
-                                    {"claim": {"type": "string"}}
-                                )
-                                for category in limitation_categories
-                            }
-                        )
-                    }
-                )
                 continue
 
             claim_unit = _strict_schema_object(
@@ -1394,18 +1348,12 @@ def _is_editorial_packet(value: Any) -> bool:
     return isinstance(value, dict) and value.get("packet_version") == EDITORIAL_PACKET_VERSION
 
 
-def _uses_narrative_evidence(value: Any) -> bool:
-    return isinstance(value, dict) and value.get("schema_revision") == "12m_v3"
-
-
 def _evidence_interpretation_column(packet: dict[str, Any]) -> str:
-    return "투자 판단에 미치는 의미" if _uses_narrative_evidence(packet) else "투자 해석"
+    return "투자 판단에 미치는 의미"
 
 
 def _evidence_display_columns(packet: dict[str, Any]) -> tuple[str, ...]:
-    if _uses_narrative_evidence(packet):
-        return ("핵심 근거", "확인된 수치·사실", "투자 판단에 미치는 의미")
-    return LABEL_FREE_KEY_EVIDENCE_DISPLAY_COLUMNS
+    return ("핵심 근거", "확인된 수치·사실", "투자 판단에 미치는 의미")
 
 
 def _writer_contract_version(value: dict[str, Any]) -> str:
@@ -1551,13 +1499,6 @@ def _apply_deterministic_evidence_table(
                     writer_packet,
                     [card_key],
                 )
-            ),
-            **(
-                {} if _uses_narrative_evidence(writer_packet) else
-                {
-                    "판단상 역할": _strategy_role_label(card.get("strategy_role")),
-                    "_strategy_role": card.get("strategy_role"),
-                }
             ),
             "_card_key": card_key,
             "_strategy_interpretation": card.get("strategy_interpretation"),
@@ -1912,18 +1853,6 @@ def _replace_visible_card_keys(payload: dict[str, Any], writer_packet: dict[str,
         return value
 
     return replace(payload)
-
-
-def _strategy_role_label(value: Any) -> str:
-    return {
-        "primary": "핵심 근거",
-        "counter": "반대 근거",
-        "monitoring": "위험 신호",
-        "supports_decision": "판단 지지",
-        "opposes_decision": "반대 논리",
-        "limits_confidence": "불확실성",
-        "context": "판단 문맥",
-    }.get(str(value or ""), "판단 문맥")
 
 
 def _visible_risk_summary(risk: dict[str, Any]) -> str:

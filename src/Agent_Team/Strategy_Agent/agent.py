@@ -637,7 +637,7 @@ def build_strategy_input_bundle(
     peer_analysis_path: Path | None = None,
     ablation_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Create the exact input bundle read by the two Strategy Agent LLM steps."""
+    """Create the exact input bundle read by the single Strategy decision call."""
 
     target_financial_path = target_financial_path.expanduser().resolve()
     target_news_path = target_news_path.expanduser().resolve()
@@ -997,7 +997,7 @@ def validate_input_bundle(bundle: dict[str, Any]) -> None:
 
 
 def load_peer_comparison(path: Path | None) -> dict[str, Any]:
-    """Load the explicit pairwise comparison used by the decision agents."""
+    """Load the explicit pairwise comparison used by the decision agent."""
 
     if path is None:
         return {}
@@ -1033,7 +1033,7 @@ def load_peer_analysis(path: Path | None) -> dict[str, Any]:
 
 
 def build_evidence_hierarchy(*, peer_comparison_available: bool) -> list[dict[str, Any]]:
-    """Declare the order in which decision agents should evaluate evidence."""
+    """Declare the order in which the decision agent should evaluate evidence."""
 
     hierarchy = [
         {

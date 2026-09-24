@@ -17,6 +17,7 @@ EDITORIAL_PACKET_VERSION = "writer_editorial_packet"
 WRITER_PROVENANCE_VERSION = "writer_packet_provenance"
 FINAL_RECOMMENDATIONS = {"Buy", "Hold", "Sell"}
 STRATEGY_DECISION_VERSION = "strategy_decision_output"
+SCHEMA_REVISION = "12m_v3"
 WRITER_COMPONENTS = (
     "investment_call_thesis",
     "business_market_context",
@@ -114,10 +115,9 @@ def build_writer_editorial_packet(
                 evidence_tier="limitation_context",
             )
 
-    if strategy_decision.get("schema_revision") == "12m_v3":
-        for card in cards.values():
-            card.pop("strategy_role", None)
-            card.pop("decision_use", None)
+    for card in cards.values():
+        card.pop("strategy_role", None)
+        card.pop("decision_use", None)
 
     def linked_keys(field: str) -> list[str]:
         return [
@@ -297,8 +297,7 @@ def _select_limitations(
         elif category == "valuation_input_date_mix":
             include = "valuation" in selected_domains
         elif category == "news_financial_link":
-            # Legacy packets may still contain this automatic requirement.
-            # Unquantified impact alone does not require an analytical caveat.
+            # Unquantified news impact alone does not require an analytical caveat.
             include = False
         elif category == "single_peer_scope":
             # 비교기업 수는 실험 설계의 범위이며 공개 보고서의 판단 한계로 쓰지 않는다.
@@ -455,18 +454,16 @@ def validate_writer_editorial_packet(
         if not str(target.get(key) or "").strip():
             raise ValueError(f"writer editorial target.{key} is required.")
     decision = _require_dict(packet.get("decision"), "decision")
-    strategy_version = packet.get("strategy_contract_version")
-    is_strategy_decision = strategy_version == STRATEGY_DECISION_VERSION
-    if is_strategy_decision:
-        if not str(decision.get("judgment") or "").strip():
-            raise ValueError("writer editorial decision.judgment is required for label-free Strategy.")
-        if packet.get("schema_revision") in {"12m_v1", "12m_v2", "12m_v3"}:
-            if decision.get("opinion") not in FINAL_RECOMMENDATIONS:
-                raise ValueError("Annual Writer decision requires Buy/Hold/Sell.")
-        elif "opinion" in decision:
-            raise ValueError("legacy label-free Writer decision cannot contain opinion.")
-    elif decision.get("opinion") not in FINAL_RECOMMENDATIONS:
-        raise ValueError("writer editorial decision.opinion must be Buy/Hold/Sell.")
+    if packet.get("strategy_contract_version") != STRATEGY_DECISION_VERSION:
+        raise ValueError(
+            f"writer editorial packet requires a {STRATEGY_DECISION_VERSION} Strategy decision."
+        )
+    if not str(decision.get("judgment") or "").strip():
+        raise ValueError("writer editorial decision.judgment is required.")
+    if packet.get("schema_revision") != SCHEMA_REVISION:
+        raise ValueError(f"writer editorial packet requires schema_revision={SCHEMA_REVISION}.")
+    if decision.get("opinion") not in FINAL_RECOMMENDATIONS:
+        raise ValueError("Annual Writer decision requires Buy/Hold/Sell.")
     if not str(decision.get("investment_horizon") or "").strip():
         raise ValueError("writer editorial decision.investment_horizon is required.")
     if decision.get("data_coverage") not in {"high", "medium", "low"}:
@@ -474,13 +471,12 @@ def validate_writer_editorial_packet(
     if decision.get("decision_confidence") not in {"high", "medium", "low"}:
         raise ValueError("writer editorial decision.decision_confidence is invalid.")
     bridge = _require_dict(packet.get("recommendation_bridge"), "recommendation_bridge")
-    if packet.get("schema_revision") in {"12m_v2", "12m_v3"}:
-        if not str(bridge.get("decision_rationale") or "").strip():
-            raise ValueError("Writer requires the Strategy decision rationale.")
-        rationale_keys = _text_list(bridge.get("decision_rationale_card_keys"))
-        thesis_keys = _text_list(_dict(packet.get("required_card_keys_by_component")).get("investment_call_thesis"))
-        if not rationale_keys or not set(rationale_keys) <= set(thesis_keys):
-            raise ValueError("Decision rationale references must reach the thesis component.")
+    if not str(bridge.get("decision_rationale") or "").strip():
+        raise ValueError("Writer requires the Strategy decision rationale.")
+    rationale_keys = _text_list(bridge.get("decision_rationale_card_keys"))
+    thesis_keys = _text_list(_dict(packet.get("required_card_keys_by_component")).get("investment_call_thesis"))
+    if not rationale_keys or not set(rationale_keys) <= set(thesis_keys):
+        raise ValueError("Decision rationale references must reach the thesis component.")
     if bridge.get("decision_confidence") != decision.get("decision_confidence"):
         raise ValueError("Writer recommendation bridge confidence mismatch.")
     cards = _require_dict(packet.get("cards"), "cards")
@@ -509,31 +505,19 @@ def validate_writer_editorial_packet(
             raise ValueError(f"Writer card observation is required: {card_key}")
         if not str(card.get("strategy_interpretation") or "").strip():
             raise ValueError(f"Writer card Strategy interpretation is required: {card_key}")
-        if is_strategy_decision:
-            if packet.get("schema_revision") != "12m_v3" and card.get("strategy_role") not in {
-                "supports_decision",
-                "opposes_decision",
-                "limits_confidence",
-                "context",
-            }:
-                raise ValueError(f"Writer card Strategy role is invalid: {card_key}")
-            if card.get("evidence_tier") not in {
-                "decision_basis",
-                "report_context",
-                "limitation_context",
-            }:
-                raise ValueError(f"Writer card evidence tier is invalid: {card_key}")
-        elif card.get("investment_effect") not in {"positive", "negative", "mixed", "neutral", "reference"}:
-            raise ValueError(f"Writer card investment effect is invalid: {card_key}")
+        if card.get("evidence_tier") not in {
+            "decision_basis",
+            "report_context",
+            "limitation_context",
+        }:
+            raise ValueError(f"Writer card evidence tier is invalid: {card_key}")
         if not str(card.get("evidence_family") or "").strip():
             raise ValueError(f"Writer card evidence_family is required: {card_key}")
     for index, risk in enumerate(_list(packet.get("risk_factors"))):
         if not isinstance(risk, dict):
             raise ValueError(f"risk_factors[{index}] must be an object.")
-        if is_strategy_decision and not str(risk.get("display_title") or "").strip():
-            raise ValueError(
-                f"risk_factors[{index}].display_title is required for label-free Strategy."
-            )
+        if not str(risk.get("display_title") or "").strip():
+            raise ValueError(f"risk_factors[{index}].display_title is required.")
         unknown = sorted(set(_text_list(risk.get("basis_card_keys"))) - set(cards))
         if unknown:
             raise ValueError(f"Risk factor references cards omitted from Writer packet: {unknown}")
@@ -565,19 +549,18 @@ def validate_writer_editorial_packet(
             raise ValueError(
                 f"target_peer_context[{index}] implication does not match Strategy meaning."
             )
-    if is_strategy_decision:
-        selected_peer_cards = {
-            card_key
-            for card_key, card in cards.items()
-            if isinstance(card, dict)
-            and card.get("domain") == "peer"
-            and card.get("evidence_tier") == "decision_basis"
-            and card.get("target_peer_metric_keys")
-        }
-        if selected_peer_cards != seen_peer_cards:
-            raise ValueError(
-                "Every structured Strategy peer basis requires one target_peer_context entry."
-            )
+    selected_peer_cards = {
+        card_key
+        for card_key, card in cards.items()
+        if isinstance(card, dict)
+        and card.get("domain") == "peer"
+        and card.get("evidence_tier") == "decision_basis"
+        and card.get("target_peer_metric_keys")
+    }
+    if selected_peer_cards != seen_peer_cards:
+        raise ValueError(
+            "Every structured Strategy peer basis requires one target_peer_context entry."
+        )
     limitation_categories: set[str] = set()
     for index, limitation in enumerate(_list(packet.get("required_limitations"))):
         if not isinstance(limitation, dict) or not str(limitation.get("category") or "").strip():
@@ -631,15 +614,10 @@ def _writer_reader_text(packet: dict[str, Any]) -> dict[str, Any]:
             for key in (
                 "thesis",
                 "decision_rationale",
-                "existing_position_response",
-                "new_entry_response",
                 "earnings_review",
                 "outlook",
                 "price_context",
                 "counterview",
-                "current_price_rationale",
-                "forward_support",
-                "valuation_counterweight",
                 "residual_uncertainty",
             )
         },

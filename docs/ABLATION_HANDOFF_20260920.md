@@ -168,3 +168,5 @@ python run_config/final_report_llm_judge.py aggregate
 2026-09-23 추가: 산출물 파일명과 계약 문자열에서 Strategy·Writer 의 버전 접미사를 없앴다. `strategy_decision_output_v5.json` 은 `strategy_decision_output.json`, `writer_editorial_packet_v3.json` 은 `writer_editorial_packet.json` 처럼 이름이 바뀌었고 `decision_version`·`packet_version` 같은 계약 값도 같은 규칙으로 바뀌었다. 새 코드는 새 이름만 읽고 쓰므로 생성 시점에 만든 `ablation_results/` 아래 산출 디렉터리는 이 트리의 코드로 다시 읽을 수 없다. 계약 값이 캐시 지문에 들어가므로 Strategy·Writer 의 캐시 지문도 생성 시점과 달라졌고, 같은 입력이라도 캐시가 다시 맞지 않는다. 생성 시점 산출물을 그대로 다루려면 정리 이전 커밋을 본다.
 
 2026-09-23 추가: 최종 보고서 HTML 75개를 `final_reports/` 로 Git 에 추적한다. 그 외 중간 산출물(생성 상태 파일, r01 단독 지표, Judge 요청·응답·상태)은 Git 에서 빼고 이동용 ZIP 과 Release 로만 배포한다.
+
+2026-09-24 추가: LLM Judge 는 실행을 마쳤다. 요청·응답·결과 파일은 리포 밖 이동용 번들에 있다. `tests/test_one_team.py` 의 러너 테스트 3개를 복구해(PR #14) 테스트는 260 passed, 16 skipped 다. `ablation_results/status/` 는 이후 Git 에서 뺐다.

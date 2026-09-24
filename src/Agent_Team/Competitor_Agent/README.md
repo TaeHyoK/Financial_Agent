@@ -20,19 +20,20 @@ Resolve one Naver peer:
 ```bash
 PYTHONPATH=src python -m Agent_Team.Competitor_Agent.peer_resolver \
   --stock-code 326030 \
-  --output Output_total/Competitor/SK바이오팜_20251031/peer_resolution.json
+  --output Output_total/SK바이오팜/Competitor/20251031/peer_resolution.json
 ```
 
 Build the structured pairwise dataset after both company pipelines complete:
 
 ```bash
 PYTHONPATH=src python -m Agent_Team.Competitor_Agent.peer_comparison_cli \
-  --target-config Output_total/runs/SK바이오팜_20251031/resolved_inputs/target_company.json \
+  --target-config Output_total/SK바이오팜/runs/20251031/resolved_inputs/target_company.json \
   --run-key SK바이오팜_20251031 \
   --company-name SK바이오팜 \
   --selected-date 20251031 \
   --peer-run-key 일성아이에스_20251031 \
-  --output-root Output_total
+  --output-root Output_total \
+  --peer-output-root Output_total/SK바이오팜/비교기업
 ```
 
 Run the comparison analysis after the dataset is ready:
@@ -41,23 +42,25 @@ Run the comparison analysis after the dataset is ready:
 PYTHONPATH=src python -m Agent_Team.Competitor_Agent.comparison_agent_cli \
   --target-company-name SK바이오팜 \
   --peer-company-name 일성아이에스 \
-  --target-financial Output_total/Financial/SK바이오팜_20251031/final_report.json \
-  --target-news Output_total/News/SK바이오팜_20251031/final_report.json \
-  --target-yfinance Output_total/Y_Finance/SK바이오팜_20251031/final_report.json \
-  --peer-financial Output_total/Financial/일성아이에스_20251031/final_report.json \
-  --peer-news Output_total/News/일성아이에스_20251031/final_report.json \
-  --peer-yfinance Output_total/Y_Finance/일성아이에스_20251031/final_report.json \
-  --pairwise-dataset Output_total/Competitor/SK바이오팜_20251031/peer_comparison_dataset.json \
-  --output-dir Output_total/Competitor/SK바이오팜_20251031
+  --target-financial Output_total/SK바이오팜/Financial/20251031/final_report.json \
+  --target-news Output_total/SK바이오팜/News/20251031/final_report.json \
+  --target-yfinance Output_total/SK바이오팜/Y_Finance/20251031/final_report.json \
+  --peer-financial Output_total/SK바이오팜/비교기업/일성아이에스/Financial/20251031/final_report.json \
+  --peer-news Output_total/SK바이오팜/비교기업/일성아이에스/News/20251031/final_report.json \
+  --peer-yfinance Output_total/SK바이오팜/비교기업/일성아이에스/Y_Finance/20251031/final_report.json \
+  --pairwise-dataset Output_total/SK바이오팜/Competitor/20251031/peer_comparison_dataset.json \
+  --output-dir Output_total/SK바이오팜/Competitor/20251031
 ```
 
 ## Output
 
 ```text
-Output_total/Competitor/{target_run_key}/peer_resolution.json
-Output_total/Competitor/{target_run_key}/peer_comparison_dataset.json
-Output_total/Competitor/{target_run_key}/peer_comparison_context.json
-Output_total/Competitor/{target_run_key}/peer_comparison_report.json
+Output_total/{company}/Competitor/{YYYYMMDD}/peer_resolution.json
+Output_total/{company}/Competitor/{YYYYMMDD}/peer_comparison_dataset.json
+Output_total/{company}/Competitor/{YYYYMMDD}/peer_comparison_context.json
+Output_total/{company}/Competitor/{YYYYMMDD}/peer_comparison_report.json
 ```
+
+Paths follow the pipeline's company-first layout (`Output_total/<company>/<Agent>/<YYYYMMDD>`); peers analyzed only for comparison live under `Output_total/<target>/비교기업/<peer>/`. Without `--output-dir`, `peer_comparison_cli` writes to `Output_total/<company>/Competitor/<YYYYMMDD>/`.
 
 The dataset preserves period, date, unit, and missing-field metadata. The comparison report records the LLM's relative findings and the exact basis cards it selected. Neither artifact represents an industry ranking or average, and the comparison agent does not issue an investment action or target price.

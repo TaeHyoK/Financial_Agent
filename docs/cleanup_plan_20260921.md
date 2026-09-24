@@ -58,7 +58,7 @@ cd /home/tkim298/agent2/Financial_Agent && .venv/bin/python -m pytest -q -rs
 |---|---|
 | `src/Agent_Team/Financial_Agent/same_period_financial_chart.py` (511줄) | 자기 파일 밖 참조 없음. 상태 JSON 의 해시 목록에만 등장 |
 | `src/Agent_Team/YFinance_Agent/target_kospi_chart.py` (344줄) | 동일 |
-| `src/Agent_Team/YFinance_Agent/report.py` | 어떤 코드도 import 안 함. README 에만 등장 |
+| `src/Agent_Team/YFinance_Agent/report.py` | 어떤 코드도 import 안 함. README 에만 등장 (이후 복원: 루프가 문자열 경로로 참조) |
 | `src/Agent_Team/Strategy_Agent/contracts_v3.py` (597줄) | `agent.py:33-38` 이 import 만 함. v3 실행 경로 제거와 함께 삭제 |
 | `ablation_suite/legacy_unified.py` (124줄) | import 하는 곳 0. 의존 방향이 legacy→unified 라 삭제해도 unified 무영향 |
 | `src/Agent_Team/Writer Agent/__init__.py`, `src/Agent_Team/Visualization Agent/__init__.py` | 폴더명에 공백이 있어 패키지 import 자체가 불가. `from .writer_agent import` 는 영원히 실행 안 됨 (2026-09-23 패키지화 이후: Writer_Agent / Visualization_Agent) |
@@ -157,8 +157,8 @@ cd /home/tkim298/agent2/Financial_Agent && .venv/bin/python -m pytest -q -rs
 
 - **Strategy**: v5 단일 경로. 모듈 3개(`contracts_v2`·`v4`·`v5`)는 이름을 유지한 채 각각 "패킷·카드", "컨텍스트 골격", "투영·검증" 역할만 남긴다. 파일을 합치거나 이름을 바꾸는 것은 sitecustomize·테스트·파일명 제약 때문에 이번 범위에서 뺀다. (이름 변경 이후: `contracts_v2` → `packet`)
 - **Writer**: v5 결정 입력 단일 경로. 패킷 버전 상수(`writer_editorial_packet_v3`)와 파일명은 유지. → 2026-09-23 결정 변경: 2층도 버전 없는 이름으로 통일(깨끗한 단절)
-- **접미사 `_v2`·`_v4`·`_v5` 제거**: 하지 않는다. 파일명·캐시 키·패치 대상·테스트 import 에 묶여 있어 이름을 바꾸면 산출물이나 테스트가 바뀐다. 논문 제출 뒤 별도 작업으로 미룬다.
-- **중복 유틸**(`_load_json` 7곳, `_dict` 7곳, `_load_env_file` 4곳 등 66개 이름): 동작이 파일마다 미묘하게 다를 수 있어 이번 범위에서 뺀다. 필요하면 별도 단계.
+- **접미사 `_v2`·`_v4`·`_v5` 제거**: 하지 않는다. 파일명·캐시 키·패치 대상·테스트 import 에 묶여 있어 이름을 바꾸면 산출물이나 테스트가 바뀐다. 논문 제출 뒤 별도 작업으로 미룬다. → 2026-09-23 실행 완료(PR #7, #10)
+- **중복 유틸**(`_load_json` 7곳, `_dict` 7곳, `_load_env_file` 4곳 등 66개 이름): 동작이 파일마다 미묘하게 다를 수 있어 이번 범위에서 뺀다. 필요하면 별도 단계. → 2026-09-23 실행 완료(PR #7, #10)
 
 ## 4. 실행 순서
 
@@ -199,10 +199,10 @@ cd /home/tkim298/agent2/Financial_Agent && .venv/bin/python -m pytest -q -rs
 - `writer_agent.py` 의 입력 탐색 폴백(`strategy_decision_output_v5.json` → `_v4` → `_v2`)과 파일명 분기는 기존 산출 디렉터리 호환에 관여하므로 유지. → 2026-09-23 결정 변경: 2층도 버전 없는 이름으로 통일(깨끗한 단절)
 - `writer_handoff.py` 의 `_selected_date`, `_contrary_evidence`, `_compact_evidence_refs`, `_remove_path_metadata` 는 정리 전부터 호출자 0 이던 v1 유물. → 2026-09-23 2라운드에서 제거.
 - `html_report_writer.py` 에서 `_is_label_free_writer_packet` 이 거짓인 분기와 `single_call_llm_with_compact_handoff` 분기. → 2026-09-23 2라운드에서 제거. Writer 입력은 `strategy_contract_version` 이 현행 결정 계약이 아니면 명시적 오류.
-- `tests/test_one_team.py` 러너 테스트 3개의 스킵 조건과 `YFinance_Agent/reporting.py:31` 의 `from valuation import` 잠재 결함은 동작 변경 범위라 손대지 않음.
+- `tests/test_one_team.py` 러너 테스트 3개의 스킵 조건과 `YFinance_Agent/reporting.py:31` 의 `from valuation import` 잠재 결함은 동작 변경 범위라 손대지 않음. → 2026-09-23 one-team 러너 테스트 복구(PR #14)
 - `docs/annual_validation.json` 이 삭제된 `run_pipeline.py` 를 언급하지만 과거 검증 기록이라 그대로 둠.
 
 ### 3절에서 미룬 것 (논문 뒤 별도 작업)
 
-- `_v2`·`_v4`·`_v5` 접미사 제거와 contracts 모듈 병합
-- 중복 유틸 66개 이름 통합
+- `_v2`·`_v4`·`_v5` 접미사 제거와 contracts 모듈 병합 → 2026-09-23 실행 완료(PR #7, #10)
+- 중복 유틸 66개 이름 통합 → 2026-09-23 실행 완료(PR #7, #10)

@@ -114,14 +114,34 @@ src/
 │   ├── Visualization_Agent/   # 차트 목록과 선택 차트 생성
 │   └── Writer_Agent/          # 최종 HTML 보고서 작성
 ├── orchestration/             # 전체 파이프라인 실행
-└── shared/                    # 공통 근거 계약과 모델 호출
+└── shared/                    # 공통 근거 계약, 모델 호출, 공통 유틸(coerce·jsonio·schema·env)
+```
+
+리포 루트에는 다음 폴더가 함께 있다.
+
+```text
+run_config/                # 제거 실험·반복 생성·LLM Judge 실행기
+ablation_suite/            # 제거 실험 조건과 입력 준비
+ablation_evaluation/       # 제거 실험 자동 지표
+real_report_evaluation/    # 실제 애널리스트 보고서와 견주는 평가
+scripts/                   # 점검·비교용 보조 스크립트
+tests/                     # 회귀 테스트
+docs/                      # 설계와 변경 기록
+final_reports/             # 제거 실험 최종 보고서 HTML
+ablation_results/          # 최종 보고서 자동 지표
+configs/                   # 기업 입력과 .env 예시
+sample/                    # 현대모비스 예시 보고서
 ```
 
 One-team 조건에서 사용하는 통합 분석 구성요소는 `Unified_Agent`에 포함한다. 재무·뉴스·시장 자료를 하나의 분석 요청으로 전달하고, 통합 결과를 비교 분석·Strategy·Writer에 연결한다. 일반 실행 결과와 API 키가 포함될 수 있는 `.env`는 Git 추적 대상에서 제외한다.
 
-## Ablation 인수인계 브랜치
+## Ablation 결과와 재현 코드
 
-실험 재현을 위한 `run_config/`, 최종 보고서 75개(`final_reports/`), 그 자동 지표(`ablation_results/`), 최종 보고서 LLM-as-a-Judge 코드가 들어 있다. 실제 애널리스트 PDF와 중간 산출물은 Git에 포함하지 않는다. 다른 노트북에서 이어서 실행할 때는 [인수인계 문서](docs/ABLATION_HANDOFF_20260920.md)를 먼저 확인한다.
+실험을 다시 돌리는 `run_config/`, 최종 보고서 75개(`final_reports/`), 그 자동 지표(`ablation_results/`), 최종 보고서 LLM-as-a-Judge 코드가 들어 있다. Judge 는 실행을 마쳤고, 요청·응답·결과 파일은 리포에 두지 않는다. 동결 입력(`prepared_inputs/`, `reports/`)과 `evaluation/`·`references/`, 실제 애널리스트 PDF 도 Git 밖의 이동용 번들에 있다. 인계 과정은 [인수인계 기록](docs/ABLATION_HANDOFF_20260920.md)에 남아 있다.
+
+## 테스트
+
+리포 루트에서 `python -m pytest -q` 를 실행한다. 루트 `conftest.py` 가 경로를 잡아 준다.
 
 ## 적용 범위
 

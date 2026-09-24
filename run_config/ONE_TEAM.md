@@ -33,7 +33,9 @@ separate run with `--model gpt-5.4 --run-id one_team_gpt54_r01`.
 
 ## Prepare, verify and execute
 
-From `/data/agent2/financial_agent_ablation_2025h2`:
+From the repository root (the runner treats it as the workspace). The frozen inputs
+(`prepared_inputs/`, `reports/`) are not in Git; restore them from the transfer
+bundle first:
 
 ```bash
 python run_config/run_one_team_reports.py prepare
@@ -60,8 +62,8 @@ prevents concurrent generation of the same run. Resume skips completed stages.
 
 ## Files
 
-- Code and prompts: `repo/src/Agent_Team/Unified_Agent/` (`report.py` builds the prompt).
-- Input adapter: `repo/src/Agent_Team/Unified_Agent/inputs.py`.
+- Code and prompts: `src/Agent_Team/Unified_Agent/` (`report.py` builds the prompt).
+- Input adapter: `src/Agent_Team/Unified_Agent/inputs.py`.
 - Launcher: `run_config/run_one_team_reports.py`.
 - Prepared requests: `prepared_inputs/one_team/one_team_gpt-5_6-luna_r01/<target>/<target|peer>/unified_request.json`.
 - New outputs: `reports/one_team/one_team_gpt-5_6-luna_r01/`.
@@ -82,9 +84,11 @@ The existing frozen experiment can still be checked independently:
 
 ```bash
 python run_config/run_prepared_reports.py check
-cd repo
-PYTHONPATH=src python -m pytest -q tests
+python -m pytest -q
 ```
+
+Both commands run from the repository root. The frozen-input check needs the
+bundle contents described above.
 
 ## Response audit and execution repairs
 

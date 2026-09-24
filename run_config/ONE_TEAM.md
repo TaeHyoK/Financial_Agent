@@ -34,8 +34,9 @@ separate run with `--model gpt-5.4 --run-id one_team_gpt54_r01`.
 ## Prepare, verify and execute
 
 From the repository root (the runner treats it as the workspace). The frozen inputs
-(`prepared_inputs/`, `reports/`) are not in Git; restore them from the transfer
-bundle first:
+(`prepared_inputs/`, `reports/`, `status/`) are not in Git; restore them from the
+transfer bundle first. `prepare` reads `status/report_generation_status.json`.
+`evaluate_report_bodies.py` also needs the analyst PDFs in `references/`.
 
 ```bash
 python run_config/run_one_team_reports.py prepare
@@ -47,6 +48,11 @@ company/peer pairs and saves 14 complete requests. A real run has 14 integrated
 calls plus 21 Comparison/Strategy/Writer calls, with zero new summary calls.
 Retries may add physical requests; telemetry records the actual usage.
 
+**Code hashes.** `prepare` (on an existing run), `check`, `run` and `resume`
+compare the SHA-256 of every `src/**/*.py` file with the preparation manifest.
+They fail on any tree after the cleanup commits. To re-run or re-verify, check
+out the generation-time code (commit `da85eb3`).
+
 To generate reports:
 
 ```bash
@@ -57,7 +63,7 @@ python run_config/run_one_team_reports.py resume
 
 `--companies 삼성전자` limits a new preparation to one target; provide a new
 `--run-id` when changing models or company selection. Input, code and request
-hashes must match the preparation before generation can start. An exclusive lock
+hashes must match the preparation before generation can start (see **Code hashes** above). An exclusive lock
 prevents concurrent generation of the same run. Resume skips completed stages.
 
 ## Files
@@ -71,7 +77,10 @@ prevents concurrent generation of the same run. Resume skips completed stages.
 - Peers remain under `<target>/비교기업/<peer>/` within the new output root.
 - Status and usage: `status/one_team/`.
 
-Only subprocesses launched by this runner enable the compatibility readers.
+Only one-team subprocesses launched by `run_one_team_reports.py` or
+`run_repeated_reports.py` enable the compatibility readers. Both set
+`ONE_TEAM_RUNTIME=1`, `ONE_TEAM_SINGLE_REPORT=1` and
+`PYTHONPATH=src/Agent_Team/Unified_Agent/runtime:src`.
 They resolve legacy domain paths to the single integrated report in memory;
 Financial/News/Y_Finance `final_report.json` analyses are never created.
 
@@ -88,7 +97,8 @@ python -m pytest -q
 ```
 
 Both commands run from the repository root. The frozen-input check needs the
-bundle contents described above.
+bundle contents described above and also compares generation-time code hashes
+(see **Code hashes** above).
 
 ## Response audit and execution repairs
 

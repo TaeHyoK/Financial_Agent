@@ -147,7 +147,7 @@ print('single report reached comparison and Strategy')
 
 @unittest.skipUnless(
     (Path(__file__).resolve().parents[1] / "run_config/run_one_team_reports.py").is_file(),
-    "Server experiment runner is outside this repository; native one-team tests still run.",
+    "Runs only when run_config/run_one_team_reports.py is present.",
 )
 class OneTeamRunnerTest(unittest.TestCase):
     @classmethod

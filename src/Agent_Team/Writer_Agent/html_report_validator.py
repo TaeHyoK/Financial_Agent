@@ -18,12 +18,10 @@ from .html_report_spec import (
     has_data_limit_content,
 )
 from .html_report_writer import (
-    _uses_narrative_evidence,
     _evidence_display_columns,
     _evidence_interpretation_column,
     _plain_korean_text,
     _qualify_partial_product_scope,
-    _strategy_role_label,
 )
 from .writer_handoff import (
     EDITORIAL_PACKET_VERSION,
@@ -399,11 +397,8 @@ def _validate_strategy_meaning_preservation(
         interpretation = str(card.get("strategy_interpretation") or "")
         if row.get("_strategy_interpretation") != interpretation:
             errors.append(f"Strategy interpretation metadata changed: {card_key}")
-        if _uses_narrative_evidence(writer_handoff):
-            if "_strategy_role" in row or "판단상 역할" in row:
-                errors.append(f"Unexpected categorical role in narrative evidence: {card_key}")
-        elif row.get("_strategy_role") != card.get("strategy_role"):
-            errors.append(f"Strategy role metadata changed: {card_key}")
+        if "_strategy_role" in row or "판단상 역할" in row:
+            errors.append(f"Unexpected categorical role in narrative evidence: {card_key}")
         if not str(row.get("확인된 수치·사실") or "").strip():
             errors.append(f"Key evidence observation is empty: {card_key}")
 
@@ -480,10 +475,6 @@ def _validate_strategy_presentation_preservation(
         ).strip()
         if str(row.get(_evidence_interpretation_column(writer_handoff)) or "").strip() != expected_visible_interpretation:
             errors.append(f"Visible Strategy interpretation was paraphrased: {card_key}")
-        if not _uses_narrative_evidence(writer_handoff):
-            expected_role_label = _strategy_role_label(card.get("strategy_role"))
-            if str(row.get("판단상 역할") or "").strip() != expected_role_label:
-                errors.append(f"Visible Strategy role label changed: {card_key}")
 
     risk_item = _dict(_dict(sections.get("risk_monitoring_matrix")).get("risk_monitoring_table"))
     risk_rows = [row for row in _list(risk_item.get("rows")) if isinstance(row, dict)]

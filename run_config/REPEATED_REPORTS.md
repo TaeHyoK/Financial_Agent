@@ -16,8 +16,9 @@
 
 실행기는 기존 에이전트 구현과 호출 설정을 가져와 사용하며, 별도 모델 정책을 추가하지 않는다.
 
+명령은 리포 루트에서 실행한다. 실행기는 리포 루트를 작업공간으로 본다. 동결 입력(`prepared_inputs/`, `reports/`)은 Git 에 없으므로 이동용 번들에서 먼저 풀어 둔다.
+
 ```bash
-cd /data/agent2/financial_agent_ablation_2025h2
 python run_config/run_repeated_reports.py prepare
 python run_config/run_repeated_reports.py check
 python run_config/run_repeated_reports.py launch

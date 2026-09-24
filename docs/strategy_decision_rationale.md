@@ -1,5 +1,7 @@
 # Strategy 의견 선택 이유 보완
 
+> 기록: 이 문서는 2026-09-09 시점 변경 기록이다. 현재 Strategy 계약(`schema_revision` 12m_v3)은 `src/Agent_Team/Strategy_Agent/README.md` 를 본다.
+
 수정일: 2026-09-09
 
 ## 목적과 변경

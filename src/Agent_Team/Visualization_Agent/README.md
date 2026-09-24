@@ -7,7 +7,7 @@ Visualization Agent는 보고서에 사용할 수 있는 차트 목록을 만들
 ```text
 재무·시장·비교기업 산출물 확인
   -> 생성 가능한 차트 목록 작성
-  -> Writer가 보고서 본문과 함께 차트 key를 최대 2개 선택하고 판단 근거 카드를 연결
+  -> Writer가 보고서 본문과 함께 사용 가능한 차트 안에서 key를 선택(2개 권장)하고 판단 근거 카드를 연결
   -> 선택된 차트만 PNG·PDF로 생성
   -> Writer가 최종 보고서 끝에 PNG를 첨부
 ```
@@ -27,11 +27,11 @@ Writer에 제공하는 차트는 다음 일곱 종류 중 실제 자료 요건�
 ## 산출물
 
 ```text
-Output_total/Visualization/{run_key}/chart_catalog.json
-Output_total/Visualization/{run_key}/chart_selection.json
-Output_total/Visualization/{run_key}/chart_manifest.json
-Output_total/Visualization/{run_key}/figures/{chart_key}.png
-Output_total/Visualization/{run_key}/figures/{chart_key}.pdf
+Output_total/{company}/Visualization/{YYYYMMDD}/chart_catalog.json
+Output_total/{company}/Visualization/{YYYYMMDD}/chart_selection.json
+Output_total/{company}/Visualization/{YYYYMMDD}/chart_manifest.json
+Output_total/{company}/Visualization/{YYYYMMDD}/figures/{chart_key}.png
+Output_total/{company}/Visualization/{YYYYMMDD}/figures/{chart_key}.pdf
 ```
 
 `chart_catalog.json`에는 Writer가 선택할 수 있는 key와 차트 설명, 연결 가능한 Strategy 카드, 사용하기 적합한 보고서 항목, 해석상의 한계가 기록된다. 실제 선택된 Strategy 카드와 연결되지 않는 차트는 Writer 후보에서 제외된다. 비교 차트는 Strategy의 `target_peer_context`에 대응하는 구조화 비교 카드가 있을 때만 후보가 된다. 비교 에이전트의 내부 종합 카드만으로는 비교 차트를 만들지 않는다. Writer 결과의 `chart_selection_details`에는 선택 차트와 이를 뒷받침하는 Strategy 근거 카드가 연결된다. Visualization Agent는 이 연결을 새로운 투자 판단으로 해석하지 않고 지정된 차트를 자료에서 생성한다. `chart_manifest.json`에는 실제 생성된 차트의 순서, 캡션과 파일 경로가 기록된다.
@@ -46,7 +46,7 @@ PYTHONPATH=src python -m Agent_Team.Visualization_Agent.report_chart_cli catalog
   --run-key 현대모비스_20251031 \
   --company-name 현대모비스 \
   --peer-run-key 한온시스템_20251031 \
-  --output-dir Output_total/Visualization/현대모비스_20251031
+  --output-dir Output_total/현대모비스/Visualization/20251031
 ```
 
 Writer의 `writer_report_payload.json`이 만들어진 뒤 선택된 차트를 생성한다.
@@ -57,8 +57,8 @@ PYTHONPATH=src python -m Agent_Team.Visualization_Agent.report_chart_cli generat
   --run-key 현대모비스_20251031 \
   --company-name 현대모비스 \
   --peer-run-key 한온시스템_20251031 \
-  --output-dir Output_total/Visualization/현대모비스_20251031 \
-  --selection-file Output_total/Writer/현대모비스_20251031/writer_report_payload.json
+  --output-dir Output_total/현대모비스/Visualization/20251031 \
+  --selection-file Output_total/현대모비스/Writer/20251031/writer_report_payload.json
 ```
 
-일반 실행에서는 위 명령을 직접 호출할 필요 없이 `orchestration.full_report_pipeline`을 사용한다.
+`--run-key`에 해당하는 재무·시장·비교 자료는 `--output-root` 아래 기업 우선 구조(`<company>/<Agent>/<YYYYMMDD>`)에서 읽는다. 일반 실행에서는 위 명령을 직접 호출할 필요 없이 `orchestration.full_report_pipeline`을 사용한다.

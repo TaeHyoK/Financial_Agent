@@ -30,6 +30,8 @@ Default outputs are grouped by company and selected date:
 
 For the default SK바이오팜 config, `<company>_<YYYYMMDD>` is `SK바이오팜_20251031`.
 
+This agent-first layout is the standalone default. The full pipeline writes company-first instead: `Output_total/<company>/Financial/<YYYYMMDD>/`.
+
 The collector reads `DART_API_KEY` from the configured `.env` file.
 
 ## Run Financial Analyst
@@ -49,7 +51,8 @@ The orchestration pipeline copies this analyst report to the domain `final_repor
 
 ## Tests
 
+From the repository root:
+
 ```bash
-cd /path/to/Financial_Agent
-python -m pytest src/Agent_Team/Financial_Agent/tests
+python -m pytest -q
 ```

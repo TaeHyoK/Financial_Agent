@@ -77,6 +77,8 @@ Output_total/News/{run_key}/output
 Output_total/News/SK바이오팜_20251031/output
 ```
 
+이 에이전트 우선 경로는 단독 실행의 기본값입니다. 전체 파이프라인으로 실행하면 기업 우선 경로 `Output_total/<company>/News/<YYYYMMDD>/`에 저장합니다.
+
 News Agent output:
 
 ```text

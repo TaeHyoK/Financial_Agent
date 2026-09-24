@@ -53,7 +53,7 @@
 
 ## Strategy와 최종 보고서
 
-기본 프로필은 `annual`, 판단 기간은 `12개월`이다. Strategy v5의 개정 식별자는 `schema_revision: 12m_v1`이며 기존 캐시는 다시 생성한다.
+기본 프로필은 `annual`, 판단 기간은 `12개월`이다. Strategy의 개정 식별자는 `schema_revision: 12m_v3`이며 기존 캐시는 다시 생성한다.
 
 `strategy_brief`에는 `headline`, `recommendation`(Buy/Hold/Sell), `thesis`, `earnings_review`, `outlook`, `price_assessment`, `counterview`, `decision_limitation`을 담는다. 문장별 근거 연결을 유지한다. 목표주가·미래 EPS·컨센서스는 필수 조건이 아니며 없는 숫자를 생성하지 않는다. 의견은 어느 등급도 기본값으로 강제하지 않는다.
 
@@ -62,9 +62,9 @@
 1. 핵심 제목, 매수/중립/매도 의견과 12개월 판단 기간
 2. 투자 의견과 핵심 논거
 3. 최근 실적과 가격 평가
-4. 핵심 판단 근거 최대 3개
+4. 핵심 판단 근거(Strategy가 고른 근거, 고정 개수 없음)
 5. 향후 12개월 전망: 확인된 사실·전제·예상 영향을 구분
-6. 핵심 위험 최대 3개와 자료 기준·한계
+6. 핵심 위험과 자료 기준·한계
 
 Writer는 Strategy 의견을 그대로 표시한다. HTML의 `investment-recommendation` 메타 필드에도 Buy/Hold/Sell을 보존하여 평가 때 문장에서 신규 진입 의사를 추정할 필요가 없게 한다. 다른 판단 기간을 명시적으로 선택하는 이전 CLI 옵션도 남아 있다.
 
@@ -78,7 +78,7 @@ PYTHONPATH=src python -m orchestration.full_report_pipeline \
   --news-window 1y --decision-horizon-profile annual \
   --output-root Output_annual --no-progress
 
-python -m unittest discover -s tests -v
+python -m pytest -q
 ```
 
 오프라인 회귀 검증은 날짜·윤년·미래 데이터 제외, 수익률·위험·거래량 계산, 재무 비교와 결측 처리, 뉴스 요약 범위·근거 연결, Strategy까지의 연간 지표 전달, 세 가지 투자의견의 HTML 보존을 포함한다. 테스트용 투자 의견은 출력 계약을 확인하기 위한 값이며 실제 기업 분석 결과가 아니다.

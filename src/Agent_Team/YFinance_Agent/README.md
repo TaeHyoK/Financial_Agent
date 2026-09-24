@@ -17,10 +17,10 @@ python -m pip install -r requirements.txt
 
 ```bash
 cd /path/to/Financial_Agent
-python src/Agent_Team/YFinance_Agent/main.py --input configs/company_input.json
+PYTHONPATH=src python src/Agent_Team/YFinance_Agent/main.py --input configs/company_input.json
 ```
 
-기본 env 파일은 `configs/.env`입니다. 기본 산출물 위치는 기업별 폴더인 `Output_total/Y_Finance/SK바이오팜_20251031`입니다.
+절대 패키지 경로로 import 하므로 `PYTHONPATH=src`를 주거나 `pip install -e .`로 설치해야 합니다. 기본 env 파일은 `configs/.env`입니다. 단독 실행의 기본 산출물 위치는 에이전트 우선 경로 `Output_total/Y_Finance/SK바이오팜_20251031`입니다. 전체 파이프라인으로 실행하면 기업 우선 경로 `Output_total/<company>/Y_Finance/<YYYYMMDD>/`에 저장합니다.
 
 LLM 보고서는 `reporting.generate_analyst_report` 가 만들며, 최종 보고서 파이프라인 안에서 조건별 입력과 함께 호출됩니다. 이미 수집된 시장·DART·뉴스 JSON 만으로 보고서를 다시 만들 때는 `report.py` 를 씁니다. `agent-team-loop` 의 `yfinance_report` 단계가 이 스크립트를 부릅니다.
 
@@ -39,7 +39,7 @@ PYTHONPATH=src python src/Agent_Team/YFinance_Agent/report.py \
 옵션으로 기간과 티커를 덮어쓸 수 있습니다.
 
 ```bash
-python src/Agent_Team/YFinance_Agent/main.py \
+PYTHONPATH=src python src/Agent_Team/YFinance_Agent/main.py \
   --input configs/company_input.json \
   --output-dir Output_total/Y_Finance \
   --start-date 20241101 \

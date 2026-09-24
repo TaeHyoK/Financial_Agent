@@ -8,7 +8,6 @@ from pathlib import Path
 
 
 ABLATION_ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_COMPAT_ROOT = ABLATION_ROOT / "runtime_compat"
 FINAL_ROOT = Path(os.getenv("FINANCIAL_AGENT_ROOT", ABLATION_ROOT)).resolve()
 FINAL_SRC = FINAL_ROOT / "src"
 DEFAULT_ENV_FILE = FINAL_ROOT / "configs" / ".env"

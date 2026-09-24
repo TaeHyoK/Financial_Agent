@@ -220,7 +220,9 @@ def build_parser() -> argparse.ArgumentParser:
         type=_positive_int,
         default=None,
         help=(
-            "Legacy override: use a global News event limit instead of the default maximum two per month. "
+            "Legacy override: apply a global News event limit after weekly selection. "
+            "By default no global limit applies and the top three events of each ISO week are all "
+            "delivered; the default article-only News config rejects this override. "
             "--news-total-max-results is a compatibility alias."
         ),
     )
@@ -1093,7 +1095,7 @@ def validate_full_pipeline_outputs(
     checks = {
         "target_domain_pipeline": target_manifest.get("status") == "success",
         "strategy_output": strategy_path.is_file() and bool(strategy),
-        "label_free_strategy_contract": strategy.get("decision_version") == STRATEGY_DECISION_VERSION,
+        "strategy_decision_contract": strategy.get("decision_version") == STRATEGY_DECISION_VERSION,
         "visualization_catalog": chart_catalog_path.is_file(),
         "writer_chart_selection": (
             len(requested_chart_keys) == len(set(requested_chart_keys))

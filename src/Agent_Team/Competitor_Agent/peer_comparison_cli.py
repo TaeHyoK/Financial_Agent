@@ -1,4 +1,4 @@
-"""CLI entrypoint for Peer Comparison Agent v1."""
+"""CLI entrypoint for Peer Comparison Agent."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run Peer Comparison Agent v1."""
+    """Run Peer Comparison Agent."""
 
     parser = build_parser()
     args = parser.parse_args(argv)

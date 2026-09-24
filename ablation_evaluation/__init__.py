@@ -1,4 +1,4 @@
-"""Blind LLM-Judge evaluation for the six-company ablation suite."""
+"""Report-matrix discovery and metric helpers retained for real_report_evaluation."""
 
 from .metrics import AXES
 

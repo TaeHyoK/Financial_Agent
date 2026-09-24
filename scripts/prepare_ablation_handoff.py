@@ -1,4 +1,8 @@
-"""Build a portable ZIP containing the frozen reports needed for final judging."""
+"""Build a portable ZIP containing the frozen inputs needed for final judging.
+
+Kept to regenerate the 2026-09-20 handoff bundle. The final HTML reports are
+also tracked in the repository under ``final_reports/``.
+"""
 from __future__ import annotations
 
 import argparse
@@ -85,15 +89,16 @@ def build(source_root: Path, output_dir: Path, zip_path: Path) -> dict:
 
     readme = """# Financial Agent Ablation report bundle
 
-이 ZIP은 Git에 넣지 않는 보고서 자료 묶음이다.
+최종 HTML 75개는 저장소의 `final_reports/`에서 추적한다. 이 ZIP은 그 밖의
+입력인 reference PDF, 추출 본문, Judge 요청을 담는다.
 
-- `final_reports/`: 5개 기업 × 3회 × 5조건 = 최종 HTML 75개
+- `final_reports/`: 5개 기업 × 3회 × 5조건 = 최종 HTML 75개(저장소와 같은 사본)
 - `references/`: LLM Judge 대상 5개 기업의 실제 애널리스트 PDF
 - `evaluation/`: Judge가 사용하는 동일 추출 본문과 API 미제출 요청 360개
 
 ## 새 노트북 복원
 
-1. Git의 `ablation-final-handoff-20260920` 브랜치를 clone한다.
+1. Git 저장소의 `main` 브랜치를 clone한다.
 2. 이 ZIP의 **내용물**을 clone한 저장소 루트에 푼다.
 3. `python run_config/final_report_llm_judge.py validate`를 실행한다.
 4. `paid_api_calls: 0`, `requests: 360`을 확인한다.

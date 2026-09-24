@@ -132,7 +132,7 @@ def load_json_file(path: str | Path, label: str) -> dict[str, Any]:
 
 
 def extract_peer_profitability_snapshot(peer_comparison_dataset: dict[str, Any]) -> pd.DataFrame:
-    """Build peer profitability snapshot from Peer Comparison Agent v1 output."""
+    """Build peer profitability snapshot from Peer Comparison Agent output."""
 
     metrics = peer_comparison_dataset.get("metrics", [])
     if not isinstance(metrics, list) or not metrics:

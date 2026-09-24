@@ -1,4 +1,4 @@
-"""Domestic peer comparison v1 built from existing agent outputs.
+"""Domestic peer comparison built from existing agent outputs.
 
 This module compares one explicitly selected domestic peer from existing agent
 outputs. Global-peer and complete industry-average claims remain out of scope.
@@ -34,7 +34,7 @@ EXCLUDED_SCOPE = [
 
 @dataclass(frozen=True)
 class PeerComparisonPaths:
-    """Paths written by Peer Comparison Agent v1."""
+    """Paths written by Peer Comparison Agent."""
 
     dataset_json: Path
 

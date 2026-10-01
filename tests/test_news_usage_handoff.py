@@ -97,7 +97,7 @@ class NewsUsageHandoffTests(unittest.TestCase):
         self.assertNotIn(key, handoff['required_card_keys_by_component']['key_evidence_table'])
         self.assertNotIn('decision_use', handoff['cards'][key])
         self.assertEqual(handoff['cards'][key]['source_metadata']['event_status'], 'announced')
-        self.assertIn('counterview', request['writing_rules']['thesis_policy'])
+        self.assertIn('recommendation_bridge.counterview에 대안을 뒷받침하는', _editorial_system_prompt())
         self.assertIn('counterview', _editorial_system_prompt())
         self.assertNotIn('두 문단 안팎', _editorial_system_prompt())
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 import os
@@ -29,7 +28,7 @@ from .writer_handoff import (
 
 DEFAULT_LLM_MODEL = "gpt-5.4"
 MISSING_VALUE = "데이터 추가 필요"
-WRITER_CACHE_VERSION = "21"
+WRITER_CACHE_VERSION = "22"
 DETERMINISTIC_WRITER_MODE = "deterministic"
 FREE_FORM_WRITER_MODE = "free_form"
 WRITER_MODES = {DETERMINISTIC_WRITER_MODE, FREE_FORM_WRITER_MODE}
@@ -156,7 +155,6 @@ def normalize_report_payload(
                 chart_catalog=chart_catalog,
             )
     if is_editorial_packet:
-        payload = _materialize_data_limit_claims(payload, writer_handoff)
         payload = _enrich_writer_metadata(payload, writer_handoff)
         if writer_mode == DETERMINISTIC_WRITER_MODE:
             payload = _apply_deterministic_evidence_table(payload, writer_handoff)
@@ -343,13 +341,9 @@ def _build_editorial_context(
     writer_mode = _normalize_writer_mode(writer_mode)
     required = _dict(writer_packet.get("required_card_keys_by_component"))
     free_form = writer_mode == FREE_FORM_WRITER_MODE
-    is_strategy_decision = (
-        writer_packet.get("strategy_contract_version") == STRATEGY_DECISION_VERSION
-    )
     decision = _dict(writer_packet.get("decision"))
     return {
         "contract_version": str(writer_packet.get("packet_version") or EDITORIAL_PACKET_VERSION),
-        "label_free_strategy": True,
         "writer_mode": writer_mode,
         "task": "Strategy의 분석과 투자 의견을 보존해 한국어 기업 분석보고서를 편집한다.",
         "output_contract": _output_contract(writer_packet, writer_mode=writer_mode),
@@ -367,15 +361,11 @@ def _build_editorial_context(
             "evidence_tier_policy": (
                 "핵심 근거 표에는 decision_basis 카드만 사용한다. report_context 카드는 report_insights와 "
                 "해당 섹션의 설명을 구체화할 때만 사용하며 새로운 투자 방향을 만들지 않는다."
-                if is_strategy_decision
-                else "Strategy가 선택한 카드 역할을 보존한다."
             ),
             "report_insight_policy": (
                 "report_insights를 그대로 반복하지 말고 연결된 카드의 관찰값과 함께 손익·재무상태, "
                 "가격·가치평가, 사건·사업 실행의 관계를 설명한다. 같은 insight_type이어도 독립적인 사건과 "
                 "가정이면 각각의 의미와 근거를 보존한다. 입력에 없는 원인은 추가하지 않는다."
-                if is_strategy_decision
-                else "해당 섹션에 연결된 카드의 의미를 설명한다."
             ),
             "key_evidence_row_policy": (
                 (
@@ -385,9 +375,9 @@ def _build_editorial_context(
                 )
                 if free_form
                 else (
-                    "key_evidence_table의 rows는 빈 배열로 반환한다. 의견 등급 없는 Strategy 입력이면 "
-                    "_display_labels에 각 card를 설명하는 짧고 구체적인 독자용 근거명을 입력 순서대로 "
-                    "작성한다. 시스템은 이 근거명, reader_observation과 Strategy 해석으로 최종 행을 만든다."
+                    "key_evidence_table의 rows는 빈 배열로 반환하고, _display_labels에 각 card를 설명하는 "
+                    "짧고 구체적인 독자용 근거명을 입력 순서대로 작성한다. 시스템은 이 근거명, "
+                    "reader_observation과 Strategy 해석으로 최종 행을 만든다."
                 )
             ),
             "claim_grounding_policy": (
@@ -395,52 +385,17 @@ def _build_editorial_context(
                 "component 허용 card_keys를 연결한다. item.card_keys는 실제 인용한 근거의 합집합이며 "
                 "필수 근거를 포함한다. 사용 가능한 근거를 모두 인용할 필요는 없다."
             ),
-            "comparison_scope_policy": (
-                "market_benchmark는 benchmark_name 대비로, selected_peer는 명시된 peer 회사명 대비로만 쓴다. "
-                "industry_aggregate 카드가 없으면 업종·동종·산업 평균 비교로 바꾸지 않는다."
-            ),
-            "target_peer_context_policy": (
-                "구조화된 수치 비교는 Strategy가 해석한 비교 카드의 비교 가능한 지표만 사용한다. "
-                "target_peer_context가 지정한 지표 범위를 유지하고, 문맥 카드로 전달된 비교도 "
-                "recommendation_bridge의 논거를 설명하는 데 사용할 수 있다. 질적 비교는 선택된 "
-                "peer.agent_analysis의 비교 내용과 Strategy 해석 범위에서 사용한다. 비교기업을 별도 평가하지 말고, "
-                "선택된 지표 차이가 대상기업 판단을 보강·수정하거나 적용 범위를 설명하는 방식으로 쓴다. "
-                "비교 내용은 대상기업의 해당 논거를 설명하는 절에서 사용하고 다른 절에서 반복하지 않는다. 비교 근거명도 비교기업에 대한 평가가 아니라 "
-                "대상기업에서 확인된 상대성과의 의미가 드러나게 작성한다. 선정된 한 기업과의 1:1 결과를 "
-                "업종 내·동종기업 전반·산업 평균 대비 결과로 확대하지 않고 비교기업명을 명시한다."
-            ),
-            "valuation_scope_policy": (
-                "가치평가 card의 comparison_scope가 none이면 배수를 수치로만 설명한다. 같은 산식과 기준시점의 "
-                "비교 근거가 별도 card로 선택되지 않은 상태에서 낮다·높다·저평가·고평가·가격 부담·가격 완충·"
-                "할인이라는 상대적 판단을 만들지 않는다. Strategy가 비교 불가로 둔 범위를 확대하지 않는다."
-            ),
-            "section_distinction_policy": (
-                "투자 판단 요약은 최종 투자 의견과 결정적 이유, 최근 실적과 가격 평가는 earnings_review·price_context와 지표 사이의 관계, "
-                "향후 12개월 전망은 recommendation_bridge.outlook의 성장 동인·가정과 사업 사건의 예상 영향, 리스크는 전망을 약화시킬 요인, "
-                "데이터 한계는 자료 시점과 해석 범위만 담당한다. 같은 결론·수치·사건 설명을 문장만 바꿔 "
-                "다른 섹션에 반복하지 않는다."
-            ),
             "concrete_event_policy": (
                 "전망 문단은 Strategy가 해석한 기간 중 사업 변화를 중심으로 작성한다. 사건의 구체적 내용과 "
                 "기존 사업에서 달라진 점, 12개월 전망에 미치는 의미 및 필요한 가정을 연결한다. "
                 "정기공시의 성장률을 반복하거나 '재무 기여 미확인'만 덧붙이는 문단으로 대체하지 않는다. "
                 "이미 실적에 포함된 보도와 이후 새로 발생한 변화를 구분한다. 입력에 중요하다고 해석된 사건이 "
                 "없으면 뉴스 수를 채우려고 추가하지 않으며 새로운 분석이나 인과를 만들지 않는다. "
-                "뉴스 card가 여러 개이면 고객사, 공급 대상, 제품, 발표일이 확인되는 사건을 일반적인 전략·기술 "
-                "방향 보도보다 먼저 사용한다. 입력에 구체적 사건이 있는데 포괄적인 기술 강화 문구만 나열하지 않는다."
-                "월별 배열 구간을 사건 발생일이나 실적 대상 기간으로 바꾸지 않는다. 보도일과 사건 발생일도 구분한다."
-            ),
-            "limitation_coverage_policy": (
-                "Strategy에서는 residual_uncertainty가 있으면 그 의미를 보존해 자연스럽게 편집한다. "
-                "required_limitations의 자료 기준 설명은 _claim_units의 limitation_categories로 연결한다. "
-                "residual_uncertainty에 없는 새로운 판단 한계를 추가하지 않는다. required_limitations에 "
-                "지정되지 않은 정상 공시 시차나 후행 사건의 과거 재무표 미반영을 별도 문단으로 덧붙이지 않는다. "
-                "두 입력이 모두 비어 있으면 data_limits의 paragraphs와 _claim_units를 비워 둔다. "
-                "재무 기여 미확인이나 요약 여부만으로 새로운 한계 문장을 만들지 않는다. "
-                "그 외 계약에서는 "
-                "data_limits._limitation_claims의 각 필수 category 아래 claim 하나를 작성한다. 해당 "
-                "required limitation의 facts와 basis card 내용을 독자가 이해할 수 있는 문장으로 실제 설명한다. "
-                "category 이름과 card key는 문장에 노출하지 않으며, 검증 메타데이터는 시스템이 연결한다."
+                "뉴스 card가 여러 개이면 고객사 공급·수주·생산·투자처럼 대상, 제품, 시점이 확인되는 사건을 "
+                "일반적인 전략·기술 방향 보도보다 먼저 사용한다. 입력에 구체적 사건이 있는데 포괄적인 기술 강화 "
+                "문구만 나열하지 않는다. 월별 뉴스 배열은 자료를 묶은 구간이므로 사건 발생일이나 실적 대상 "
+                "기간으로 바꾸지 않는다. 각 기사의 보도일과 사건 발생일을 구분하고, 하위 분석의 해석을 기사에 "
+                "직접 명시된 사실로 바꾸지 않는다."
             ),
             "risk_row_policy": (
                 (
@@ -453,41 +408,9 @@ def _build_editorial_context(
                     "현재 판단에 미치는 영향으로 최종 행을 구성한다."
                 )
             ),
-            "thesis_policy": (
-                "decision_rationale가 있으면 근거 간 우선순위와 대안 의견을 채택하지 않은 이유를 "
-                "투자 판단 요약에 반영한다. 긍정·부정 사실의 나열로 되돌리지 않고 별도 소제목이나 "
-                "정해진 비교표를 추가하지 않는다. "
-                "counterview에 대안을 뒷받침하는 구체적 사실이나 가정이 있으면 그 내용과 근거, "
-                "그럼에도 현재 의견을 선택한 이유를 보존한다. '긍정 요인도 있다' 같은 일반론으로 "
-                "대체하지 않는다. 다른 절에서 이미 설명한 사실은 되풀이하지 않아도 되지만 대안과의 "
-                "비교 관계는 남긴다. 입력에 유의미한 대안이 없으면 새로 만들지 않는다. "
-                "recommendation_bridge와 thesis component card로 Strategy가 선택한 결론과 결정적 비교를 전달한다. "
-                "실적 문단은 변화의 원인·강도, 전망 문단은 지속성과 가정, 판단 한계는 실질적인 취약점을 맡는다. 같은 한계를 여러 절에서 반복하지 않는다. "
-                "첫 문단에는 decision.investment_horizon을 표시된 그대로 한 번 포함한다. Strategy 문구를 "
-                "그대로 복사하지 말고 판단 의미와 최종 투자 의견을 보존하면서 중복되거나 어색한 표현을 "
-                "자연스러운 조사보고서 문장으로 편집한다."
-            ),
-            "product_scope_policy": (
-                f"reconciliation이 matched가 아닌 제품 card는 '{PRODUCT_DISCLOSURE_SCOPE_LABEL}'임을 "
-                "해당 설명이나 표에서 명확히 밝힌다. 같은 범위 설명을 문장마다 반복하지 않고 회사 전체 매출로 확대하지 않는다."
-            ),
-            "no_opaque_ids": "원천 evidence/claim/opinion ID를 생성하거나 노출하지 않는다.",
-            "no_new_information": "수치, 회사, 제품·서비스, 이벤트, 인과관계, 전망치를 새로 만들지 않는다.",
-            "no_numeric_derivation": "입력 수치의 단위 환산, 비율 계산, 반올림 재계산을 하지 않는다.",
-            "no_internal_narration": "Agent, prompt, validation, 파일 경로, card key를 독자 문장이나 보이는 표 셀에 쓰지 않는다.",
-            "no_forbidden_content": "목표주가, 컨센서스, 별도 투자의견 변경 시나리오를 작성하지 않는다.",
             "current_input_only": (
                 "기준일까지 확인된 사실과 Strategy가 제시한 향후 12개월 전망·가정을 구분해서 전달한다. "
                 "입력에 없는 미래 수치나 일정을 추가하지 않는다."
-            ),
-            "hide_recommendation_label": (
-                "decision.opinion이 있으면 Buy=매수, Hold=중립, Sell=매도로 표시하고 변경하지 않는다. "
-                "최종 기업 투자 의견을 기존 보유자·신규 진입자의 별도 대응으로 바꾸지 않는다. "
-                "opinion이 없는 기존 계약에는 새로운 등급을 만들지 않는다."
-            ),
-            "korean_style": (
-                "독자에게 보이는 본문과 표의 해석 문장은 논문·조사보고서에 쓰는 간결한 한국어로 작성하고 "
-                "문장 종결은 '-다' 체로 통일한다. '-습니다' 체를 섞지 않는다."
             ),
             "evidence_focus": (
                 "Strategy가 선택한 카드 중 해당 섹션의 질문에 직접 답하는 내용만 쓴다. "
@@ -497,7 +420,6 @@ def _build_editorial_context(
                 "근거명은 카드 종류를 반복하는 일반 분류명이 아니라 해당 기업에서 관찰된 핵심 내용을 "
                 "2~8어절로 구체화한다. 투자 방향이나 입력에 없는 사실은 근거명에 추가하지 않는다."
             ),
-            "text_density": "독립적인 논거와 가정에 맞춰 문단을 나눈다. 문단 수를 목표로 삼지 않고 같은 사실·해석의 반복만 줄인다.",
             "inline_html": ["<strong>"],
         },
         "writer_input": build_writer_llm_input(writer_packet),
@@ -815,10 +737,13 @@ def _find_keys(value: Any) -> set[str]:
 def _section_role_guidance() -> list[dict[str, Any]]:
     roles = {
         "investment_call_thesis": {
-            "reader_question": "현재 판단 방향과 투자기간은 무엇이며, 어떤 긍정·부정 근거가 결론을 결정했는가?",
+            "reader_question": (
+                "현재 판단 방향과 투자기간은 무엇이며, 무엇이 결론을 결정했고 가장 강한 대안은 "
+                "왜 채택되지 않았는가?"
+            ),
             "content_focus": (
-                "decision과 decisive evidence를 사용해 최종 투자 의견을 결론부터 제시한다. 판단과 "
-                "결정적 이유, counterview의 구체적 대안 근거와 decision_rationale의 비교·선택 이유를 설명한다. 상세 수치는 표에 맡긴다."
+                "최종 투자 의견과 결정적 이유를 결론부터 제시하고, 대안과의 비교를 다룬 뒤 현재 의견을 "
+                "선택한 이유로 끝낸다. 상세 수치는 표에 맡긴다."
             ),
         },
         "business_market_context": {
@@ -850,7 +775,11 @@ def _section_role_guidance() -> list[dict[str, Any]]:
         },
         "data_limits": {
             "reader_question": "자료의 기준 시점과 현재 판단의 핵심 해석 한계는 무엇인가?",
-            "content_focus": "Strategy가 제시한 실질적인 판단 한계와 필요한 자료 기준만 설명한다. 제시된 내용이 없으면 빈 배열을 반환한다. 판단 변경 시나리오나 일반적인 자료 부족 문구를 만들지 않는다.",
+            "content_focus": (
+                "Strategy가 제시한 실질적인 판단 한계와 필요한 자료 기준만 설명한다. residual_uncertainty가 "
+                "투자의견이 바뀔 수 있는 조건을 제시하면 그 조건을 보존한다. 제시된 내용이 없으면 빈 배열을 "
+                "반환한다. 새로운 의견 전환 조건이나 일반적인 자료 부족 문구를 만들지 않는다."
+            ),
         },
     }
     return [{"section_key": section["key"], "title": section["title"], **roles[section["key"]]} for section in REPORT_SECTIONS]
@@ -943,8 +872,8 @@ def _output_contract(
                 if component == "investment_call_thesis":
                     section_items[item_key] = {
                         "paragraphs": [
-                            "Strategy의 판단 방향과 이유를 정리한 문단",
-                            "최종 투자 의견의 핵심 근거와 전망의 전제를 설명한 문단",
+                            "최종 투자 의견과 그것을 결정한 근거를 결론부터 쓴 문단",
+                            "decision_rationale의 비교와 counterview의 대안을 다룬 뒤 현재 의견을 선택한 이유로 끝나는 문단",
                         ],
                         "bullets": [],
                         "card_keys": card_keys,
@@ -1288,8 +1217,8 @@ def _editorial_system_prompt(
 """.strip()
         if writer_mode == FREE_FORM_WRITER_MODE
         else """
-- label_free_strategy=true이면 investment_call_thesis의 paragraphs와 _claim_units를 직접 작성한다. Strategy의 thesis와 최종 투자 의견의 의미를 보존하되 문구를 그대로 복사하지 않고, 중복되거나 어색한 표현을 자연스럽게 정리한다. 문단 수를 목표로 삼지 않고 근거 비교와 선택 이유를 충분히 설명한다. 첫 문단에는 decision.investment_horizon을 표시된 그대로 한 번 포함한다. 그 외 계약에서는 두 배열을 비운다.
-- key_evidence_table의 rows는 빈 배열로 반환한다. label_free_strategy=true이면 각 card의 구체적인 독자용 근거명을 _display_labels에 입력 순서대로 작성한다. 최종 표의 사실·수치와 투자 해석은 시스템이 만든다.
+- investment_call_thesis의 paragraphs와 _claim_units를 직접 작성한다. Strategy의 thesis와 최종 투자 의견의 의미를 보존하되 문구를 그대로 복사하지 않고, 중복되거나 어색한 표현을 자연스러운 조사보고서 문장으로 정리한다. 문단 수를 목표로 삼지 않고 근거 비교와 선택 이유를 충분히 설명한다. 첫 문단에는 decision.investment_horizon을 표시된 그대로 한 번 포함한다.
+- key_evidence_table의 rows는 빈 배열로 반환하고, 각 card의 구체적인 독자용 근거명을 _display_labels에 입력 순서대로 작성한다. 최종 표의 사실·수치와 투자 해석은 시스템이 만든다.
 - risk_monitoring_matrix의 rows는 빈 배열로 반환한다. 최종 리스크 행도 시스템이 Strategy 의미와 확인 항목으로 만든다.
 """.strip()
     )
@@ -1301,24 +1230,23 @@ def _editorial_system_prompt(
 - Strategy 판단을 재평가하거나 새로운 해석, 인과관계, 전망, 수치, 회사, 제품·서비스, 이벤트를 만들지 않는다.
 - 문장과 표를 편집할 때 대상기업·지주회사·그룹·계열사 중 각 실적·수치·사건의 주체와 연결·별도 기준을 유지한다. 기업명을 생략해 그룹 수치가 대상기업 수치로 읽히게 하지 않는다. Strategy가 근거에 따라 설명한 대상기업의 사업 변화와 그룹 성과에 대한 기여를 보존하며, 이를 기업 구분에 관한 내부 검토 문구로 대체하지 않는다. 입력에 없는 기여 원인·규모를 보충하지 않고, 판단에 실질적인 영향을 주는 불확실성은 해당 범위에서 유지한다.
 - 판단 방향과 투자기간을 변경하지 않는다.
-- recommendation_bridge.decision_rationale가 있으면 그 근거 비교와 의견 선택 이유를 투자 판단 요약에서 보존한다. 별도 소제목을 만들거나 긍정·부정 사실을 나열하는 문장으로 대체하지 않는다. 12m_v3는 지지·반대 분류 없이 각 근거의 투자 판단상 의미를 서술한다.
-- recommendation_bridge.counterview의 구체적 사실·가정과 근거를 보존하고 그럼에도 현재 의견을 선택한 이유를 연결한다. 대안을 '긍정 요인도 있다' 같은 일반론으로 대체하지 않는다. 이미 다른 절에서 설명한 사실을 반복할 필요는 없지만, 대안과의 비교 관계는 남긴다. 입력에 유의미한 대안이 없으면 새로 만들지 않는다.
+- 투자 판단 요약은 최종 투자 의견과 그것을 결정한 근거를 결론부터 쓴다. recommendation_bridge.decision_rationale의 근거 간 우선순위와 대안 의견을 채택하지 않은 이유를 보존한다. 각 근거는 지지·반대로 나누지 않고 투자 판단상 의미로 서술하며, 별도 소제목이나 정해진 비교표를 추가하지 않는다.
+- recommendation_bridge.counterview에 대안을 뒷받침하는 구체적 사실·가정이 있으면 그 내용과 근거를 보존하고 '긍정 요인도 있다' 같은 일반론으로 대체하지 않는다. 대안을 설명한 뒤에는 그럼에도 현재 의견을 선택한 이유로 문단을 끝낸다. 다른 절에서 설명한 사실은 되풀이하지 않아도 되지만 대안과의 비교 관계는 남긴다. 입력에 유의미한 대안이 없으면 새로 만들지 않는다.
+- decision.decision_confidence가 high이면 '고확신은 아니다', '확신은 중간 수준이다'처럼 확신을 낮추는 수식어를 쓰지 않는다. medium이나 low이면 Strategy 입력이 밝힌 범위에서만 확신의 제한을 쓰고 새로 덧붙이지 않는다. 투자의견과 확신 수준은 투자 판단 요약에서 결론짓고 다른 절의 마지막 문장에서 다시 결론짓지 않는다.
 - 실적 검토의 변화 원인과 지표 간 차이, 전망의 지속성과 가정을 보존한다. 해석을 모두 증가·감소 나열로 축약하지 않는다. 전망에서 설명한 가정이나 위험을 판단 한계에서 같은 문장으로 반복하지 않는다.
 
 출력 계약:
 - output_contract의 sections와 item key를 정확히 유지하고 다른 key를 추가하지 않는다.
-- 각 item의 card_keys에는 available_card_keys_by_component에서 실제 사용한 근거만 작성하고 required_card_keys_by_component의 필수 근거는 포함한다. 이전 입력에 available 목록이 없으면 output_contract의 근거를 유지한다. 표의 카드·행 순서는 그대로 유지한다.
+- 각 item의 card_keys에는 available_card_keys_by_component에서 실제 사용한 근거만 작성하고 required_card_keys_by_component의 필수 근거는 포함한다. 표의 카드·행 순서는 그대로 유지한다.
 {assembly_policy}
 - 밑줄로 시작하는 필드는 검증 전용이다. 그 값을 보이는 문장이나 표 셀에 노출하지 않는다.
 - 각 텍스트 item의 실제 완결 문장을 _claim_units.claim에 그대로 복사하고 문장별 사용 card_keys를 연결한다. 각 item의 _claim_units.card_keys 합집합은 item.card_keys와 정확히 같아야 한다.
-- Strategy의 data_limits는 residual_uncertainty의 의미와 required_limitations의 자료 기준을 독자용 문장으로 편집한다. 실제 작성 문장과 근거를 _claim_units에 연결하고 자료 기준의 category를 limitation_categories에 표시한다. 두 입력이 모두 비어 있으면 paragraphs와 _claim_units를 빈 배열로 둔다. 한계를 채우려고 새로운 불확실성을 만들지 않는다.
-- data_limits에서 residual_uncertainty에 없는 판단 한계를 추가하지 않는다. required_limitations로 지정되지 않은 정상 공시 시차나 후행 사건의 과거 재무표 미반영을 별도 문단으로 붙이지 않는다. 문단 수를 채우지 말고 핵심 제약을 한 번 설명하는 것으로 충분하다.
-- 그 외 계약에서 data_limits의 _limitation_claims에는 스키마가 요구하는 category key를 정확히 유지하고, 각 claim은 해당 required limitation의 facts와 basis card를 사용해 독자가 이해할 수 있는 문장으로 실제 설명한다.
-- _limitation_claims의 category 이름이나 card key를 claim 문장에 노출하지 않는다. 검증용 category와 card key는 시스템이 원본 packet에서 연결한다.
+- data_limits는 residual_uncertainty의 의미와 required_limitations의 자료 기준을 독자용 문장으로 편집한다. 실제 작성 문장과 근거를 _claim_units에 연결하고 자료 기준의 category를 limitation_categories에 표시하되, category 이름과 card key는 문장에 쓰지 않는다. 두 입력이 모두 비어 있으면 paragraphs와 _claim_units를 빈 배열로 둔다.
+- data_limits에서 residual_uncertainty에 없는 판단 한계를 추가하지 않는다. required_limitations로 지정되지 않은 정상 공시 시차, 후행 사건의 과거 재무표 미반영, 재무 기여 미확인을 별도 한계 문장으로 붙이지 않는다. 문단 수를 채우지 말고 핵심 제약을 한 번 설명하는 것으로 충분하다.
 - available_charts가 있으면 requested_chart_keys와 chart_selection_details를 같은 길이와 순서로 작성한다. 각 차트는 최종 판단에 실제 사용된 card를 basis_card_keys로 연결한다. selection_reason은 내부 검증용 선택 이유로 작성한다. chart_observation은 chart_facts에서 직접 확인되는 사실만 한 문장으로 쓰고, investment_interpretation은 연결된 card의 Strategy 해석이 대상기업 판단에 미치는 의미만 한 문장으로 쓴다.
 
 작성 규칙:
-- 보이는 근거 표는 output_contract의 열 구성에 맞춰 확인된 사실과 Strategy가 설명한 투자 판단상 의미를 구분한다. 현재 서술형 계약에 과거 지지·반대 분류를 추가하지 않는다.
+- 보이는 근거 표는 output_contract의 열 구성에 맞춰 확인된 사실과 Strategy가 설명한 투자 판단상 의미를 구분한다.
 - 카드에 reader_observation이 있으면 관찰 열은 그 표시값을 우선 사용하고 raw 숫자를 다시 환산하지 않는다.
 - 제품 card의 reconciliation이 matched가 아니면 해당 설명이나 표에서 `주요 제품·서비스 공시표 기준`임을 밝히고 회사 전체 매출 구성으로 확대하지 않는다. 같은 범위 설명을 문장마다 반복하지 않는다.
 - 관찰과 해석을 섞지 않고 strategy_interpretation의 의미와 입력에 제시된 판단 역할을 유지한다.
@@ -1333,13 +1261,11 @@ def _editorial_system_prompt(
 - 데이터 한계나 미공개 정보를 새 리스크로 승격하지 않는다.
 - 입력 숫자는 표시된 값과 단위를 그대로 사용하고 계산, 단위 환산, 임의 반올림을 하지 않는다.
 - 원천 evidence/claim/opinion ID, card key, Agent, prompt, validation, 절대 파일 경로를 보이는 문장에 쓰지 않는다.
-- 목표주가, 컨센서스, 별도 투자의견 변경 시나리오를 작성하지 않는다.
-- decision.opinion이 있으면 Buy=매수, Hold=중립, Sell=매도로 표시하며 최종 의견을 바꾸지 않는다. 기존 보유자·신규 진입자의 별도 대응으로 다시 작성하지 않는다. opinion이 없는 이전 계약에서는 임의 의견을 추가하지 않는다.
-- 후속 공시·수치·사건을 확인하거나 향후 재검토하라는 작업 계획을 쓰지 않는다. 입력에 없는 내용은 현재 판단에 반영할 수 없는 범위로만 설명한다.
+- 목표주가와 컨센서스를 작성하지 않는다. 투자의견이 바뀔 수 있는 조건은 residual_uncertainty에 Strategy가 제시한 것만 데이터 한계 절에서 한 번 서술하고 새로 만들지 않는다.
+- decision.opinion은 Buy=매수, Hold=중립, Sell=매도로 표시하며 최종 의견을 바꾸지 않는다. 입력 문장에 나온 Buy·Hold·Sell도 같은 한국어 의견명으로 바꿔 쓴다. 투자의견이 아닌 판단, 예컨대 가격 위치를 설명할 때는 매수·중립·매도라는 말을 쓰지 않고 풀어 쓴다. 기존 보유자·신규 진입자의 별도 대응으로 다시 작성하지 않는다.
+- 후속 공시·수치·사건을 확인하거나 향후 재검토하라는 작업 계획을 쓰지 않는다. residual_uncertainty가 제시한 의견 전환 조건은 작업 계획이 아니라 현재 판단의 한계이므로 그 의미를 보존한다. 입력에 없는 내용은 현재 판단에 반영할 수 없는 범위로만 설명한다.
 - 독자에게 보이는 한국어 문장은 간결한 '-다' 체로 통일하고 '-습니다' 체를 섞지 않는다.
 - 투자 판단 요약은 최종 의견과 결정적 이유, 최근 실적과 가격 평가는 earnings_review와 price_context, 향후 전망은 outlook의 성장 동인·가정과 예상 영향, 리스크는 전망을 약화시킬 요인, 데이터 한계는 자료 시점과 해석 범위를 쓴다. 같은 결론·수치·사건 설명을 표현만 바꿔 반복하지 않는다.
-- 뉴스 card가 여러 개이면 고객사 공급·수주·생산·투자처럼 대상, 제품, 시점이 확인되는 사건을 일반적인 전략·기술 방향 보도보다 우선한다.
-- 월별 뉴스 배열은 자료를 묶은 구간이다. 각 기사의 보도일·사건 발생일·실적 대상 기간을 구분하고, 하위 분석의 해석을 기사에 직접 명시된 사실로 바꾸지 않는다.
 - 같은 기업·제품·요약 근거를 공유해도 사건의 발생 시점이나 사업상 의미가 다르면 중복 설명으로 취급하지 않는다. report_insights의 유형이 같다는 이유로 서로 다른 사건을 하나의 포괄적 표현으로 대체하지 않는다.
 - 독립적인 논거와 가정에 맞춰 문단을 나눈다. 핵심 논거와 가정은 분량 때문에 생략하지 않고 같은 사실·해석의 반복만 줄인다. bullets는 빈 배열로 둔다.
 - inline HTML은 <strong>만 허용하며 Markdown이나 raw HTML 문서는 반환하지 않는다.
@@ -1551,132 +1477,6 @@ def _apply_deterministic_risk_table(
         )
     )
     return normalized
-
-
-def _materialize_data_limit_claims(
-    payload: dict[str, Any],
-    writer_packet: dict[str, Any],
-) -> dict[str, Any]:
-    """Attach trusted limitation metadata to category-keyed Writer prose."""
-
-    normalized = json.loads(json.dumps(payload, ensure_ascii=False))
-    if writer_packet.get("strategy_contract_version") == STRATEGY_DECISION_VERSION:
-        # The Writer authors the visible paragraphs and their source links.
-        # Do not append the Strategy's original wording after paraphrasing.
-        return normalized
-    limitations = [
-        item
-        for item in writer_packet.get("required_limitations") or []
-        if isinstance(item, dict) and str(item.get("category") or "").strip()
-    ]
-    is_strategy_decision = (
-        writer_packet.get("strategy_contract_version") == STRATEGY_DECISION_VERSION
-    )
-    bridge = _dict(writer_packet.get("recommendation_bridge"))
-    strategy_claim = (
-        str(bridge.get("residual_uncertainty") or "").strip()
-        if is_strategy_decision
-        else ""
-    )
-    strategy_claim_keys = _clean_identifiers(
-        bridge.get("residual_uncertainty_card_keys")
-    )
-    if not limitations and not strategy_claim:
-        return normalized
-    sections = _dict(normalized.get("sections"))
-    data_limits = _dict(sections.get("data_limits"))
-    item = _dict(data_limits.get("section_analysis"))
-    raw_claims = _dict(item.get("_limitation_claims"))
-    if limitations and not raw_claims and not strategy_claim:
-        return normalized
-
-    assignments = _limitation_card_assignments(writer_packet, limitations)
-    claim_units: list[dict[str, Any]] = [
-        copy.deepcopy(unit) for unit in item.get("_claim_units") or []
-        if isinstance(unit, dict) and str(unit.get("claim") or "").strip()
-    ]
-    if strategy_claim:
-        claim_units.append(
-            {
-                "claim": strategy_claim,
-                "card_keys": strategy_claim_keys,
-                "limitation_categories": [],
-            }
-        )
-    for limitation in limitations:
-        category = str(limitation.get("category") or "").strip()
-        claim = str(_dict(raw_claims.get(category)).get("claim") or "").strip()
-        if not claim:
-            continue
-        claim_units.append(
-            {
-                "claim": claim,
-                "card_keys": assignments.get(category, []),
-                "limitation_categories": [category],
-            }
-        )
-    paragraphs = _ensure_claim_units_visible(
-        _clean_list(item.get("paragraphs")), claim_units,
-    )
-    item.clear()
-    item.update(
-        {
-            "paragraphs": paragraphs,
-            "bullets": [],
-            "card_keys": _clean_identifiers(
-                _dict(writer_packet.get("required_card_keys_by_component")).get(
-                    "data_limits"
-                )
-            ),
-            "_claim_units": claim_units,
-            "_limitation_categories": [
-                str(item.get("category")) for item in limitations
-            ],
-        }
-    )
-    return normalized
-
-
-def _limitation_card_assignments(
-    writer_packet: dict[str, Any],
-    limitations: list[dict[str, Any]],
-) -> dict[str, list[str]]:
-    """Assign every routed data-limit card to the closest typed limitation."""
-
-    if not limitations:
-        return {}
-    cards = _dict(writer_packet.get("cards"))
-    routed = _clean_identifiers(
-        _dict(writer_packet.get("required_card_keys_by_component")).get("data_limits")
-    )
-    routed_set = set(routed)
-    assignments = {
-        str(item.get("category")): [
-            card_key
-            for card_key in _clean_identifiers(item.get("basis_card_keys"))
-            if card_key in routed_set
-        ]
-        for item in limitations
-    }
-    assigned = {
-        card_key for card_keys in assignments.values() for card_key in card_keys
-    }
-    for card_key in routed:
-        if card_key in assigned:
-            continue
-        domain = str(_dict(cards.get(card_key)).get("domain") or "")
-        candidates = []
-        for limitation in limitations:
-            category = str(limitation.get("category"))
-            basis_domains = {
-                str(_dict(cards.get(basis_key)).get("domain") or "")
-                for basis_key in _clean_identifiers(limitation.get("basis_card_keys"))
-            }
-            if domain and domain in basis_domains:
-                candidates.append(category)
-        target_category = candidates[-1] if candidates else str(limitations[-1].get("category"))
-        assignments[target_category].append(card_key)
-    return assignments
 
 
 def _evidence_observation_text(card_key: str, card: dict[str, Any]) -> str:

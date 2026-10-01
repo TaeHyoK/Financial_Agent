@@ -19,6 +19,10 @@ DIRECT_METRICS = {
     "Enterprise Value/Revenue": ("enterprise_value_to_revenue", "times"),
     "Enterprise Value/EBITDA": ("enterprise_value_to_ebitda", "times"),
 }
+COMMON_ONLY_MARKET_CAP_LIMIT = (
+    "보통주 외 주식 종류가 있거나 확인되지 않아, 보통주 종가×보통주 발행주식 수 기준 시가총액이며 "
+    "우선주 등 다른 종류 주식의 시가총액은 포함하지 않는다."
+)
 _SUFFIX_MULTIPLIERS = {
     "K": 1_000.0,
     "M": 1_000_000.0,
@@ -171,7 +175,11 @@ def build_valuation_snapshot(
         input_problems.append("historical_close_not_eligible")
     share_date = str(shares_payload.get("as_of_date") or "")
     receipt_date = str((shares_payload.get("source") or {}).get("receipt_date") or "")
-    if shares_payload.get("share_class") != "common_only":
+    # With other share classes, a known common count still values the common shares only.
+    common_only_market_cap = (
+        shares_payload.get("share_class") != "common_only" and shares is not None and shares > 0
+    )
+    if shares_payload.get("share_class") != "common_only" and not common_only_market_cap:
         input_problems.append("multiple_or_unknown_share_classes")
     if not share_date or not receipt_date or share_date > market_date or receipt_date >= selected_date:
         input_problems.append("share_count_date_not_eligible")
@@ -242,15 +250,18 @@ def build_valuation_snapshot(
         else "unavailable"
     )
 
+    calculated_limits = [
+        "공시된 보통주 발행주식 수에 과거 종가를 적용한 추정값이며, 공시 후 주식 수 변동을 모두 확인한 기준일 시가총액은 아니다.",
+        "가격 제공업체의 사후 분할 조정 가능성은 남아 있으며, 관측된 분할이 주식 수 기준일 뒤에 있으면 계산하지 않는다.",
+    ]
+    if common_only_market_cap:
+        calculated_limits.append(COMMON_ONLY_MARKET_CAP_LIMIT)
     calculated = {
         "status": calculated_status,
         "calculation_basis": "disclosed_share_count_estimate",
         "statement_scope": scope,
         "input_problems": input_problems,
-        "data_limits": [
-            "공시된 보통주 발행주식 수에 과거 종가를 적용한 추정값이며, 공시 후 주식 수 변동을 모두 확인한 기준일 시가총액은 아니다.",
-            "가격 제공업체의 사후 분할 조정 가능성은 남아 있으며, 관측된 분할이 주식 수 기준일 뒤에 있으면 계산하지 않는다.",
-        ],
+        "data_limits": calculated_limits,
         "as_of_date": market_date,
         "inputs": {
             "selected_date_close": _input_value(

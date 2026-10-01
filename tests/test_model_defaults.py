@@ -112,5 +112,16 @@ class ModelDefaultsTests(unittest.TestCase):
         self.assertAlmostEqual(mini["total_cost_usd"], 1.1325)
 
 
+class ReasoningModelDetectionTests(unittest.TestCase):
+    def test_provider_prefixed_model_ids_are_reasoning_models(self):
+        from Agent_Team.Strategy_Agent.agent import uses_max_completion_tokens
+
+        for model in ("gpt-5.4", "openai.gpt-5.6-terra", "openai.global.gpt-5.6-terra",
+                      "azure.gpt-5.6-terra-2026-07-09", "openai.us.gpt-5.4", "o3-mini"):
+            self.assertTrue(uses_max_completion_tokens(model), model)
+        for model in ("gpt-4o", "openai.gpt-4o"):
+            self.assertFalse(uses_max_completion_tokens(model), model)
+
+
 if __name__ == "__main__":
     unittest.main()

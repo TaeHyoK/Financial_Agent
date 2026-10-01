@@ -19,6 +19,7 @@ except ImportError:  # pragma: no cover - supports direct script execution
 
 
 _SECTION_RE = re.compile(r"주식의\s*총수")
+_OTHER_SHARE_CLASS_MARKERS = ("우선주", "종류주", "우선")
 def extract_share_information(
     xml_text: str,
     *,
@@ -59,6 +60,10 @@ def _find_section(soup: BeautifulSoup) -> Tag | None:
 
 
 def _parse_share_table(matrix: list[list[str]]) -> dict[str, Any] | None:
+    """Parse one share table; ``share_class`` is ``common_only`` when the common column equals the total,
+    ``common_only`` when there is no common column and no preferred/class-share wording (common = total),
+    and ``multiple_or_unknown`` otherwise (preferred shares exist or the common count cannot be found)."""
+
     if len(matrix) < 3:
         return None
     total_column = _total_column(matrix[:2])
@@ -100,6 +105,9 @@ def _parse_share_table(matrix: list[list[str]]) -> dict[str, Any] | None:
                 common_values[match[0]] = _parse_integer(_cell(row, common_column))
                 common_priorities[match[0]] = match[1]
     common_issued = common_values.get("issued_shares")
+    if common_column is None and issued is not None and not _mentions_other_share_class(matrix):
+        # A table with only a total column and no preferred or class-share wording has a single class.
+        common_issued = issued
 
     return {
         "unit": "shares",
@@ -117,6 +125,14 @@ def _parse_share_table(matrix: list[list[str]]) -> dict[str, Any] | None:
             )
         },
     }
+
+
+def _mentions_other_share_class(matrix: list[list[str]]) -> bool:
+    """Return whether header cells or row labels mention preferred or class shares."""
+
+    texts = [_cell(row, col) for row in matrix[:2] for col in range(len(row))]
+    texts += [" ".join(row[:2]) for row in matrix[2:]]
+    return any(marker in _normalized_label(text) for text in texts for marker in _OTHER_SHARE_CLASS_MARKERS)
 
 
 def _total_column(header_rows: list[list[str]]) -> int | None:

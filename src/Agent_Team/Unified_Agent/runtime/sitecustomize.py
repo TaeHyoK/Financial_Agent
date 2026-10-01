@@ -29,20 +29,6 @@ def _patch_writer(module: ModuleType) -> None:
             return execute(*args, **kwargs)
         with_policy._ablation_luna_policy = True
         module.execute_with_telemetry = with_policy
-    original = getattr(module, "_limitation_card_assignments", None)
-    if original is None or getattr(original, "_ablation_empty_limitations_safe", False):
-        return
-
-    def safe_assignments(
-        writer_packet: dict[str, Any],
-        limitations: list[dict[str, Any]],
-    ) -> dict[str, list[str]]:
-        if not limitations:
-            return {}
-        return original(writer_packet, limitations)
-
-    safe_assignments._ablation_empty_limitations_safe = True  # type: ignore[attr-defined]
-    module._limitation_card_assignments = safe_assignments
 
 
 class _PatchLoader(importlib.abc.Loader):

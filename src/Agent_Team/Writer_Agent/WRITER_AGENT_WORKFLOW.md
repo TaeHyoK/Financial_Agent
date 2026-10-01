@@ -80,7 +80,7 @@ Strategy 산출물 3개 로드
 | 5 | `risk_monitoring_matrix` | 리스크 점검 | 현재 위험과 투자 판단에 미치는 영향 |
 | 6 | `data_limits` | 데이터 기준과 한계 | 자료 시점과 해석 범위 |
 
-각 text item은 component별 `card_keys`와 문장별 `_claim_units`를 hidden metadata로 가진다. 투자 판단 요약은 Writer LLM이 Strategy 판단을 두 문단 이내로 편집한다. 핵심 근거표는 `핵심 근거`, `확인된 수치·사실`, `투자 판단에 미치는 의미` 3열이다. `핵심 근거`는 Writer LLM이 카드마다 작성하고, `확인된 수치·사실`은 구조화된 관찰값에서, `투자 판단에 미치는 의미`는 카드의 `strategy_interpretation`에서 옮긴다. 위험표의 제목·내용·판단 영향은 Strategy의 `risk_title`, `risk`, `current_implication`을 그대로 전달한다. renderer는 metadata와 semantic card key를 HTML에 표시하지 않는다.
+각 text item은 component별 `card_keys`와 문장별 `_claim_units`를 hidden metadata로 가진다. 투자 판단 요약은 Writer LLM이 Strategy 판단을 결론부터 쓰고, 대안과 비교한 뒤 현재 의견을 선택한 이유로 끝나게 편집한다. 핵심 근거표는 `핵심 근거`, `확인된 수치·사실`, `투자 판단에 미치는 의미` 3열이다. `핵심 근거`는 Writer LLM이 카드마다 작성하고, `확인된 수치·사실`은 구조화된 관찰값에서, `투자 판단에 미치는 의미`는 카드의 `strategy_interpretation`에서 옮긴다. 위험표의 제목·내용·판단 영향은 Strategy의 `risk_title`, `risk`, `current_implication`을 그대로 전달한다. renderer는 metadata와 semantic card key를 HTML에 표시하지 않는다.
 
 비교 에이전트의 종합 문장이나 비교기업 전체 평가는 Writer에 직접 전달하지 않는다. Strategy가 `target_peer_context`에서 선택한 비교 축과 지표만 핵심 근거표에 넣으며, `target_implication`은 비교기업이 아니라 대상기업의 판단을 설명하는 문장으로 사용한다. 비교기업 전용 섹션은 만들지 않고 사업·시장 현황에서 같은 비교를 반복하지 않는다.
 

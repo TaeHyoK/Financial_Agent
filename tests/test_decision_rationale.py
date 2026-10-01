@@ -11,7 +11,7 @@ from Agent_Team.Strategy_Agent.decision import (
 )
 from Agent_Team.Strategy_Agent.agent import build_strategy_report_projection, render_strategy_projection_markdown
 from Agent_Team.Writer_Agent.writer_handoff import build_writer_editorial_packet, validate_writer_editorial_packet
-from Agent_Team.Writer_Agent.html_report_writer import _build_context, normalize_report_payload
+from Agent_Team.Writer_Agent.html_report_writer import _build_context, _editorial_system_prompt, normalize_report_payload
 from Agent_Team.Writer_Agent.formatted_html_renderer import build_complete_html
 from Agent_Team.Writer_Agent.html_report_validator import validate_html_report
 
@@ -75,7 +75,8 @@ class DecisionRationaleTests(unittest.TestCase):
     def test_writer_requires_actual_rationale_handoff(self):
         handoff, _ = writer_fixture()
         context = _build_context(writer_handoff=handoff)
-        self.assertIn("decision_rationale", context["writing_rules"]["thesis_policy"])
+        self.assertIn("decision_rationale", context["writer_input"]["recommendation_bridge"])
+        self.assertIn("recommendation_bridge.decision_rationale의 근거 간 우선순위", _editorial_system_prompt())
         for field in ("decision_rationale", "decision_rationale_card_keys"):
             bad = copy.deepcopy(handoff)
             bad["recommendation_bridge"].pop(field)

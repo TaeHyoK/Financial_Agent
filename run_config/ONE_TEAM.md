@@ -1,8 +1,40 @@
 # One-team integration
 
+## Paper setting
+
+The paper's r01 One-team reports come from the model-matched gpt-5.4 run.
+Run from the repository root at tag `paper-generation` (commit `da85eb3`),
+after restoring the frozen inputs (`prepared_inputs/`, `reports/`, `status/`)
+from outside Git:
+
+```bash
+python run_config/run_one_team_reports.py prepare --model gpt-5.4 --run-id one_team_gpt54_r01
+python run_config/run_one_team_reports.py check --model gpt-5.4 --run-id one_team_gpt54_r01
+python run_config/run_one_team_reports.py run --model gpt-5.4 --run-id one_team_gpt54_r01
+# Resume an interrupted run with the same flags:
+python run_config/run_one_team_reports.py resume --model gpt-5.4 --run-id one_team_gpt54_r01
+```
+
+Integrated analysis, Comparison, Strategy and Writer all use gpt-5.4, the same
+analysis model as the other four conditions. `run` and `resume` read the API
+key from `--env-file` (default: the `environment_file` recorded in the
+preparation manifest, `configs/.env` in the current collection manifest). The stored gpt-5.6-luna monthly
+news summaries are reused; no new summary calls occur. The script default for
+`--model` is still `gpt-5.6-luna`, so always pass the flags above. The run
+covers all seven collected companies; the paper uses five of them (현대건설,
+두산, BGF리테일, 아모레퍼시픽, SK바이오팜). The r02/r03 One-team reports come
+from `run_repeated_reports.py` (see `REPEATED_REPORTS.md`). The full
+reproduction map is in `docs/ABLATION.md`.
+
+## Earlier record
+
+The sections below are the earlier development record. They describe the
+default `gpt-5.6-luna` run on seven companies, which the paper does not use,
+and the gpt-5.4 run as it was first documented.
+
 This condition uses the existing 2025H2 workspace and its completed Full inputs.
 The original four conditions, runner and 28 published reports remain unchanged.
-The new code has no dependency on `/home/agent2/ABLATION`.
+The new code has no dependency on the earlier ablation workspace.
 
 ## Flow
 
@@ -120,7 +152,7 @@ that failed domain-label validation). All attempts used `gpt-5.6-luna`;
 Comparison/Strategy reported 2,777 reasoning tokens in total. Integrated analysis
 and Writer reported zero reasoning tokens. No completed reports were regenerated.
 
-## ROUGE-L and BERTScore evaluation
+## BERTScore evaluation
 
 ```bash
 python run_config/evaluate_report_bodies.py
@@ -128,13 +160,15 @@ python run_config/evaluate_report_bodies.py
 
 This evaluates all 35 final HTML reports (7 companies × 5 conditions, including
 one_team) against the same fixed narrative regions of the analyst PDFs.
-BERTScore uses cached BAAI/bge-m3, 24 layers, batch size 1 and cuda:2;
-`--device` can choose another GPU. No paid API calls or text truncation are used.
+BERTScore uses cached BAAI/bge-m3, 24 layers and batch size 1. The original
+run used cuda:2; `--device` (default `auto`: CUDA when available, else CPU)
+selects the device. No paid API calls or text truncation are used.
 The original 28 report scores and all original body hashes were exactly reproduced.
-New results are written to `evaluation/with_one_team/`: `metrics.json`,
+The default output directory is now `evaluation/with_one_team_gpt54/` (the
+Luna run's results were written to `evaluation/with_one_team/`): `metrics.json`,
 `metrics.csv`, `condition_means.json`, `평가결과.md`, `protocol.json`, and
 `verification.json`. Existing `evaluation/` result files remain unchanged.
-Run `--prepare-only` for extraction and ROUGE-L without BERTScore;
+Run `--prepare-only` to stop after body extraction, before BERTScore;
 `--one-team-run-id` and `--output-dir` select another completed one-team run/output.
 
 ## Model-matched gpt-5.4 run
@@ -173,5 +207,5 @@ charts were decoded and verified. The new report list is
 `reports/one_team/one_team_gpt54_r01/index.html`.
 The matched 35-report evaluation was completed and verified: original 28 scores
 were reproduced exactly, all analysis models are gpt-5.4, and no body was truncated.
-One-team mean ROUGE-L F1 is 0.04403709455077399 and BERTScore F1 is
+One-team mean BERTScore F1 over the seven r01 companies is
 0.8779025333268302. Detailed results are in `evaluation/with_one_team_gpt54/`.

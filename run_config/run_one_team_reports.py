@@ -39,6 +39,12 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def workspace_path(value: str | Path) -> Path:
+    """Resolve a manifest path against the workspace (repository root); absolute paths pass through."""
+    path = Path(value)
+    return path if path.is_absolute() else WORKSPACE / path
+
+
 def locations(args):
     identifier = args.run_id or f"one_team_{args.model.replace('.', '_')}_r{args.replicate:02d}"
     if not re.fullmatch(r"[A-Za-z0-9_-]+", identifier):
@@ -211,7 +217,7 @@ def run(args, *, resume=False):
             raise ValueError("One-team status differs from preparation")
         if resume and state["state"] not in {"running", "failed", "success"}:
             raise RuntimeError("Unexpected prior run state")
-        env_file = Path(manifest["environment_file"])
+        env_file = Path(args.env_file).resolve() if getattr(args, "env_file", None) else workspace_path(manifest["environment_file"])
         load_project_env(env_file)
         if not os.getenv("OPENAI_API_KEY", "").strip():
             raise RuntimeError("Configured OPENAI_API_KEY is missing")
@@ -320,6 +326,7 @@ def main(argv=None):
     parser.add_argument("--companies", default="all", help="all or comma-separated target company names")
     parser.add_argument("--replicate", type=int, default=1)
     parser.add_argument("--run-id", default=None)
+    parser.add_argument("--env-file", default=None, help="Environment file for run/resume; defaults to environment_file in the preparation manifest")
     args = parser.parse_args(argv)
     args.downstream_model = args.downstream_model or args.model
     if args.replicate < 1: parser.error("replicate must be positive")

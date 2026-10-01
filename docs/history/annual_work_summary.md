@@ -9,7 +9,7 @@
 - 형식 참고 자료: `/home/agent2/ABLATION/real_report`
 - 정리 범위: 데이터 기간·공통 subdata·Strategy·최종 보고서 변경과 후속 재검토
 
-> 후속 상태: 이 문서의 검증·미수행 항목은 작성 당시 기록이다. 이후 ABLATION에서 기업별 기준일, 명시적 투자의견 평가, 통합 월별 입력, 무작위 뉴스 요약 재생성, 보조자료 제거 시 공통 가치평가 보존을 연결했다. 현재 남은 작업과 실행 순서는 [ablation 계획의 대조 결과](../../ABLATION/plans/03_ablation_조건별_입력_차이표.md#9-계획-대조-결과와-남은-순서)를 기준으로 확인한다. 과거 기록 자체를 새 실험 완료로 해석하지 않는다.
+> 후속 상태: 이 문서의 검증·미수행 항목은 작성 당시 기록이다. 이후 ABLATION에서 기업별 기준일, 명시적 투자의견 평가, 통합 월별 입력, 무작위 뉴스 요약 재생성, 보조자료 제거 시 공통 가치평가 보존을 연결했다. 현재 남은 작업과 실행 순서는 ablation 계획의 대조 결과를 기준으로 확인한다. 과거 기록 자체를 새 실험 완료로 해석하지 않는다.
 
 > 후속 결정: 중요 사건 누락 평가는 제외한다. 통합 에이전트의 중·장기 고정 문구와 실험 전용 Strategy 추가 지시는 제거했다. 근거 수 계약은 FINAL 공통 프롬프트에 명시하고, 기록된 준비·분석·실패 비용을 구분하는 점검 도구를 추가했다. 새 기준일의 공통 자료 수집과 소규모 실호출은 아직 수행하지 않았다.
 
@@ -197,7 +197,7 @@ python -m unittest discover -s tests -v
 python -m compileall -q src tests
 ```
 
-세부 결과와 검증 당시 파일 해시는 [annual_validation.json](annual_validation.json)에, 데이터·출력 설계는 [annual_analysis.md](annual_analysis.md)에 정리되어 있다.
+세부 결과와 검증 당시 파일 해시는 [annual_validation.json](annual_validation.json)에, 데이터·출력 설계는 [annual_analysis.md](../annual_analysis.md)에 정리되어 있다.
 
 ## 8. 아직 수행하지 않은 작업과 후속 확인
 

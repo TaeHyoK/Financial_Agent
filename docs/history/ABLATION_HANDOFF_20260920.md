@@ -1,3 +1,5 @@
+> 이 문서는 2026-09-20 인수인계 시점의 기록이다. 2~9절의 상태 설명은 지난 내용이다. LLM Judge 는 그 뒤 실행을 마쳤다. 현재 방법과 재현 절차는 [Ablation 방법과 재현](../ABLATION.md)을 본다.
+
 # Financial Agent Ablation 인수인계
 
 기준 시각: 2026-09-20 KST
@@ -12,8 +14,8 @@
 - 브랜치에는 기존 Financial Agent 전체 코드와 함께 다음을 추가한다.
   - `run_config/`: Ablation 생성·반복·평가·LLM Judge 실행 코드 및 기업 설정
   - `ablation_suite/`, `ablation_evaluation/`, `real_report_evaluation/`: 기존 Ablation 생성·평가 라이브러리
-  - `ablation_results/`: 소형 상태 파일과 BERTScore·ROUGE-L 결과 (2026-09-23 이후: 최종 75개 지표 `repeated_standard_5companies/` 만 추적, 상태 파일·r01 단독 결과·Judge 상태는 제외)
-  - `docs/ablation_handoff/`: 이전 실험·Judge 설계 기록
+  - `ablation_results/`: 소형 상태 파일과 자동 지표 결과 (2026-09-23 이후: 최종 75개 지표 `repeated_standard_5companies/` 만 추적, 상태 파일·r01 단독 결과·Judge 상태는 제외)
+  - `docs/ablation_handoff/`: 이전 실험·Judge 설계 기록 (현재 `docs/history/ablation_handoff/`)
   - `scripts/prepare_ablation_handoff.py`: 보고서 이동용 ZIP 재생성 스크립트
 
 ## 2. 보고서 생성 상태
@@ -35,7 +37,7 @@
 
 ## 3. 기존 자동 지표 상태
 
-- 5개 기업 × 3회 × 5조건, 총 75개 본문에 대한 BERTScore·ROUGE-L 평가 완료
+- 5개 기업 × 3회 × 5조건, 총 75개 본문에 대한 BERTScore 평가 완료
 - 결과 위치: `ablation_results/repeated_standard_5companies/`
 - r01 One-team gpt-5.4 검증 결과: `ablation_results/with_one_team_gpt54/` (2026-09-23 이후 Git 에서 제외, 이동용 ZIP 에 보존)
 - 자동 지표 결과와 LLM Judge 결과는 서로 다른 품질 개념이므로 하나의 점수로 합치지 않는다.
@@ -147,7 +149,7 @@ python run_config/final_report_llm_judge.py aggregate
 
 ## 10. 정리 커밋 이후 상태 (2026-09-21 추가)
 
-브랜치 `cleanup-dead-code-20260921` 에서 dead code 와 v1~v4 잔여 코드를 걷어냈다. 계획과 파일별 분류는 `docs/cleanup_plan_20260921.md` 에 있다.
+브랜치 `cleanup-dead-code-20260921` 에서 dead code 와 v1~v4 잔여 코드를 걷어냈다. 계획과 파일별 분류는 `docs/history/cleanup_plan_20260921.md` 에 있다.
 
 - 최종 보고서 산출 동작과 프롬프트(`decision_agent_v5.md`, `comparison_agent.md`)는 바꾸지 않았다. 남은 v5 경로 코드는 정리 전과 같고, 테스트 픽스처로 Strategy·Writer 산출물과 캐시 지문이 전후 동일함을 확인했다. (이름 변경 이후: `decision_agent_v5.md` → `decision_agent.md`)
 - LLM Judge(`run_config/final_report_llm_judge.py`)는 리포 내부 모듈을 import 하지 않아 영향이 없다. `validate` 는 여전히 valid / 360 / 360 / 0 이다.

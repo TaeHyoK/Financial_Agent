@@ -1,5 +1,5 @@
-data_root: /data/agent2/financial_agent_ablation_2025h2/collected_data/SK바이오팜/snapshot/SK바이오팜/비교기업/유한양행/News/20251106/artifacts
-inputs_root: /data/agent2/financial_agent_ablation_2025h2/collected_data/SK바이오팜/snapshot/SK바이오팜/비교기업/유한양행/News/20251106/inputs
+data_root: ../collected_data/SK바이오팜/snapshot/SK바이오팜/비교기업/유한양행/News/20251106/artifacts
+inputs_root: ../collected_data/SK바이오팜/snapshot/SK바이오팜/비교기업/유한양행/News/20251106/inputs
 news:
   collector: google_news_rss
   collection_days: 365

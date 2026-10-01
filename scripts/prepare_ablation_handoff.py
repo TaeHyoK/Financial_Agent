@@ -103,7 +103,7 @@ def build(source_root: Path, output_dir: Path, zip_path: Path) -> dict:
 3. `python run_config/final_report_llm_judge.py validate`를 실행한다.
 4. `paid_api_calls: 0`, `requests: 360`을 확인한다.
 
-평가 실행 전 `docs/ABLATION_HANDOFF_20260920.md`와
+평가 실행 전 `docs/history/ABLATION_HANDOFF_20260920.md`와
 `run_config/FINAL_REPORT_LLM_JUDGE.md`를 먼저 읽는다.
 """
     (output_dir / "BUNDLE_README.md").write_text(readme, encoding="utf-8")

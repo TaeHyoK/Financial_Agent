@@ -1,5 +1,5 @@
-data_root: /data/agent2/financial_agent_ablation_2025h2/collected_data/삼성전자/snapshot/삼성전자/News/20251031/artifacts
-inputs_root: /data/agent2/financial_agent_ablation_2025h2/collected_data/삼성전자/snapshot/삼성전자/News/20251031/inputs
+data_root: ../collected_data/삼성전자/snapshot/삼성전자/News/20251031/artifacts
+inputs_root: ../collected_data/삼성전자/snapshot/삼성전자/News/20251031/inputs
 news:
   collector: google_news_rss
   collection_days: 365

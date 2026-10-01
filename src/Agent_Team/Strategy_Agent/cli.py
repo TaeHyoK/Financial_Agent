@@ -11,6 +11,7 @@ from orchestration.config import agent_output_dir
 
 from . import DEFAULT_TARGET_CONFIG, OUTPUT_ROOT
 from .agent import (
+    DECISION_STYLES,
     DECISION_HORIZON_PROFILES,
     DEFAULT_DECISION_HORIZON_PROFILE,
     DEFAULT_ENV_FILE,
@@ -70,6 +71,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--experiment-name", default="baseline")
     parser.add_argument(
+        "--decision-style",
+        default="standard",
+        choices=DECISION_STYLES,
+        help="Opt-in Strategy decision style; standard remains the default.",
+    )
+    parser.add_argument(
         "--decision-horizon-profile",
         default=DEFAULT_DECISION_HORIZON_PROFILE,
         choices=list(DECISION_HORIZON_PROFILES),
@@ -125,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
             env_file=Path(args.env_file).expanduser().resolve() if args.env_file else DEFAULT_ENV_FILE,
             ablation_config=ablation.as_dict(),
             decision_horizon_profile=args.decision_horizon_profile,
+            decision_style=args.decision_style,
         )
     else:
         report = generate_strategy_report(
@@ -139,6 +147,7 @@ def main(argv: list[str] | None = None) -> int:
             env_file=Path(args.env_file).expanduser().resolve() if args.env_file else DEFAULT_ENV_FILE,
             ablation_config=ablation.as_dict(),
             decision_horizon_profile=args.decision_horizon_profile,
+            decision_style=args.decision_style,
         )
 
     logger.info(

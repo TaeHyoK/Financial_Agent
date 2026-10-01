@@ -80,6 +80,8 @@ def build_compact_strategy_packet(
     input_bundle: dict[str, Any],
     *,
     model: str = "",
+    split_mixed_date_news: bool = False,
+    canonical_news_sources: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Build the LLM packet without count-based loss of cited agent evidence."""
 
@@ -114,7 +116,13 @@ def build_compact_strategy_packet(
     news_report = _dict(reports.get("news"))
     news_validation = _dict(validations.get("news"))
     news_catalog = _dict(_dict(input_bundle.get("evidence_catalogs")).get("news"))
-    selected_news, omitted_news = _news_cards(news_report, news_validation, news_catalog)
+    if split_mixed_date_news and canonical_news_sources:
+        raise ValueError("Choose one experimental news-card mode")
+    selected_news, omitted_news = _news_cards(
+        news_report, news_validation, news_catalog,
+        split_mixed_dates=split_mixed_date_news,
+        canonical_sources=canonical_news_sources,
+    )
     for card, raw_ids, source_paths in selected_news:
         add_card(card, raw_ids=raw_ids, source_paths=source_paths)
         if card["primary_observation"].get("anchor_source"):
@@ -982,6 +990,9 @@ def _news_cards(
     report: dict[str, Any],
     validation: dict[str, Any],
     catalog: dict[str, Any],
+    *,
+    split_mixed_dates: bool = False,
+    canonical_sources: bool = False,
 ) -> tuple[
     list[tuple[dict[str, Any], list[str], list[str]]],
     list[dict[str, Any]],
@@ -1030,7 +1041,29 @@ def _news_cards(
             )
     # Preserve each analytical claim, including different interpretations of
     # the same article. A shared source does not make two claims one event.
-    cards = [_news_claim_card(candidate, catalog) for candidate in candidates]
+    if split_mixed_dates and canonical_sources:
+        raise ValueError("Choose one experimental news-card mode")
+    if canonical_sources:
+        expanded = _canonical_news_source_candidates(candidates, catalog)
+    else:
+        expanded = [
+            variant
+            for candidate in candidates
+            for variant in (
+                _split_news_claim_by_source_date(candidate, catalog)
+                if split_mixed_dates else [candidate]
+            )
+        ]
+    cards = [_news_claim_card(candidate, catalog) for candidate in expanded]
+    if canonical_sources:
+        for card, raw_ids, _source_paths in cards:
+            row = _dict(catalog.get(raw_ids[0]))
+            observation = card["primary_observation"]
+            observation["reported_period_mentions"] = _news_reported_period_mentions(row)
+            observation["event_identity_scope"] = (
+                "upstream_source_event_cluster" if row.get("event_id") else "individual_source"
+            )
+            observation["assessment_scope"] = "consensus_of_citing_news_claims"
     seen_keys: dict[str, int] = {}
     for card, _raw_ids, _source_paths in cards:
         base_key = str(card["card_key"])
@@ -1041,6 +1074,102 @@ def _news_cards(
     # These are citations already selected by the News Agent, not the raw
     # collection pool. Do not perform a second count-based news selection here.
     return cards, []
+
+
+def _canonical_news_source_candidates(
+    candidates: list[dict[str, Any]], catalog: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Emit each cited upstream event cluster once, preserving every source ID.
+
+    A repeated source ID is a known duplicate observation. Distinct IDs are
+    never merged just because their titles or publication dates look alike:
+    that may erase a real development between an announcement and execution.
+    """
+
+    by_source: dict[str, list[dict[str, Any]]] = {}
+    for candidate in candidates:
+        for evidence_id in _dedupe_strings(candidate.get("evidence_ids") or []):
+            if evidence_id in catalog:
+                by_source.setdefault(evidence_id, []).append(candidate)
+    output = []
+    for evidence_id, uses in by_source.items():
+        row = _dict(catalog.get(evidence_id))
+        # A claim's assessment may concern several sources jointly. Never
+        # promote the strongest claim-level label to this individual source.
+        variant = dict(uses[0])
+        variant["anchor_evidence_id"] = evidence_id
+        variant["evidence_ids"] = [evidence_id]
+        variant["claim"] = str(row.get("title") or row.get("snippet") or row.get("text") or uses[0].get("claim") or "").strip()
+        variant["source_roles"] = _dedupe_strings(use.get("source_key") for use in uses)
+        variant["evidence_use"] = "strong" if all(use.get("evidence_use") == "strong" for use in uses) else "context_only"
+        for field in ("event_status", "company_specificity", "materiality_status", "financial_link_status"):
+            values = {str(use.get(field) or "") for use in uses}
+            variant[field] = next(iter(values)) if len(values) == 1 else "mixed"
+        variant["limitations"] = _dedupe_strings(
+            text for use in uses for text in use.get("limitations") or []
+        )
+        output.append(variant)
+    return output
+
+
+def _news_reported_period_mentions(row: dict[str, Any]) -> list[str]:
+    """Copy explicit fiscal-period strings, never infer them from publication dates."""
+
+    source_text = " ".join(str(row.get(key) or "") for key in ("title", "snippet", "text"))
+    return _dedupe_strings(
+        match.group(0) for match in re.finditer(
+            r"20\d{2}년\s*(?:[1-4]분기|1[~∼-]3분기|상반기|하반기|연간)",
+            source_text,
+        )
+    )
+
+
+def _split_news_claim_by_source_date(
+    candidate: dict[str, Any], catalog: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Keep different publication dates separate without inventing source claims.
+
+    This is an opt-in experiment. A period-summary anchor remains a period
+    summary; otherwise each dated article group gets only its own source text.
+    The original News Agent claim is not copied into a dated source card because
+    it may summarize facts from later articles.
+    """
+
+    ids = _dedupe_strings(candidate.get("evidence_ids") or [])
+    anchor = str(candidate.get("anchor_evidence_id") or "")
+    anchor_row = _dict(catalog.get(anchor))
+    if anchor_row.get("source_type") == "monthly_news_context" or anchor_row.get("metric") == "monthly_news_context":
+        return [candidate]
+    dated = {
+        str(_dict(catalog.get(evidence_id)).get("source_date") or _dict(catalog.get(evidence_id)).get("time") or "")
+        for evidence_id in ids
+        if _dict(catalog.get(evidence_id)).get("source_type") != "monthly_news_context"
+        and _dict(catalog.get(evidence_id)).get("metric") != "monthly_news_context"
+    }
+    dated.discard("")
+    if len(dated) < 2:
+        return [candidate]
+
+    groups: dict[tuple[str, str], list[str]] = {}
+    for evidence_id in ids:
+        row = _dict(catalog.get(evidence_id))
+        if row.get("source_type") == "monthly_news_context" or row.get("metric") == "monthly_news_context":
+            key = ("period", str(row.get("period") or evidence_id))
+        else:
+            date = str(row.get("source_date") or row.get("time") or "")
+            key = ("article", date or f"undated:{evidence_id}")
+        groups.setdefault(key, []).append(evidence_id)
+
+    variants = []
+    for group_ids in groups.values():
+        representative = _dict(catalog.get(group_ids[0]))
+        title = str(representative.get("title") or representative.get("snippet") or representative.get("text") or "").strip()
+        variant = dict(candidate)
+        variant["evidence_ids"] = group_ids
+        variant["anchor_evidence_id"] = group_ids[0]
+        variant["claim"] = title or str(candidate.get("claim") or "").strip()
+        variants.append(variant)
+    return variants
 
 
 def _news_claim_card(
@@ -1119,7 +1248,7 @@ def _news_claim_card(
         event_materiality = "operational_context"
         coverage.update(article_count=None, unique_publisher_count=None, deduplicated_article_count=None,
                         primary_source_present=False, coverage_quality="summarized")
-    source_roles = [str(main["source_key"])]
+    source_roles = _dedupe_strings(main.get("source_roles") or [main["source_key"]])
     blockers = []
     if summary_only:
         blockers.append({"code": "news_monthly_summary", "reason": "period_context_without_direct_event_date"})

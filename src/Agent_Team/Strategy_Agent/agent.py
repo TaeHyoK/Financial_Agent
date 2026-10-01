@@ -56,6 +56,7 @@ DEFAULT_OPENAI_MODEL = "gpt-5.4"
 DEFAULT_OPENAI_MAX_TOKENS = 20000
 FINAL_RECOMMENDATIONS = {"Buy", "Hold", "Sell"}
 DEFAULT_DECISION_HORIZON_PROFILE = "annual"
+DECISION_STYLES = ("standard", "evidence_weighted_buy")
 DECISION_HORIZON_PROFILES = {
     "annual": {
         "horizon": "12개월",
@@ -169,6 +170,7 @@ def run_strategy_agent(
     env_file: Path | None = DEFAULT_ENV_FILE,
     ablation_config: dict[str, Any] | None = None,
     decision_horizon_profile: str = DEFAULT_DECISION_HORIZON_PROFILE,
+    decision_style: str = "standard",
 ) -> dict[str, Any]:
     """Run one Strategy contract with separate decision and report-context evidence."""
 
@@ -207,6 +209,7 @@ def run_strategy_agent(
     generation_prompt = decision_generation_prompt(
         decision_horizon_profile,
         context_mode=strategy_context_mode,
+        decision_style=decision_style,
     )
     save_json(output_dir / COMPACT_PACKET_FILENAME, packet)
     save_json(output_dir / PACKET_PROVENANCE_FILENAME, provenance)
@@ -284,9 +287,10 @@ def run_strategy_agent(
         output_dir / DECISION_PROFILE_FILENAME,
         {
             "profile": decision_horizon_profile,
+            "decision_style": decision_style,
             "required_horizon": profile["horizon"],
             "prompt_sha256": hashlib.sha256(
-                decision_prompt(decision_horizon_profile).encode("utf-8")
+                generation_prompt.encode("utf-8")
             ).hexdigest(),
             "integrity_validation": validation,
         },
@@ -577,6 +581,7 @@ def generate_strategy_report(
     env_file: Path | None = DEFAULT_ENV_FILE,
     ablation_config: dict[str, Any] | None = None,
     decision_horizon_profile: str = DEFAULT_DECISION_HORIZON_PROFILE,
+    decision_style: str = "standard",
 ) -> dict[str, Any]:
     """Compatibility wrapper around run_strategy_agent using repo defaults."""
 
@@ -613,6 +618,7 @@ def generate_strategy_report(
         env_file=env_file,
         ablation_config=ablation_config,
         decision_horizon_profile=decision_horizon_profile,
+        decision_style=decision_style,
     )
     if output_json and output_json != output_dir / "strategy_report.json":
         save_json(output_json, report)
@@ -845,10 +851,15 @@ def decision_generation_prompt(
     decision_horizon_profile: str,
     *,
     context_mode: str,
+    decision_style: str = "standard",
 ) -> str:
     """Render the decision prompt and optional full-context ablation instruction."""
 
     prompt = decision_prompt(decision_horizon_profile)
+    if decision_style == "evidence_weighted_buy":
+        prompt += "\n\n" + (PROMPTS_DIR / "decision_evidence_weighted_buy.md").read_text(encoding="utf-8")
+    elif decision_style != "standard":
+        raise ValueError(f"Unknown Strategy decision style: {decision_style}")
     if context_mode == "compact_cards":
         return prompt
     if context_mode != "full_reports":

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import base64
 import copy
-from html import escape
+from html import escape, unescape
+import logging
 from pathlib import Path
+import re
 from typing import Any
 
 from shared.coerce import as_dict as _dict
@@ -15,8 +17,13 @@ from .html_report_spec import (
     TABLE_ITEM_KEYS,
     resolve_report_item_title,
     has_data_limit_content,
+    reader_label_leaks,
+    replace_english_grade_labels,
 )
 from .writer_io import write_text
+
+
+logger = logging.getLogger(__name__)
 
 
 MISSING_VALUE = "데이터 추가 필요"
@@ -41,6 +48,7 @@ def render_formatted_html_report(
     html = build_complete_html(
         _embed_market_chart_assets(report_payload, output_dir=output_dir)
     )
+    _warn_reader_label_leaks(html, output_dir=output_dir)
     report_path = output_dir / "report.html"
     write_text(report_path, html)
     legacy_final_path = output_dir / "final_report.html"
@@ -51,6 +59,23 @@ def render_formatted_html_report(
         "report_html": str(report_path),
         "html_content": html,
     }
+
+
+def _warn_reader_label_leaks(html: str, *, output_dir: Path) -> None:
+    """Log, without failing, English grades or internal field names left visible."""
+
+    leaks = reader_label_leaks(_visible_text(html))
+    if leaks:
+        logger.warning(
+            "Reader-visible English grade labels or internal field names remain in %s: %s",
+            output_dir / "report.html",
+            leaks,
+        )
+
+
+def _visible_text(html: str) -> str:
+    body = re.sub(r"<(style|script)\b.*?</\1>", " ", html, flags=re.IGNORECASE | re.DOTALL)
+    return unescape(re.sub(r"<[^>]+>", " ", body))
 
 
 def _embed_market_chart_assets(
@@ -111,7 +136,7 @@ def build_complete_html(report_payload: dict[str, Any]) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="investment-recommendation" content="{_text(metadata.get('recommendation') or '')}">
   <meta name="investment-horizon" content="{_text(metadata.get('investment_horizon') or '')}">
-  <title>{_text(title)}</title>
+  <title>{_text(replace_english_grade_labels(title))}</title>
   <style>
 {_css()}
   </style>
@@ -144,7 +169,7 @@ def _document_header(metadata: dict[str, Any]) -> str:
     return f"""
     <header class="document-header">
       <p class="report-name">{_inline(company)} 투자 리서치</p>
-      <h1>{_inline(headline)}</h1>
+      <h1>{_inline(replace_english_grade_labels(headline))}</h1>
       <div class="meta-grid">
         <div><span>기준일</span><strong>{_inline(base_date)}</strong></div>
       </div>
@@ -198,11 +223,11 @@ def _render_report_charts(report_payload: dict[str, Any]) -> str:
     figures = "\n".join(
         f"""
           <figure class="report-chart">
-            <img src="{escape(str(chart['src']), quote=True)}" alt="{escape(str(chart.get('alt') or chart.get('title') or '주요 차트'), quote=True)}">
+            <img src="{escape(str(chart['src']), quote=True)}" alt="{escape(replace_english_grade_labels(chart.get('alt') or chart.get('title') or '주요 차트'), quote=True)}">
             <figcaption>
-              <strong class="chart-caption-title">{_text(chart.get('title') or '주요 차트')}</strong>
-              <span class="chart-observation">{_text(chart.get('chart_observation'))}</span>
-              <span class="chart-interpretation">{_text(chart.get('investment_interpretation'))}</span>
+              <strong class="chart-caption-title">{_text(replace_english_grade_labels(chart.get('title') or '주요 차트'))}</strong>
+              <span class="chart-observation">{_text(replace_english_grade_labels(chart.get('chart_observation')))}</span>
+              <span class="chart-interpretation">{_text(replace_english_grade_labels(chart.get('investment_interpretation')))}</span>
             </figcaption>
           </figure>"""
         for chart in charts
@@ -294,6 +319,9 @@ def _render_text_block(value: Any, *, prefer_list: bool = False) -> str:
             paragraphs = [value.strip()]
         else:
             paragraphs = [MISSING_VALUE]
+    # Render-time safety net for model-authored prose; the payload is unchanged.
+    paragraphs = [replace_english_grade_labels(paragraph) for paragraph in paragraphs]
+    bullets = [replace_english_grade_labels(bullet) for bullet in bullets]
     paragraph_html = "\n".join(f"      <p>{_inline(paragraph)}</p>" for paragraph in paragraphs)
     if prefer_list or bullets:
         if not bullets:
@@ -367,8 +395,9 @@ def _render_table_row(row: Any, columns: list[str], *, item_key: str = "") -> st
         cells = [MISSING_VALUE for _ in columns]
     rendered_cells = []
     for index, cell in enumerate(cells):
+        display_cell = replace_english_grade_labels(cell)
         if item_key == "evidence_table" and index == 1:
-            rendered_cells.append(f'<td class="evidence-facts-cell">{_inline(cell)}</td>')
+            rendered_cells.append(f'<td class="evidence-facts-cell">{_inline(display_cell)}</td>')
         elif item_key == "evidence_table" and index == 3:
             effect_class = {
                 "긍정 요인": "impact-positive",
@@ -382,10 +411,10 @@ def _render_table_row(row: Any, columns: list[str], *, item_key: str = "") -> st
             }.get(str(cell), "impact-reference")
             rendered_cells.append(
                 f'<td class="evidence-impact-cell"><span class="impact-badge {effect_class}">'
-                f"{_inline(cell)}</span></td>"
+                f"{_inline(display_cell)}</span></td>"
             )
         else:
-            rendered_cells.append(f"<td>{_inline(cell)}</td>")
+            rendered_cells.append(f"<td>{_inline(display_cell)}</td>")
     cell_html = "".join(rendered_cells)
     return f"          <tr>{cell_html}</tr>"
 

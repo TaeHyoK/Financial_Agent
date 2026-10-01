@@ -12,6 +12,7 @@ from typing import Any
 from .html_report_spec import (
     REPORT_SECTIONS,
     RISK_DISPLAY_COLUMNS,
+    replace_english_grade_labels,
 )
 from shared.coerce import as_dict as _dict
 from shared.evidence_cards import PRODUCT_DISCLOSURE_SCOPE_LABEL
@@ -19,6 +20,9 @@ from shared.llm_clients import compact_json, execute_with_telemetry, is_transien
 from .writer_handoff import (
     EDITORIAL_PACKET_VERSION,
     STRATEGY_DECISION_VERSION,
+    _krw_100m,
+    _metric_display,
+    _ratio_percent,
     validate_writer_editorial_packet,
 )
 
@@ -170,7 +174,7 @@ def normalize_report_payload(
             "investment_horizon": decision.get("investment_horizon") or MISSING_VALUE,
             "data_coverage": decision.get("data_coverage") or MISSING_VALUE,
             "decision_confidence": decision.get("decision_confidence") or MISSING_VALUE,
-            "report_title": decision.get("headline") or (
+            "report_title": replace_english_grade_labels(decision.get("headline")) if decision.get("headline") else (
                 f"{company_name} 투자 리서치"
                 if is_editorial_packet
                 else metadata.get("report_title") or f"{company_name} Investment Report"
@@ -1491,9 +1495,11 @@ def _apply_deterministic_evidence_table(
     evidence_item["columns"] = list(_evidence_display_columns(writer_packet))
     evidence_item["rows"] = [
         {
-            "핵심 근거": writer_labels[card_key],
-            "확인된 수치·사실": _evidence_observation_text(card_key, card),
-            _evidence_interpretation_column(writer_packet): _plain_korean_text(
+            "핵심 근거": replace_english_grade_labels(writer_labels[card_key]),
+            "확인된 수치·사실": replace_english_grade_labels(
+                _evidence_observation_text(card_key, card)
+            ),
+            _evidence_interpretation_column(writer_packet): _reader_display_text(
                 _qualify_partial_product_scope(
                     str(card.get("strategy_interpretation") or ""),
                     writer_packet,
@@ -1525,9 +1531,11 @@ def _apply_deterministic_risk_table(
     risk_item["columns"] = list(RISK_DISPLAY_COLUMNS)
     risk_item["rows"] = [
         {
-            "리스크 요인": str(risk.get("display_title") or "").strip(),
-            "현재 확인된 내용": _plain_korean_text(_visible_risk_summary(risk)),
-            "투자 판단에 미치는 영향": _plain_korean_text(
+            "리스크 요인": replace_english_grade_labels(
+                str(risk.get("display_title") or "").strip()
+            ),
+            "현재 확인된 내용": _reader_display_text(_visible_risk_summary(risk)),
+            "투자 판단에 미치는 영향": _reader_display_text(
                 str(risk.get("current_implication") or risk.get("monitoring_point") or "")
             ),
             "_basis_card_keys": _clean_identifiers(risk.get("basis_card_keys")),
@@ -1794,13 +1802,36 @@ def _valuation_observation_text(value: Any) -> str:
     return "\n".join(lines) or _structured_observation_text(value)
 
 
+# Lowercase snake_case keys are handoff field names, not reader labels.
+_INTERNAL_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
+# Reader-facing prose fields, in priority order, of an internally keyed observation.
+_READER_TEXT_KEYS = ("observation", "text", "summary", "event_summary", "title")
+_READER_DATE_KEYS = ("as_of_date", "valuation_date")
+_READER_METRIC_LABELS = {
+    "market_cap": "시가총액",
+    "trailing_pe": "P/E",
+    "price_to_sales": "P/S",
+    "price_to_book": "P/B",
+    "enterprise_value_to_revenue": "EV/매출",
+    "enterprise_value_to_ebitda": "EV/EBITDA",
+}
+_METRIC_VALUE_KEYS = {"value", "unit", "status"}
+
+
 def _structured_observation_text(value: Any, *, depth: int = 0) -> str:
+    """Render an observation for readers without exposing internal field names."""
+
     if isinstance(value, dict):
-        parts = [
-            f"{key}: {_structured_observation_text(child, depth=depth + 1)}"
-            for key, child in value.items()
-            if child not in (None, "", [], {})
-        ]
+        reader_text = _reader_text_field(value)
+        if reader_text:
+            return reader_text
+        parts = []
+        for key, child in value.items():
+            if child in (None, "", [], {}):
+                continue
+            part = _structured_observation_part(str(key), child, depth=depth)
+            if part:
+                parts.append(part)
         separator = "\n" if depth == 0 else " · "
         return separator.join(parts) if parts else MISSING_VALUE
     if isinstance(value, list):
@@ -1815,6 +1846,53 @@ def _structured_observation_text(value: Any, *, depth: int = 0) -> str:
         return "예" if value else "아니오"
     text = str(value or "").strip()
     return text or MISSING_VALUE
+
+
+def _reader_text_field(value: dict[str, Any]) -> str:
+    for key in _READER_TEXT_KEYS:
+        text = value.get(key)
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+    return ""
+
+
+def _structured_observation_part(key: str, child: Any, *, depth: int) -> str:
+    if not _INTERNAL_KEY_PATTERN.match(key):
+        return f"{key}: {_structured_observation_text(child, depth=depth + 1)}"
+    if key in _READER_DATE_KEYS:
+        return f"기준일: {_structured_observation_text(child, depth=depth + 1)}"
+    if key == "metrics" and isinstance(child, dict):
+        metrics = [
+            text
+            for metric_key, metric in child.items()
+            for text in [_reader_metric_text(str(metric_key), metric)]
+            if text
+        ]
+        return " · ".join(metrics)
+    return _reader_metric_text(key, child)
+
+
+def _reader_metric_text(key: str, metric: Any) -> str:
+    """Format one known metric as "label: value unit"; unknown keys stay hidden."""
+
+    label = _READER_METRIC_LABELS.get(key)
+    if not label:
+        return ""
+    if isinstance(metric, dict):
+        if not set(metric) <= _METRIC_VALUE_KEYS:
+            return ""
+        if metric.get("status") not in (None, "ok") or metric.get("value") is None:
+            return ""
+        value, unit = metric.get("value"), str(metric.get("unit") or "")
+    elif isinstance(metric, (int, float)) and not isinstance(metric, bool):
+        value, unit = metric, "KRW" if key == "market_cap" else "times"
+    else:
+        return ""
+    if unit in {"KRW", "원"}:
+        return f"{label}: {_krw_100m(value)}"
+    if unit == "ratio":
+        return f"{label}: {_ratio_percent(value)}"
+    return f"{label}: {_metric_display(value, unit)}"
 
 
 def _replace_visible_card_keys(payload: dict[str, Any], writer_packet: dict[str, Any]) -> dict[str, Any]:
@@ -2061,3 +2139,12 @@ def _plain_korean_text(text: str) -> str:
         .replace("비교기업 분석는", "비교기업 분석은")
     )
     return text
+
+
+def _reader_display_text(text: str) -> str:
+    """Reader-display wording for deterministic table cells.
+
+    Output-only: LLM input assembly never calls this function.
+    """
+
+    return replace_english_grade_labels(_plain_korean_text(text))

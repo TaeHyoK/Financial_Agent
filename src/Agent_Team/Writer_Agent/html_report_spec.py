@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
@@ -91,6 +92,94 @@ TABLE_ITEM_KEYS = {
     "evidence_table",
     "risk_monitoring_table",
 }
+
+
+ENGLISH_GRADE_LABELS = {
+    "Buy": "매수",
+    "Hold": "중립",
+    "Sell": "매도",
+    "BUY": "매수",
+    "HOLD": "중립",
+    "SELL": "매도",
+}
+# Whole-word grade labels only: letters on either side (Holdings, Buyback)
+# mean the token is part of another English word and must stay unchanged.
+# A directly attached Korean particle is captured so it can agree with the
+# Korean label's final consonant (e.g. a label ending in a vowel takes 를).
+_ENGLISH_GRADE_PATTERN = re.compile(
+    r"(?<![A-Za-z])(Buy|Hold|Sell|BUY|HOLD|SELL)(?![A-Za-z])"
+    r"(으로|로|(?:을|를|은|는|이|가|과|와)(?![가-힣]))?"
+)
+_PARTICLE_PAIRS = {
+    # particle: (after a final consonant, after a vowel)
+    "을": ("을", "를"),
+    "를": ("을", "를"),
+    "은": ("은", "는"),
+    "는": ("은", "는"),
+    "이": ("이", "가"),
+    "가": ("이", "가"),
+    "과": ("과", "와"),
+    "와": ("과", "와"),
+    "으로": ("으로", "로"),
+    "로": ("으로", "로"),
+}
+_VISIBLE_GRADE_LEAK_PATTERN = re.compile(r"(?<![A-Za-z])(Buy|Hold|Sell)(?![A-Za-z])", re.IGNORECASE)
+# Internal handoff field names that must never reach reader-visible text.
+INTERNAL_FIELD_NAMES = (
+    "origin_type",
+    "source_date",
+    "source_type",
+    "source_domain",
+    "source_domains",
+    "recent_raw_event",
+    "deterministic_derived",
+    "interpretation_ko",
+    "investment_implication",
+    "cited_sources",
+    "valuation_date",
+    "date_policy",
+    "metric_or_event",
+    "period_basis",
+    "reader_observation",
+    "primary_observation",
+    "strategy_interpretation",
+)
+_INTERNAL_FIELD_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_])(" + "|".join(INTERNAL_FIELD_NAMES) + r")(?![A-Za-z0-9_])"
+)
+# Generic English words count as leaks only in a stringified "key: value" form.
+_INTERNAL_GENERIC_KEY_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_])(metrics|status|unit|value)(?=\s*:)"
+)
+
+
+def replace_english_grade_labels(text: str) -> str:
+    """Show whole-word English grade labels with their Korean reader labels."""
+
+    return _ENGLISH_GRADE_PATTERN.sub(_korean_grade_label, str(text))
+
+
+def _korean_grade_label(match: re.Match[str]) -> str:
+    label = ENGLISH_GRADE_LABELS[match.group(1)]
+    particle = match.group(2)
+    if not particle:
+        return label
+    final_code = (ord(label[-1]) - 0xAC00) % 28
+    if particle in {"으로", "로"} and final_code == 8:
+        # A final ㄹ takes 로, like a vowel.
+        return f"{label}로"
+    return label + _PARTICLE_PAIRS[particle][0 if final_code else 1]
+
+
+def reader_label_leaks(visible_text: str) -> list[str]:
+    """Return English grade labels or internal field names left in reader text."""
+
+    found = [match.group(0) for match in _VISIBLE_GRADE_LEAK_PATTERN.finditer(visible_text)]
+    found.extend(match.group(0) for match in _INTERNAL_FIELD_PATTERN.finditer(visible_text))
+    found.extend(
+        match.group(0) for match in _INTERNAL_GENERIC_KEY_PATTERN.finditer(visible_text)
+    )
+    return sorted(set(found))
 
 
 def has_data_limit_content(report_payload: dict[str, Any]) -> bool:

@@ -16,12 +16,13 @@ from .html_report_spec import (
     SUPPORTED_INVESTMENT_HORIZONS,
     investment_horizon_heading,
     has_data_limit_content,
+    replace_english_grade_labels,
 )
 from .html_report_writer import (
     _evidence_display_columns,
     _evidence_interpretation_column,
-    _plain_korean_text,
     _qualify_partial_product_scope,
+    _reader_display_text,
 )
 from .writer_handoff import (
     EDITORIAL_PACKET_VERSION,
@@ -466,7 +467,7 @@ def _validate_strategy_presentation_preservation(
         if not card:
             continue
         interpretation = str(card.get("strategy_interpretation") or "")
-        expected_visible_interpretation = _plain_korean_text(
+        expected_visible_interpretation = _reader_display_text(
             _qualify_partial_product_scope(
                 interpretation,
                 writer_handoff,
@@ -482,7 +483,9 @@ def _validate_strategy_presentation_preservation(
         errors.append("risk_monitoring_matrix display columns changed")
     risk_factors = [risk for risk in _list(writer_handoff.get("risk_factors")) if isinstance(risk, dict)]
     for index, (row, risk) in enumerate(zip(risk_rows, risk_factors)):
-        expected_title = str(risk.get("display_title") or "").strip()
+        expected_title = replace_english_grade_labels(
+            str(risk.get("display_title") or "").strip()
+        )
         if str(row.get("리스크 요인") or "").strip() != expected_title:
             errors.append(f"risk row {index} Strategy risk title changed")
         expected_summary = str(risk.get("risk_summary") or "").strip()
@@ -495,10 +498,10 @@ def _validate_strategy_presentation_preservation(
             and qualifier not in reader_summary
             else reader_summary
         )
-        expected_visible_summary = _plain_korean_text(expected_visible_summary)
+        expected_visible_summary = _reader_display_text(expected_visible_summary)
         if str(row.get("현재 확인된 내용") or "").strip() != expected_visible_summary:
             errors.append(f"risk row {index} visible Strategy summary was paraphrased")
-        expected_impact = _plain_korean_text(
+        expected_impact = _reader_display_text(
             str(risk.get("current_implication") or risk.get("monitoring_point") or "").strip()
         )
         if str(row.get("투자 판단에 미치는 영향") or "").strip() != expected_impact:

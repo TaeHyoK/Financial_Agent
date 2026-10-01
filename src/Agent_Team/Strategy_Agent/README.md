@@ -56,6 +56,12 @@ PYTHONPATH=src python -m Agent_Team.Strategy_Agent.cli \
   --output-dir Output_total/SK바이오팜/Strategy/20251031
 ```
 
+`--decision-style evidence_weighted_buy`는 저장된 입력을 이용한 비교 실험용 선택 옵션이다. 확인된 실적 변화와 잠재 위험을 구분하고, 과거 주가로 시장의 기대·가격 반영을 추정하지 않도록 추가 지침을 제공한다. 기본값 `standard`와 기존 출력 계약은 변경하지 않는다. 이 옵션이 Buy 정확도를 높인다는 뜻은 아니므로, 같은 입력을 고정한 비교 평가 후 운영 적용 여부를 판단한다.
+
+저장된 `strategy_input_bundle.json`만 사용하는 `scripts/evaluate_strategy_decision_style.py`에는 실험용 `--news-date-mode split` 옵션이 있다. 서로 다른 보도일을 한 뉴스 주장에 묶은 경우 기사 날짜별 카드로 분리하며, 원문 기사 제목·스니펫과 출처 ID를 유지한다. 기본값 `preserve`와 운영 Strategy 경로는 변경하지 않는다. 같은 사건의 후속 보도일 수도 있으므로 카드 수 증가를 독립 호재 수 증가로 해석하지 않는다. 실행 결과의 `price_claim_audit.json`은 과거 주가에서 시장 기대·가격 반영을 추론한 것으로 보이는 문장을 수동 검토 대상으로 표시한다. 이 어휘 기반 점검은 의미 검증이나 투자 의견의 자동 수정이 아니다. 실패·중단된 동일 입력/설정의 출력만 `--retry-incomplete`로 재시도할 수 있으며 완료된 결과는 덮어쓰지 않는다.
+
+후속 실험 옵션 `--news-date-mode source_events`는 News Agent가 부여한 원천 이벤트 ID마다 카드 한 장을 만든다. 같은 기사 클러스터가 여러 뉴스 주장에 인용돼도 카드가 중복되지 않고, 원천에 명시된 실적 기간 표현과 보도일·기사별 진행 내역을 함께 보존한다. 동일 원천을 인용한 주장들의 평가가 충돌하면 해당 항목을 `mixed`로 남기며 가장 낙관적인 평가를 원천 사실로 승격하지 않는다. 다른 이벤트 ID는 제목이나 날짜가 비슷하다는 이유만으로 합치지 않는다. 이 방식은 동일 사건의 중복 인용을 줄이지만 서로 다른 이벤트 ID 사이의 후속 보도 관계를 자동 확정하지 않으며, 운영 기본값에는 적용되지 않는다.
+
 경로는 파이프라인과 같은 기업 우선 구조(`Output_total/<company>/<Agent>/<YYYYMMDD>`)를 따른다. `--output-dir`를 생략하면 `--output-root` 아래 같은 구조로 저장한다.
 
 ## 산출물

@@ -1202,6 +1202,9 @@ def call_openai(
     }
     if uses_max_completion_tokens(model):
         payload["max_completion_tokens"] = max_tokens
+        reasoning_effort = os.getenv("OPENAI_REASONING_EFFORT", "").strip()
+        if reasoning_effort:
+            payload["reasoning_effort"] = reasoning_effort
     else:
         payload["temperature"] = 0.2
         payload["max_tokens"] = max_tokens
@@ -1247,7 +1250,9 @@ def call_openai(
 def uses_max_completion_tokens(model: str) -> bool:
     """Return True for models that reject the legacy max_tokens parameter."""
 
-    return model.startswith(("gpt-5", "o1", "o3", "o4"))
+    # Proxy model IDs carry a provider and optional region prefix, e.g. "openai.global.".
+    name = re.sub(r"^(?:openai|azure)\.(?:(?:global|us|eu)\.)?", "", model)
+    return name.startswith(("gpt-5", "o1", "o3", "o4"))
 
 
 def parse_llm_json(text: str) -> dict[str, Any]:

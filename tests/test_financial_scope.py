@@ -14,7 +14,8 @@ from Agent_Team.Financial_Agent.handoff_builder import build_trend_canonical
 from Agent_Team.Financial_Agent.handoff_builder import _single_period_table, _annual_history_sources
 from Agent_Team.Financial_Agent.financial_index_calculator import calculate_financial_index
 from Agent_Team.Financial_Agent.langgraph_flow import infer_statement_scope
-from Agent_Team.YFinance_Agent.valuation import build_valuation_snapshot
+from Agent_Team.YFinance_Agent.valuation import COMMON_ONLY_MARKET_CAP_LIMIT, build_valuation_snapshot
+from Agent_Team.Financial_Agent.share_information_extractor import _parse_share_table
 
 
 def section(number, value="1,000"):
@@ -146,13 +147,41 @@ class ValuationScopeTests(unittest.TestCase):
         self.assertIsNone(self.value()["metrics"]["market_cap"]["value"])
 
     def test_future_receipt_multiple_classes_and_split_block_estimate(self):
-        for change in ({"source": {"receipt_date": "2025-10-31"}}, {"share_class": "multiple_or_unknown"}):
+        for change in ({"source": {"receipt_date": "2025-10-31"}},
+                       {"share_class": "multiple_or_unknown", "common_issued_shares": None}):
             original = copy.deepcopy(self.dart["share_information"])
             self.dart["share_information"].update(change)
             self.assertIsNone(self.value()["metrics"]["market_cap"]["value"])
             self.dart["share_information"] = original
         frame = pd.DataFrame({"date": ["2025-08-01"], "stock_splits": [2]})
         self.assertIn("split_after_disclosed_share_count", self.value(frame)["input_problems"])
+
+    def test_multiple_classes_with_common_count_value_common_shares_only(self):
+        self.dart["share_information"]["share_class"] = "multiple_or_unknown"
+        result = self.value()
+        self.assertEqual(result["metrics"]["market_cap"]["value"], 1e10)
+        self.assertNotIn("multiple_or_unknown_share_classes", result["input_problems"])
+        self.assertIn(COMMON_ONLY_MARKET_CAP_LIMIT, result["data_limits"])
+        self.dart["share_information"]["share_class"] = "common_only"
+        self.assertNotIn(COMMON_ONLY_MARKET_CAP_LIMIT, self.value()["data_limits"])
+
+
+class ShareTableClassTests(unittest.TestCase):
+    @staticmethod
+    def table(header: list[list[str]], label: str = "발행주식의 총수") -> list[list[str]]:
+        return header + [["Ⅳ. " + label, "", *(["1,000"] * (len(header[0]) - 2))],
+                         ["Ⅴ. 자기주식수", "", *(["10"] * (len(header[0]) - 2))]]
+
+    def test_total_only_table_without_preferred_wording_is_common_only(self):
+        parsed = _parse_share_table(self.table([["구 분", "", "주식의 종류", "비고"], ["구 분", "", "합계", "비고"]]))
+        self.assertEqual(parsed["common_issued_shares"], 1000)
+        self.assertEqual(parsed["share_class"], "common_only")
+
+    def test_total_only_table_with_preferred_wording_stays_unknown(self):
+        header = [["구 분", "", "주식의 종류", "비고"], ["구 분", "", "합계", "우선주 포함"]]
+        parsed = _parse_share_table(self.table(header))
+        self.assertIsNone(parsed["common_issued_shares"])
+        self.assertEqual(parsed["share_class"], "multiple_or_unknown")
 
 
 if __name__ == "__main__":

@@ -33,6 +33,8 @@ python -m pip install -e .
 cp configs/.env.example configs/.env
 ```
 
+실제 애널리스트 보고서 PDF 의 본문 추출과 BERTScore 평가에는 `python -m pip install -e ".[eval]"` 로 추가 의존성(bert-score, pdfplumber, torch, transformers)을 설치한다. 테스트에는 `python -m pip install -e ".[dev]"` 로 pytest 를 설치한다.
+
 `configs/.env`에 다음 값을 입력한다.
 
 ```dotenv
@@ -72,7 +74,7 @@ PYTHONPATH=src python -m orchestration.full_report_pipeline \
 
 `selected_date`는 장 시작 전 분석 시점을 뜻한다. 위 실행에서 사용할 수 있는 공시·뉴스·시장 자료의 마지막 날짜는 2025년 10월 30일이다. 비교기업을 직접 지정하려면 `--peer-stock-code`에 여섯 자리 종목코드를 입력한다.
 
-실행 계획과 기업 식별 결과만 확인하려면 `--dry-run`을 추가한다. 과거 3개월 실험의 산출물을 보존하면서 재실행하려면 `--output-root Output_annual`을 지정한다. 기존 `Output_total`과 `sample`의 보고서는 이전 설정으로 생성된 자료이며 코드 변경만으로 갱신되지 않는다.
+실행 계획과 기업 식별 결과만 확인하려면 `--dry-run`을 추가한다. 산출물은 기본으로 `Output_total/` 아래에 저장되며, 다른 위치를 쓰려면 `--output-root`를 지정한다.
 
 ## 산출물
 
@@ -96,7 +98,7 @@ Output_total/
     └── runs/{selected_date}/full_pipeline_manifest.json
 ```
 
-산출물은 대상기업별로 모이며 에이전트별 자료는 그 아래에서 기준일별로 구분된다. 비교기업의 하위 분석은 독립된 최상위 결과로 취급하지 않고 대상기업의 `비교기업/{peer_company_name}` 아래에 저장한다. 최종 보고서는 기업 폴더의 최상위인 `Output_total/{company_name}/report_{company_name}.html`에 저장된다. Writer 폴더의 `report.html`은 생성 과정과 검증을 위한 내부 사본이다. 저장소에 포함된 현대모비스 예시는 [sample/현대모비스_20251031/report.html](sample/현대모비스_20251031/report.html)에서 확인할 수 있다.
+산출물은 대상기업별로 모이며 에이전트별 자료는 그 아래에서 기준일별로 구분된다. 비교기업의 하위 분석은 독립된 최상위 결과로 취급하지 않고 대상기업의 `비교기업/{peer_company_name}` 아래에 저장한다. 최종 보고서는 기업 폴더의 최상위인 `Output_total/{company_name}/report_{company_name}.html`에 저장된다. Writer 폴더의 `report.html`은 생성 과정과 검증을 위한 내부 사본이다. 논문 실험의 최종 보고서 예시는 [final_reports/r01/full/현대건설.html](final_reports/r01/full/현대건설.html)에서 볼 수 있다. 이 보고서는 논문 생성 시점의 코드로 만들었으므로 현재 코드의 출력과 표기가 일부 다르다.
 
 실행이 끝나면 터미널 마지막에 전체 언어 모델 토큰 사용량과 예상 OpenAI API 비용이 달러로 표시된다. 비용은 캐시되지 않은 입력, 캐시 입력과 출력 토큰을 각각의 단가로 계산한다. 같은 내용은 실행별 `llm_usage_summary.json`의 `estimated_api_cost`에도 기록된다. 단가는 OpenAI 공식 모델 문서의 표준 API 가격을 기준으로 하며 도구 호출 요금과 지역 처리 추가 요금은 포함하지 않는다.
 
@@ -120,24 +122,33 @@ src/
 리포 루트에는 다음 폴더가 함께 있다.
 
 ```text
-run_config/                # 제거 실험·반복 생성·LLM Judge 실행기
-ablation_suite/            # 제거 실험 조건과 입력 준비
-ablation_evaluation/       # 제거 실험 자동 지표
-real_report_evaluation/    # 실제 애널리스트 보고서와 견주는 평가
-scripts/                   # 점검·비교용 보조 스크립트
-tests/                     # 회귀 테스트
-docs/                      # 설계와 변경 기록
-final_reports/             # 제거 실험 최종 보고서 HTML
-ablation_results/          # 최종 보고서 자동 지표
-configs/                   # 기업 입력과 .env 예시
-sample/                    # 현대모비스 예시 보고서
+run_config/                    # 논문 실험의 수집·생성·평가·LLM Judge 실행기
+final_reports/                 # 논문 실험 최종 보고서 HTML 75개
+ablation_results/              # 최종 보고서 BERTScore 결과
+docs/                          # 방법 문서, docs/history/ 는 작업 기록
+scripts/                       # 점검·비교용 보조 스크립트
+tests/                         # 회귀 테스트
+configs/                       # 기업 입력과 .env 예시
+ablation_suite/                # 이전 실험 코드(아래 참고)
+ablation_evaluation/           # 이전 실험 코드(아래 참고)
+real_report_evaluation/        # 이전 실험 코드(아래 참고)
+run_real_report_evaluation.py  # 이전 평가 진입점
 ```
+
+`ablation_suite/`, `ablation_evaluation/`, `real_report_evaluation/`, `run_real_report_evaluation.py` 는 이전 6개 기업 실험의 코드다. 논문 실험은 이 중 Random news 표본 추출(`ablation_suite/annual_random.py`)과 본문 추출·BERTScore 계산(`real_report_evaluation/extract.py`, `runner.py`)만 쓴다. 평가 규약(`ablation_results/repeated_standard_5companies/protocol.json`)이 이 두 파일의 sha256 을 고정하고, 두 파일이 나머지 모듈을 import 하므로 폴더째 남겨 둔다.
 
 One-team 조건에서 사용하는 통합 분석 구성요소는 `Unified_Agent`에 포함한다. 재무·뉴스·시장 자료를 하나의 분석 요청으로 전달하고, 통합 결과를 비교 분석·Strategy·Writer에 연결한다. 일반 실행 결과와 API 키가 포함될 수 있는 `.env`는 Git 추적 대상에서 제외한다.
 
 ## Ablation 결과와 재현 코드
 
-실험을 다시 돌리는 `run_config/`, 최종 보고서 75개(`final_reports/`), 그 자동 지표(`ablation_results/`), 최종 보고서 LLM-as-a-Judge 코드가 들어 있다. Judge 는 실행을 마쳤고, 요청·응답·결과 파일은 리포에 두지 않는다. 동결 입력(`prepared_inputs/`, `reports/`)과 `evaluation/`·`references/`, 실제 애널리스트 PDF 도 Git 밖의 이동용 번들에 있다. 인계 과정은 [인수인계 기록](docs/ABLATION_HANDOFF_20260920.md)에 남아 있다.
+논문 실험의 실행기(`run_config/`), 최종 보고서 75개(`final_reports/`), BERTScore 결과(`ablation_results/`), 최종 보고서 LLM-as-a-Judge 코드가 들어 있다. 조건 정의와 단계별 재현 방법은 [Ablation 방법과 재현](docs/ABLATION.md)에 정리했다.
+
+- 원자료는 태그 `paper-collection`(커밋 `7e20b3d`)에서 수집했다. 다시 수집할 때는 이 리포 안에 `git worktree add repo paper-collection` 으로 수집용 작업 트리를 만들고 `python run_config/collect_pre_llm_data.py` 를 실행한다. 결과는 `collected_data/` 에 저장된다.
+- 보고서 75개는 태그 `paper-generation`(커밋 `da85eb3`)의 코드로 생성했다.
+- 그 뒤 `main`에는 동작을 바꾸는 변경이 들어왔다. 산출물 파일명과 모듈 이름을 정리했고(버전 접미사 제거), 종류주식 가치평가를 고쳤고(PR #25), Writer 표의 투자의견을 매수/중립/매도로 표시하도록 바꿨고(PR #26), Writer 프롬프트를 정리하고 고지문을 새로 썼다(PR #27). 따라서 `main`을 실행해도 75개 보고서를 똑같이 재현하지 않는다.
+- 다시 돌리려면 Git 밖 자료가 필요하다. 동결 입력(`collected_data/`, `prepared_inputs/`, `reports/`, `status/`), 평가 자료(`evaluation/`), 실제 애널리스트 PDF(`references/`)는 저작권과 크기 때문에 리포에 두지 않는다.
+
+Judge 는 실행을 마쳤고, 요청·응답·결과 파일은 리포에 두지 않는다.
 
 ## 테스트
 

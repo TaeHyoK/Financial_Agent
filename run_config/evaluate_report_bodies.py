@@ -139,10 +139,19 @@ def prepare(*, output=OUTPUT, one_team_run_id=ONE_TEAM_RUN_ID):
     return rows, inputs
 
 
-def evaluate(*, output=OUTPUT, one_team_run_id=ONE_TEAM_RUN_ID, device="cuda:2", prepare_only=False):
+def resolve_device(device: str) -> str:
+    """Map "auto" to CUDA when available, otherwise CPU; pass explicit devices through."""
+    if device != "auto":
+        return device
+    import torch
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def evaluate(*, output=OUTPUT, one_team_run_id=ONE_TEAM_RUN_ID, device="auto", prepare_only=False):
     rows, inputs = prepare(output=output, one_team_run_id=one_team_run_id)
     if prepare_only:
         return
+    device = resolve_device(device)
     _compute_bert_scores(rows, inputs, model_type="BAAI/bge-m3", num_layers=24, batch_size=1, device=device)
     save(output / "metrics.json", rows)
     with (output / "metrics.csv").open("w", newline="", encoding="utf-8-sig") as f:
@@ -172,15 +181,16 @@ def main():
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--one-team-run-id", default=ONE_TEAM_RUN_ID)
     parser.add_argument("--output-dir", type=Path, default=OUTPUT)
-    parser.add_argument("--device", default="cuda:2")
+    parser.add_argument("--device", default="auto", help="Torch device for BERTScore, e.g. cuda, cuda:0 or cpu; auto picks CUDA when available")
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    device = args.device if args.prepare_only else resolve_device(args.device)
     with (args.output_dir / ".evaluation.lock").open("a+") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         save(args.output_dir / "evaluation_status.json", {"state": "preparing" if args.prepare_only else "running",
-            "reports_planned": len(COMPANIES) * len(CONDITIONS), "device": args.device, "paid_api_calls": 0})
+            "reports_planned": len(COMPANIES) * len(CONDITIONS), "device": device, "paid_api_calls": 0})
         try:
-            evaluate(output=args.output_dir, one_team_run_id=args.one_team_run_id, device=args.device, prepare_only=args.prepare_only)
+            evaluate(output=args.output_dir, one_team_run_id=args.one_team_run_id, device=device, prepare_only=args.prepare_only)
             if args.prepare_only:
                 save(args.output_dir / "evaluation_status.json", {"state": "prepared", "reports_prepared": 35, "paid_api_calls": 0})
         except Exception as exc:

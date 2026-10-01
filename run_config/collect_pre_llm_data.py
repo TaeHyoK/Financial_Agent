@@ -19,7 +19,14 @@ import yaml
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+WORKSPACE = SCRIPT_DIR.parent
 MANIFEST_PATH = SCRIPT_DIR / "collection_manifest.json"
+
+
+def workspace_path(value: str | Path) -> Path:
+    """Resolve a manifest path against the workspace (repository root); absolute paths pass through."""
+    path = Path(value)
+    return path if path.is_absolute() else WORKSPACE / path
 
 
 def utc_now() -> str:
@@ -43,6 +50,15 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def checkout_relative(path: Path, repo: Path) -> str:
+    """Return a path relative to the collection checkout.
+
+    The News CLI of the collection commit resolves relative roots against its
+    own project root, so paths in the workspace become ``../...`` entries.
+    """
+    return os.path.relpath(path, repo)
 
 
 def one_year_earlier(value: date) -> date:
@@ -133,8 +149,8 @@ def prepare_configs(
     write_json(company_config, company_payload)
 
     base_news_config = yaml.safe_load((repo / "configs" / "news_default.yaml").read_text(encoding="utf-8"))
-    base_news_config["data_root"] = str(paths["news_dir"] / "artifacts")
-    base_news_config["inputs_root"] = str(paths["news_dir"] / "inputs")
+    base_news_config["data_root"] = checkout_relative(paths["news_dir"] / "artifacts", repo)
+    base_news_config["inputs_root"] = checkout_relative(paths["news_dir"] / "inputs", repo)
     base_news_config.setdefault("news", {})["collection_days"] = (end - start).days + 1
     news_config = config_dir / f"{stem}_news.yaml"
     news_config.write_text(yaml.safe_dump(base_news_config, allow_unicode=True, sort_keys=False), encoding="utf-8")
@@ -314,14 +330,17 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, default=MANIFEST_PATH)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force", action="store_true", help="Run steps again even when validated outputs exist")
+    parser.add_argument("--env-file", type=Path, default=None,
+                        help="Environment file with DART_API_KEY; defaults to environment_file in the manifest")
     args = parser.parse_args()
 
     manifest = read_json(args.manifest.resolve())
-    workspace = Path(manifest["workspace"]).resolve()
-    repo = Path(manifest["repository"]["path"]).resolve()
-    env_file = Path(manifest["environment_file"]).resolve()
+    workspace = workspace_path(manifest["workspace"]).resolve()
+    repo = workspace_path(manifest["repository"]["path"]).resolve()
+    env_file = args.env_file.resolve() if args.env_file else workspace_path(manifest["environment_file"]).resolve()
     status_path = workspace / "status" / "data_collection_status.json"
     worker_pid_path = workspace / "status" / "data_collection_worker.pid"
+    worker_pid_path.parent.mkdir(parents=True, exist_ok=True)
     worker_pid_path.write_text(f"{os.getpid()}\n", encoding="utf-8")
 
     if not os.access(workspace, os.W_OK):

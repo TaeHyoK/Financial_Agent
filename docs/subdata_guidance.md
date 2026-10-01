@@ -2,7 +2,7 @@
 
 작성일: 2026-09-09
 
-후속 변경: 한계 문구의 자동 삽입·필수 작성을 제거한 현재 동작은 [판단 한계 선택 작성](optional_limits.md)에 정리했다. 아래 실호출 결과는 해당 후속 변경 전 기록이다.
+후속 변경: 한계 문구의 자동 삽입·필수 작성을 제거한 현재 동작은 [판단 한계 선택 작성](history/optional_limits.md)에 정리했다. 아래 실호출 결과는 해당 후속 변경 전 기록이다.
 
 ## 변경 원칙
 
@@ -24,7 +24,7 @@
 | 실제 입력 정리 | Strategy 입력 정리 과정에서도 뉴스 종합 판단, 보조자료 원래 구조와 기간 정보가 유지되도록 수정했다. |
 | 비교기업·Writer | 비교기업 뉴스 분석 카드에도 종합 판단을 포함했다. Writer에 전달되는 뉴스 참고 카드에는 실제 요약 내용과 기간을 유지한다. |
 
-새 활용 표지는 `context_informed_interpretation`, 지침 버전은 `context_interpretation_v3`이다. 이전 `framing_and_limitation_only` 결과는 읽기 호환을 유지하되 새 방식으로 작성된 결과인 것처럼 바꾸지 않는다. Strategy v5 캐시 버전은 11로 올렸다.
+새 활용 표지는 `context_informed_interpretation`, 지침 버전은 `context_interpretation_v3`이다. 이전 `framing_and_limitation_only` 결과는 읽기 호환을 유지하되 새 방식으로 작성된 결과인 것처럼 바꾸지 않는다. Strategy 캐시 버전은 11로 올렸다.
 
 프롬프트에서 요구하는 내용과 구조화 출력의 필수 필드를 함께 변경했다. 형식 준수와 내용의 사실성 검증은 별개로 취급한다. 구조화 출력 구성은 [OpenAI 공식 문서](https://developers.openai.com/api/docs/guides/structured-outputs)를 참고했다.
 
@@ -68,8 +68,8 @@ SK바이오팜의 기준일 2025-11-06 가중치 실험 입력을 고정하고 G
 ## 파일 위치
 
 - 재실행 도구: `scripts/check_subdata_guidance.py` — 기본은 API를 호출하지 않는 사전 점검, `--live`를 붙이면 세 도메인을 실행한다. 새 출력 디렉토리만 허용한다.
-- 첫 실행: `/workspace/user/ABLATION/experiments/subdata_guidance_20260909_live`
-- 보완 후 실행: `/workspace/user/ABLATION/experiments/subdata_guidance_20260909_live_v3`
+- 첫 실행: 리포 밖 작업 디렉터리 `ABLATION/experiments/subdata_guidance_20260909_live`
+- 보완 후 실행: 리포 밖 작업 디렉터리 `ABLATION/experiments/subdata_guidance_20260909_live_v3`
 - 각 실행의 `*_output.json`: LLM 원래 응답
 - `normalized_domain_bundle.json`: 검증·변환한 하위 분석 결과
 - `strategy_context.json`, `strategy_packet.json`, `strategy_provenance.json`: Strategy 전달 내용과 원자료 연결

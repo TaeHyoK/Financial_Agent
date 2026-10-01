@@ -47,7 +47,7 @@
 - Full의 공시 가중치와 교차 인코더 입력 방향은 이번에 변경하지 않는다.
 
 실행 스크립트와 원본 해시, 실제 요청·응답·사용량은
-`/workspace/user/ABLATION/experiments/news_random_prefilter_20260913/`에 저장한다.
+리포 밖 작업 디렉터리의 `ABLATION/experiments/news_random_prefilter_20260913/`에 저장했다.
 요약 출력 상한은 20,000토큰, 뉴스 분석은 기존 12,000토큰을 동일하게 적용하며
 상한에 걸리거나 검증에 실패한 응답을 자동 재호출하지 않는다.
 

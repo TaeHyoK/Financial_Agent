@@ -1,4 +1,5 @@
 """Score saved repeats with the frozen body-only protocol and average three runs."""
+import argparse
 import copy
 import csv
 import fcntl
@@ -22,6 +23,9 @@ def write_csv(path, rows):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--device", default="auto", help="Torch device for BERTScore, e.g. cuda, cuda:0 or cpu; auto picks CUDA when available")
+    device = evaluation.resolve_device(parser.parse_args().device)
     OUTPUT.mkdir(parents=True, exist_ok=True)
     with (OUTPUT / ".evaluation.lock").open("a+") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -67,7 +71,7 @@ def main():
             rows.append(row)
             inputs.append((reference, body))
         evaluation.save(OUTPUT / "prepared_metrics.json", rows)
-        evaluation._compute_bert_scores(rows, inputs, model_type=protocol["bert_model"], num_layers=protocol["layers"], batch_size=1, device="cuda:2")
+        evaluation._compute_bert_scores(rows, inputs, model_type=protocol["bert_model"], num_layers=protocol["layers"], batch_size=1, device=device)
         all_rows = [{k: v for k, v in r.items() if not k.startswith("rouge_")} for r in prior] + rows
         for r in all_rows:
             r.setdefault("offline_recovery", "")
@@ -86,7 +90,7 @@ def main():
         evaluation.save(OUTPUT / "company_condition_means.json", means)
         write_csv(OUTPUT / "company_condition_means.csv", means)
         evaluation.save(OUTPUT / "condition_means.json", condition_means)
-        protocol.update(replicates=3, comparisons=75, companies=COMPANIES, baseline_metrics_sha256=evaluation.sha(BASE / "metrics.json"), original_scores_reused=25, new_scores_computed=50, device="cuda:2", paid_api_calls=0,
+        protocol.update(replicates=3, comparisons=75, companies=COMPANIES, baseline_metrics_sha256=evaluation.sha(BASE / "metrics.json"), original_scores_reused=25, new_scores_computed=50, device=device, paid_api_calls=0,
                         offline_recovery_note="r03/one_team/아모레퍼시픽: two chart-link metadata arrays repaired offline; narrative body unchanged.")
         evaluation.save(OUTPUT / "protocol.json", protocol)
         text = "# 기업별 BERTScore 평균 및 표준편차\n\n각 기업·조건의 3회 실행 BERTScore F1을 평균 ± 표본 표준편차(n=3, 분모 n−1)로 표시했다. 기존 1회 점수와 추가 2회 점수를 사용했다. 전체 평균 행의 표준편차는 각 실행에서 5개 기업 점수를 평균한 뒤, 그 3개 평균값으로 계산했다.\n\n| 기업 | " + " | ".join(evaluation.CONDITION_LABELS) + " |\n|---|" + "---:|" * 5 + "\n"

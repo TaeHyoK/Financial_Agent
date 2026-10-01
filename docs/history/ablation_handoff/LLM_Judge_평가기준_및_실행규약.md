@@ -1,8 +1,6 @@
-# 금융 Ablation의 LLM Judge 평가 기준 및 실행 규약
+> 대체된 문서: 2026-09-18의 이전 Judge 설계다. 최종 설계는 `run_config/FINAL_REPORT_LLM_JUDGE.md`를 본다.
 
-> 상태: 이 문서는 2026-09-18의 이전 분석단계 Judge 설계 기록이다.
-> 최종 보고서 평가는 `run_config/FINAL_REPORT_LLM_JUDGE.md`와
-> `run_config/final_report_llm_judge.py`의 360회 FinRPT식 규약을 사용한다.
+# 금융 Ablation의 LLM Judge 평가 기준 및 실행 규약
 
 작성일: 2026-09-18. 현재 5개 기업 × 5개 조건 × 3회 생성 결과를 대상으로 한다. 이 문서는 평가 설계이며, Judge 호출·사람 검증·평가 점수 산출은 아직 실행하지 않았다.
 

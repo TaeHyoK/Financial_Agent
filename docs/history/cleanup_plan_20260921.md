@@ -27,7 +27,6 @@
 ### 1-2. 테스트 기준선
 
 ```
-cd /home/tkim298/agent2/Financial_Agent && .venv/bin/python -m pytest -q -rs
 → 257 passed, 19 skipped, 27 subtests passed (약 23초)
 ```
 

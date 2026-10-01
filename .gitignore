@@ -27,16 +27,19 @@ logs/
 *.log
 Output_total*/
 
-# Portable ablation data bundle (kept in Google Drive, never Git)
-evaluation/
-references/
-reports/
-status/
-prepared_inputs/
-handoff/
-
-# Local change notes
-뉴스_에이전트_수정_이후_변경사항.md
+# Portable ablation data bundle and experiment outputs at the repo root (kept in Google Drive, never Git)
+/evaluation/
+/evaluations/
+/references/
+/reports/
+/status/
+/prepared_inputs/
+/handoff/
+/collected_data/
+/repo/
+/experiments/
+/real_report/
+/Output_*/
 
 # OS/editor files
 .DS_Store

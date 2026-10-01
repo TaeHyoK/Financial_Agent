@@ -1,5 +1,5 @@
-data_root: /data/agent2/financial_agent_ablation_2025h2/collected_data/현대건설/snapshot/현대건설/비교기업/GS건설/News/20251020/artifacts
-inputs_root: /data/agent2/financial_agent_ablation_2025h2/collected_data/현대건설/snapshot/현대건설/비교기업/GS건설/News/20251020/inputs
+data_root: ../collected_data/현대건설/snapshot/현대건설/비교기업/GS건설/News/20251020/artifacts
+inputs_root: ../collected_data/현대건설/snapshot/현대건설/비교기업/GS건설/News/20251020/inputs
 news:
   collector: google_news_rss
   collection_days: 365

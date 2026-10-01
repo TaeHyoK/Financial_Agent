@@ -76,7 +76,7 @@ Writer는 Strategy 의견을 그대로 표시한다. HTML의 `investment-recomme
 PYTHONPATH=src python -m orchestration.full_report_pipeline \
   --company-name 현대모비스 --selected-date 20251031 \
   --news-window 1y --decision-horizon-profile annual \
-  --output-root Output_annual --no-progress
+  --no-progress
 
 python -m pytest -q
 ```

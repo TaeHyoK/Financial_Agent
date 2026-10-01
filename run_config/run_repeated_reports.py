@@ -222,7 +222,7 @@ def execute_run(*, resume=False):
             "completed": [], "stages": [], "failures": []}
         if state["state"] == "success":
             return
-        original.load_project_env(Path(manifest["environment_file"]))
+        original.load_project_env(original.workspace_path(manifest["environment_file"]))
         if not os.getenv("OPENAI_API_KEY", "").strip():
             raise RuntimeError("Configured API key is missing")
         os.environ.update(OPENAI_MODEL="gpt-5.4", NEWS_AGENT_LLM_MODEL="gpt-5.4", LLM_TIMEOUT_SECONDS="300",
@@ -254,7 +254,7 @@ def execute_run(*, resume=False):
                 continue
             paths = make_paths(spec)
             paths.ensure_directories()
-            args, ablation, target, peer, commands = downstream(spec, paths, Path(manifest["environment_file"]))
+            args, ablation, target, peer, commands = downstream(spec, paths, original.workspace_path(manifest["environment_file"]))
             flow._write_resolved_inputs(args=args, ablation=ablation, paths=paths, selected_date=day,
                 target=target, peer=peer, peer_resolution={"status": "frozen_manual_pair" if peer else "disabled",
                     "source": {"provider": "collection_manifest"}, "selection_basis": {"method": "frozen_experiment_pair"}})

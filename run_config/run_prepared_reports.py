@@ -44,6 +44,12 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def workspace_path(value: str | Path) -> Path:
+    """Resolve a manifest path against the workspace (repository root); absolute paths pass through."""
+    path = Path(value)
+    return path if path.is_absolute() else WORKSPACE / path
+
+
 def now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -75,7 +81,7 @@ def check():
         if sha(REPO / relative) != expected:
             raise ValueError(f"Generation code changed after preparation: {relative}")
     collection = read(WORKSPACE / "run_config/collection_manifest.json")
-    load_project_env(Path(collection["environment_file"]))
+    load_project_env(workspace_path(collection["environment_file"]))
     if not os.getenv("OPENAI_API_KEY", "").strip():
         raise RuntimeError("Configured OPENAI_API_KEY is missing")
     for spec in manifest["conditions"]:
@@ -224,7 +230,7 @@ def run(resume=False):
             ablation = config_from_args(args)
             target = identity(spec["entities"][0])
             peer = identity(spec["entities"][1]) if len(spec["entities"]) == 2 else None
-            env_file = Path(collection["environment_file"])
+            env_file = workspace_path(collection["environment_file"])
             flow._write_resolved_inputs(args=args, ablation=ablation, paths=paths, selected_date=day, target=target, peer=peer,
                 peer_resolution={"status": "frozen_manual_pair" if peer else "disabled", "source": {"provider": "collection_manifest"},
                     "selection_basis": {"method": "frozen_experiment_pair"}})

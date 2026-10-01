@@ -1,10 +1,10 @@
 {
-  "workspace": "/workspace/financial_agent_ablation_2025h2",
+  "workspace": ".",
   "repository": {
-    "path": "/workspace/financial_agent_ablation_2025h2/repo",
+    "path": "repo",
     "commit": "7e20b3d2c803c7490099ab0fe96a70084b88257d"
   },
-  "environment_file": "/workspace/user/FINAL/configs/.env",
+  "environment_file": "configs/.env",
   "collection_policy": {
     "information_window": "12 calendar months ending one day before the report date",
     "news_periods": 12,

@@ -18,7 +18,7 @@ from .context import build_base_strategy_context
 
 CONTEXT_VERSION = "strategy_context_package"
 DECISION_VERSION = "strategy_decision_output"
-STRATEGY_CACHE_VERSION = "19"
+STRATEGY_CACHE_VERSION = "21"
 SCHEMA_REVISION = "12m_v3"
 # Counts are editorial guidance, not limits on preserving valid citations.
 # The model leaves this duplicate index empty; alignment fills it afterwards.

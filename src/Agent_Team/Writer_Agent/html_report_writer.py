@@ -13,7 +13,7 @@ from .html_report_spec import (
     RISK_DISPLAY_COLUMNS,
     replace_english_grade_labels,
 )
-from shared.coerce import as_dict as _dict
+from shared.coerce import as_dict as _dict, is_finite_number
 from shared.evidence_cards import PRODUCT_DISCLOSURE_SCOPE_LABEL
 from shared.llm_clients import compact_json, execute_with_telemetry, is_transient_transport_error
 from .writer_handoff import (
@@ -21,7 +21,9 @@ from .writer_handoff import (
     STRATEGY_DECISION_VERSION,
     _krw_100m,
     _metric_display,
+    _price_display,
     _ratio_percent,
+    _signed_percentage_point,
     validate_writer_editorial_packet,
 )
 
@@ -177,6 +179,8 @@ def normalize_report_payload(
                 if is_editorial_packet
                 else metadata.get("report_title") or f"{company_name} Investment Report"
             ),
+            "stock_code": _stock_code(target.get("ticker")),
+            **_report_key_metrics(writer_handoff),
         }
     }
     sections = _dict(payload.get("sections"))
@@ -1366,6 +1370,114 @@ def _enrich_writer_metadata(payload: dict[str, Any], writer_packet: dict[str, An
     return enriched
 
 
+def _stock_code(ticker: Any) -> str:
+    """Return the exchange code shown next to the company name (six digits for KRX listings)."""
+
+    text = str(ticker or "").strip()
+    match = re.fullmatch(r"(\d{6})\.K[SQ]", text, flags=re.IGNORECASE)
+    return match.group(1) if match else text
+
+
+def _find_card(cards: dict[str, Any], *, domain: str, axis: str) -> dict[str, Any]:
+    for card in cards.values():
+        if isinstance(card, dict) and card.get("domain") == domain and card.get("axis") == axis:
+            return card
+    return {}
+
+
+def _ok_number(value: Any) -> float | None:
+    """Return a finite number from a raw value or a {value, status} metric, else None."""
+
+    if isinstance(value, dict):
+        if value.get("status") not in (None, "ok"):
+            return None
+        value = value.get("value")
+    return float(value) if is_finite_number(value) else None
+
+
+def _krw_jo_eok(value: float) -> str:
+    """Format a won amount as 조/억원, rounded to 억원."""
+
+    total_eok = int(round(value / 100_000_000))
+    sign = "-" if total_eok < 0 else ""
+    jo, eok = divmod(abs(total_eok), 10_000)
+    if not jo:
+        return f"{sign}{eok:,}억원"
+    return f"{sign}{jo:,}조 {eok:,}억원" if eok else f"{sign}{jo:,}조원"
+
+
+def _signed_percent(value: float, suffix: str = "%") -> str:
+    return f"{value * 100:+.1f}{suffix}"
+
+
+def _report_key_metrics(writer_packet: dict[str, Any]) -> dict[str, Any]:
+    """Collect sidebar price and valuation figures from Strategy cards without an LLM."""
+
+    cards = _dict(writer_packet.get("cards"))
+    valuation = _dict(
+        _find_card(cards, domain="valuation", axis="selected_date_calculated").get("primary_observation")
+    )
+    absolute = _dict(_find_card(cards, domain="market", axis="absolute_trend").get("primary_observation"))
+    relative = _dict(_find_card(cards, domain="market", axis="relative_performance").get("primary_observation"))
+    momentum = _dict(_find_card(cards, domain="market", axis="momentum_volume").get("primary_observation"))
+    valuation_metrics = _dict(valuation.get("metrics"))
+    close_input = _dict(_dict(valuation.get("inputs")).get("selected_date_close"))
+    close = _ok_number(close_input)
+    close_date = close_input.get("as_of_date") if close is not None else None
+    if close is None:
+        close = _ok_number(_dict(absolute.get("metrics")).get("stock_close"))
+        close_date = absolute.get("as_of_date")
+    market_cap = _ok_number(valuation_metrics.get("market_cap"))
+    pe = _ok_number(valuation_metrics.get("trailing_pe"))
+    pb = _ok_number(valuation_metrics.get("price_to_book"))
+    p_op = _ok_number(valuation_metrics.get("price_to_operating_profit"))
+    position = _ok_number(_dict(momentum.get("metrics")).get("stock_position_52w"))
+    return_12m = _ok_number(_dict(absolute.get("metrics")).get("stock_return_12m"))
+    excess_12m = _ok_number(_dict(relative.get("metrics")).get("stock_excess_return_12m"))
+    benchmark = str(relative.get("benchmark_name") or "KOSPI")
+
+    def entry(group: str, label: str, value: float | None, display: Any) -> dict[str, str]:
+        return {
+            "group": group,
+            "label": label,
+            "value": display(value) if value is not None else MISSING_VALUE,
+        }
+
+    pe_entry = entry("가치평가", "P/E", pe, lambda value: _metric_display(value, "times"))
+    net_income = _ok_number(_dict(valuation.get("inputs")).get("ttm_net_income"))
+    if pe is None and net_income is not None and net_income <= 0:
+        # A loss-making earnings base has no meaningful P/E; say so instead of "missing".
+        pe_entry["value"] = "적자"
+    metrics = [
+        entry("시세", "종가", close, _price_display),
+        entry("시세", "시가총액", market_cap, _krw_jo_eok),
+        entry("시세", "52주 범위 내 위치", position, lambda value: f"{value * 100:.1f}%"),
+        pe_entry,
+        entry("가치평가", "P/B", pb, lambda value: _metric_display(value, "times")),
+    ]
+    if p_op is not None:
+        metrics.append(entry("가치평가", "P/영업이익", p_op, lambda value: _metric_display(value, "times")))
+    metrics.extend(
+        [
+            entry("수익률", "12개월 수익률", return_12m, _signed_percent),
+            entry(
+                "수익률",
+                f"{benchmark} 대비 12개월 초과수익률",
+                excess_12m,
+                lambda value: _signed_percent(value, "%p"),
+            ),
+        ]
+    )
+    market_date = (
+        close_date
+        or valuation.get("as_of_date")
+        or absolute.get("as_of_date")
+        or relative.get("as_of_date")
+        or MISSING_VALUE
+    )
+    return {"market_data_date": str(market_date), "key_metrics": metrics}
+
+
 def _qualify_partial_product_scope(
     text: str,
     writer_packet: dict[str, Any],
@@ -1423,7 +1535,7 @@ def _apply_deterministic_evidence_table(
         {
             "핵심 근거": replace_english_grade_labels(writer_labels[card_key]),
             "확인된 수치·사실": replace_english_grade_labels(
-                _evidence_observation_text(card_key, card)
+                _evidence_observation_text(card_key, card, cards)
             ),
             _evidence_interpretation_column(writer_packet): _reader_display_text(
                 _qualify_partial_product_scope(
@@ -1479,10 +1591,24 @@ def _apply_deterministic_risk_table(
     return normalized
 
 
-def _evidence_observation_text(card_key: str, card: dict[str, Any]) -> str:
+def _evidence_observation_text(
+    card_key: str,
+    card: dict[str, Any],
+    cards: dict[str, Any] | None = None,
+) -> str:
+    """Build the reader-facing fact lines of one evidence row after the Writer call.
+
+    This is display formatting only: the Writer model input keeps the full card.
+    """
+
+    cards = cards or {}
     observation = card.get("reader_observation") or card.get("primary_observation")
     if card_key == "market.relative_performance":
-        return _market_relative_observation_text(card, observation)
+        return _market_relative_key_lines(card, cards) or _market_relative_observation_text(card, observation)
+    if card_key == "market.absolute_trend":
+        return _market_absolute_key_lines(card, cards) or _structured_observation_text(observation)
+    if card_key == "market.momentum_volume":
+        return _market_momentum_key_lines(card) or _structured_observation_text(observation)
     if card_key.startswith("peer."):
         return _peer_observation_text(observation)
     if card_key == "financial.balance_sheet":
@@ -1490,8 +1616,181 @@ def _evidence_observation_text(card_key: str, card: dict[str, Any]) -> str:
     if card_key == "financial.product_breakdown":
         return _product_observation_text(observation)
     if card_key == "valuation.selected_date":
-        return _valuation_observation_text(observation)
+        shown = {
+            key
+            for key, metric in _card_metrics(card).items()
+            if _dict(metric).get("status") in (None, "ok") and is_finite_number(_dict(metric).get("value"))
+        }
+        return _join_fact_lines(
+            _valuation_observation_text(observation),
+            _earnings_base_note(card, "earnings_base_warnings", shown),
+        )
+    if card_key == "valuation.prior_year_end":
+        return _prior_year_end_valuation_text(card) or _structured_observation_text(observation)
     return _structured_observation_text(observation)
+
+
+def _card_metrics(card: dict[str, Any]) -> dict[str, Any]:
+    return _dict(_dict(card.get("primary_observation")).get("metrics"))
+
+
+def _metric_line(label: str, metrics: dict[str, Any], key: str, display: Any) -> str:
+    value = metrics.get(key)
+    return f"{label}: {display(value)}" if is_finite_number(value) else ""
+
+
+def _market_lines(card: dict[str, Any], lines: list[str]) -> str:
+    """Return dated fact lines, or "" when no decision metric is available."""
+
+    lines = [line for line in lines if line]
+    if not lines:
+        return ""
+    as_of = _dict(card.get("primary_observation")).get("as_of_date")
+    return "\n".join([f"기준일: {as_of}", *lines] if as_of else lines)
+
+
+def _market_relative_key_lines(card: dict[str, Any], cards: dict[str, Any]) -> str:
+    """Show the 12-month comparison and the 3-month excess return only."""
+
+    metrics = _card_metrics(card)
+    benchmark = str(
+        _dict(card.get("comparison_entities")).get("benchmark_name")
+        or _dict(card.get("primary_observation")).get("benchmark_name")
+        or "시장"
+    ).strip()
+    # The target's own return lives on the absolute-trend card of the same packet.
+    stock_metrics = {**_card_metrics(_find_card(cards, domain="market", axis="absolute_trend")), **metrics}
+    return _market_lines(
+        card,
+        [
+            _metric_line("12개월 수익률", stock_metrics, "stock_return_12m", _ratio_percent),
+            _metric_line(f"{benchmark} 12개월 수익률", metrics, "kospi_return_12m", _ratio_percent),
+            _metric_line(f"{benchmark} 대비 12개월 초과수익률", metrics, "stock_excess_return_12m", _signed_percentage_point),
+            _metric_line(f"{benchmark} 대비 3개월 초과수익률", metrics, "stock_excess_return_3m", _signed_percentage_point),
+        ],
+    )
+
+
+def _market_absolute_key_lines(card: dict[str, Any], cards: dict[str, Any]) -> str:
+    """Show 12- and 3-month returns, the 52-week position and moving-average gaps."""
+
+    metrics = _card_metrics(card)
+    momentum = _card_metrics(_find_card(cards, domain="market", axis="momentum_volume"))
+    position_metrics = {**momentum, **metrics}
+    averages = " · ".join(
+        f"{days}일 {_ratio_percent(metrics[key])}"
+        for days in (120, 200)
+        for key in [f"stock_close_to_ma{days}"]
+        if is_finite_number(metrics.get(key))
+    )
+    return _market_lines(
+        card,
+        [
+            _metric_line("12개월 수익률", metrics, "stock_return_12m", _ratio_percent),
+            _metric_line("3개월 수익률", metrics, "stock_return_3m", _ratio_percent),
+            _metric_line("52주 범위 내 위치", position_metrics, "stock_position_52w", _ratio_percent),
+            f"이동평균 대비: {averages}" if averages else "",
+        ],
+    )
+
+
+def _market_momentum_key_lines(card: dict[str, Any]) -> str:
+    """Show the 52-week position, drawdown from the high, volume and RSI."""
+
+    metrics = _card_metrics(card)
+    return _market_lines(
+        card,
+        [
+            _metric_line("52주 범위 내 위치", metrics, "stock_position_52w", _ratio_percent),
+            _metric_line("1년 고점 대비 하락률", metrics, "stock_current_drawdown_1y", _ratio_percent),
+            _metric_line("20일 평균 대비 거래량", metrics, "stock_volume_ratio_20", lambda value: f"{float(value):,.2f}배"),
+            _metric_line("14일 RSI", metrics, "stock_rsi_14", lambda value: f"{float(value):,.2f}"),
+        ],
+    )
+
+
+_VALUATION_PAIR_LABELS = {
+    "trailing_pe": "P/E",
+    "price_to_book": "P/B",
+    "price_to_sales": "P/S",
+    "price_to_operating_profit": "P/영업이익",
+    "enterprise_value_to_revenue": "EV/매출",
+    "enterprise_value_to_ebitda": "EV/EBITDA",
+}
+# Multiples whose denominator is an earnings figure.
+_EARNINGS_BASED_MULTIPLES = {"trailing_pe", "price_to_operating_profit", "enterprise_value_to_ebitda"}
+_EARNINGS_BASE_WARNING_TEXT = {
+    "ttm_includes_loss_half_year": "최근 4개 분기 이익에 손실을 낸 반기가 포함됨",
+    "ttm_net_income_far_below_operating_profit": "최근 4개 분기 순이익이 영업이익보다 크게 낮음",
+}
+
+
+def _prior_year_end_valuation_text(card: dict[str, Any]) -> str:
+    """Show each multiple at the prior fiscal year end and now, with the close change."""
+
+    observation = _dict(card.get("primary_observation"))
+    reference_date = str(observation.get("reference_date") or "").strip()
+    current_date = str(observation.get("current_as_of_date") or "").strip()
+
+    def dated(text: str, date: str) -> str:
+        return f"{text}({date})" if date else text
+
+    lines = []
+    shown_keys = set()
+    for pair in observation.get("pairs") or []:
+        pair = _dict(pair)
+        key = str(pair.get("metric_key") or "")
+        label = _VALUATION_PAIR_LABELS.get(key)
+        reference, current = pair.get("reference_value"), pair.get("current_value")
+        if not label or not is_finite_number(reference) or not is_finite_number(current):
+            continue
+        line = (
+            f"{label}: {dated(_metric_display(reference, 'times'), reference_date)}"
+            f" → {dated(_metric_display(current, 'times'), current_date)}"
+        )
+        if str(pair.get("comparability") or "comparable") != "comparable":
+            line += " (직접 비교 제한)"
+        lines.append(line)
+        shown_keys.add(key)
+    close = _dict(observation.get("close"))
+    if is_finite_number(close.get("reference")) and is_finite_number(close.get("current")):
+        change = (
+            f" ({_signed_percent(float(close['change_rate']), '%')})"
+            if is_finite_number(close.get("change_rate"))
+            else ""
+        )
+        lines.append(
+            f"종가: {dated(_price_display(close['reference']), reference_date)}"
+            f" → {dated(_price_display(close['current']), current_date)}{change}"
+        )
+    if not lines:
+        return ""
+    lines.append(_earnings_base_note(card, "current_earnings_base_warnings", shown_keys))
+    return _join_fact_lines(*lines)
+
+
+def _earnings_base_note(card: dict[str, Any], field: str, shown_keys: set[str]) -> str:
+    """Translate earnings-base warning codes into one reader note.
+
+    The note appears only when an earnings-based multiple is displayed; unknown codes
+    get a generic reason instead of exposing the code.
+    """
+
+    codes = [str(code) for code in _dict(card.get("primary_observation")).get(field) or [] if str(code).strip()]
+    if not codes or not shown_keys & _EARNINGS_BASED_MULTIPLES:
+        return ""
+    reasons = list(
+        dict.fromkeys(
+            _EARNINGS_BASE_WARNING_TEXT.get(code, "이익 기준에 일시적 요인이 섞였을 수 있음")
+            for code in codes
+        )
+    )
+    return f"주: {', '.join(reasons)}. 이익 기준 배수는 해석에 유의"
+
+
+def _join_fact_lines(*lines: str) -> str:
+    text = "\n".join(line for line in lines if line and line != MISSING_VALUE)
+    return text or MISSING_VALUE
 
 
 def _market_relative_observation_text(card: dict[str, Any], value: Any) -> str:

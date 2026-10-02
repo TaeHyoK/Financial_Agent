@@ -96,7 +96,9 @@ def validate_html_report(
         "section_h1_count": _pass_fail(
             len(re.findall(r"<h1[>\s]", html_content))
             == len(REPORT_SECTIONS) + 1 - (0 if has_data_limit_content(report_payload) else 1)
-            + (1 if report_payload.get("report_charts") else 0)
+            # Charts sit inside their sections; only the closing block for charts
+            # no section claimed adds its own heading.
+            + (1 if 'class="report-chart-section"' in html_content else 0)
         ),
         "table_of_contents_removed": _validate_no_table_of_contents(
             html_content, advisory_notes
@@ -284,7 +286,7 @@ def _validate_fixed_disclaimer(html_content: str, notes: list[str]) -> str:
     required_terms = [
         f'class="report-disclaimer">{REPORT_DISCLAIMER}</footer>',
         ".report-disclaimer {",
-        "font-size: 4.4pt",
+        "font-size: 6pt",
         "text-align: center",
     ]
     missing = [term for term in required_terms if term not in html_content]

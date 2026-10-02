@@ -35,6 +35,9 @@ MAIN_COLUMN_SECTION_KEYS = (
     "risk_monitoring_matrix",
     "data_limits",
 )
+# Sections placed in the left column beside the sidebar on page one; every later
+# section spans both columns so pages after the sidebar have no empty column.
+SIDEBAR_COLUMN_SECTION_COUNT = 1
 
 
 def render_formatted_html_report(
@@ -118,17 +121,21 @@ def build_complete_html(report_payload: dict[str, Any]) -> str:
         section["key"]: (index, section)
         for index, section in enumerate(REPORT_SECTIONS, start=1)
     }
-    main_sections = "\n".join(
+    section_charts, unplaced_charts = _place_report_charts(report_payload)
+    rendered_sections = [
         _render_section(
             report_payload,
             index,
             section,
             location="main",
             metadata=metadata,
+            charts=section_charts.get(key, []),
         )
         for key in MAIN_COLUMN_SECTION_KEYS
         for index, section in [indexed_sections[key]]
-    )
+    ]
+    lead_sections = "\n".join(rendered_sections[:SIDEBAR_COLUMN_SECTION_COUNT])
+    flow_sections = "\n".join(rendered_sections[SIDEBAR_COLUMN_SECTION_COUNT:])
     return f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -143,18 +150,19 @@ def build_complete_html(report_payload: dict[str, Any]) -> str:
 </head>
 <body>
   <main class="a4-sheet">
+{_document_header(metadata)}
     <div class="paper-grid">
       <div class="main-column">
-        {_document_header(metadata)}
-{main_sections}
+{lead_sections}
+      </div>
+      <div class="full-width-flow">
+{flow_sections}
+{_render_report_charts(unplaced_charts)}
       </div>
       <div class="visual-sidebar">
-        {_sidebar_header(metadata)}
 {_render_sidebar_key_data(metadata)}
-
       </div>
     </div>
-{_render_report_charts(report_payload)}
     <footer class="report-disclaimer">{_text(REPORT_DISCLAIMER)}</footer>
   </main>
 </body>
@@ -162,53 +170,102 @@ def build_complete_html(report_payload: dict[str, Any]) -> str:
 """
 
 
+OPINION_LABELS = {"Buy": "매수", "Hold": "중립", "Sell": "매도"}
+OPINION_CLASSES = {"Buy": "opinion-buy", "Hold": "opinion-hold", "Sell": "opinion-sell"}
+
+
 def _document_header(metadata: dict[str, Any]) -> str:
+    """Render the page-one band: company, code, base date, opinion badge and headline."""
+
     company = metadata.get("company_name") or MISSING_VALUE
     base_date = metadata.get("base_date") or MISSING_VALUE
     headline = metadata.get("report_title") or ""
-    return f"""
-    <header class="document-header">
-      <p class="report-name">{_inline(company)} 투자 리서치</p>
-      <h1>{_inline(replace_english_grade_labels(headline))}</h1>
-      <div class="meta-grid">
-        <div><span>기준일</span><strong>{_inline(base_date)}</strong></div>
-      </div>
-    </header>
-"""
-
-
-def _sidebar_header(metadata: dict[str, Any]) -> str:
-    base_date = metadata.get("base_date") or MISSING_VALUE
+    stock_code = str(metadata.get("stock_code") or "").strip()
+    code_html = f'<span class="stock-code">{_text(stock_code)}</span>' if stock_code else ""
+    recommendation = metadata.get("recommendation")
+    opinion = OPINION_LABELS.get(recommendation, "")
     horizon = metadata.get("investment_horizon") or MISSING_VALUE
-    opinion = {"Buy": "매수", "Hold": "중립", "Sell": "매도"}.get(metadata.get("recommendation"), "")
-    opinion_html = f'<div><dt>투자의견</dt><dd><strong class="investment-opinion">{opinion}</strong></dd></div>' if opinion else ""
-    return f"""
-        <div class="sidebar-summary">
-          <p class="sidebar-brand">기업분석 리포트</p>
-          <dl>
-            <div><dt>기준일</dt><dd>{_inline(base_date)}</dd></div>
-            <div><dt>투자기간</dt><dd>{_inline(horizon)}</dd></div>
-            {opinion_html}
-          </dl>
-        </div>
-"""
+    badge_html = ""
+    if opinion:
+        badge_html = f"""
+        <div class="opinion-badge {OPINION_CLASSES[recommendation]}">
+          <span class="badge-caption">투자의견</span>
+          <strong class="investment-opinion">{opinion}</strong>
+          <span class="badge-horizon">{_inline(horizon)}</span>
+        </div>"""
+    return f"""    <header class="document-header">
+      <div class="header-top">
+        <p class="report-kicker">기업분석 리포트</p>
+        <p class="header-date"><span>기준일</span> {_inline(base_date)}</p>
+      </div>
+      <div class="header-main">
+        <div class="header-title">
+          <p class="report-name">{_inline(company)}{code_html}</p>
+          <h1>{_inline(replace_english_grade_labels(headline))}</h1>
+        </div>{badge_html}
+      </div>
+    </header>"""
 
 
 def _render_sidebar_key_data(metadata: dict[str, Any]) -> str:
-    coverage = _level_label(metadata.get("data_coverage"))
-    confidence = _level_label(metadata.get("decision_confidence"))
-    return f"""
-        <section class="sidebar-panel key-data-panel">
-          <h2>핵심 정보</h2>
-          <dl>
-            <div><dt>자료 충실도</dt><dd>{_inline(coverage)}</dd></div>
-            <div><dt>판단 확신도</dt><dd>{_inline(confidence)}</dd></div>
-          </dl>
-        </section>
-"""
+    """Render the sidebar figures prepared during payload normalization."""
+
+    groups: dict[str, list[str]] = {}
+    for metric in metadata.get("key_metrics") or []:
+        if not isinstance(metric, dict) or not str(metric.get("label") or "").strip():
+            continue
+        groups.setdefault(str(metric.get("group") or ""), []).append(
+            _metric_row(metric.get("label"), metric.get("value") or MISSING_VALUE)
+        )
+    groups["판단 정보"] = [
+        _metric_row("자료 충실도", _level_label(metadata.get("data_coverage"))),
+        _metric_row("판단 확신도", _level_label(metadata.get("decision_confidence"))),
+    ]
+    group_html = "\n".join(
+        f"""          <div class="metric-group">
+            {f'<h3>{_text(name)}</h3>' if name else ''}
+            <dl>
+{chr(10).join(rows)}
+            </dl>
+          </div>"""
+        for name, rows in groups.items()
+    )
+    market_date = str(metadata.get("market_data_date") or "").strip()
+    note_html = (
+        f'\n          <p class="panel-note">시세·가치평가 기준 {_inline(market_date)}</p>'
+        if market_date and metadata.get("key_metrics")
+        else ""
+    )
+    return f"""        <section class="sidebar-panel key-data-panel">
+          <h2>핵심 지표</h2>{note_html}
+{group_html}
+        </section>"""
 
 
-def _render_report_charts(report_payload: dict[str, Any]) -> str:
+def _metric_row(label: Any, value: Any) -> str:
+    text = str(value)
+    tone = ""
+    if re.match(r"^\+\d", text) and re.search(r"[1-9]", text):
+        tone = ' class="value-up"'
+    elif re.match(r"^-\d", text) and re.search(r"[1-9]", text):
+        tone = ' class="value-down"'
+    return f"              <div><dt>{_inline(label)}</dt><dd{tone}>{_inline(text)}</dd></div>"
+
+
+# Sections that may host an inline chart; the optional limits section never does.
+CHART_HOST_SECTION_KEYS = tuple(key for key in MAIN_COLUMN_SECTION_KEYS if key != "data_limits")
+
+
+def _place_report_charts(
+    report_payload: dict[str, Any],
+) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
+    """Give each chart its own section, chosen by card-key overlap with its basis cards.
+
+    A section hosts at most one chart. Charts with the strongest overlap choose first
+    (ties keep the selection order); a chart whose best section is taken moves to its
+    next-best overlapping section, and charts left without one go to the closing block.
+    """
+
     charts = [
         chart
         for chart in (
@@ -218,20 +275,70 @@ def _render_report_charts(report_payload: dict[str, Any]) -> str:
         )
         if isinstance(chart, dict) and str(chart.get("src") or "").strip()
     ]
-    if not charts:
-        return ""
-    figures = "\n".join(
-        f"""
+    basis_by_chart = {
+        str(detail.get("chart_key") or ""): {
+            str(key) for key in detail.get("basis_card_keys") or [] if str(key).strip()
+        }
+        for detail in report_payload.get("chart_selection_details") or []
+        if isinstance(detail, dict)
+    }
+    sections = _dict(report_payload.get("sections"))
+    section_keys: dict[str, set[str]] = {}
+    for key in CHART_HOST_SECTION_KEYS:
+        keys: set[str] = set()
+        for item in _dict(sections.get(key)).values():
+            keys.update(str(card_key) for card_key in _dict(item).get("card_keys") or [])
+        section_keys[key] = keys
+    # Candidate sections per chart, best overlap first, then report order.
+    candidates: list[list[tuple[int, str]]] = []
+    for chart in charts:
+        basis = basis_by_chart.get(str(chart.get("chart_key") or ""), set())
+        ranked = sorted(
+            (-len(basis & section_keys[key]), order, key)
+            for order, key in enumerate(CHART_HOST_SECTION_KEYS)
+            if basis & section_keys[key]
+        )
+        candidates.append([(-overlap, key) for overlap, _order, key in ranked])
+    choice_order = sorted(
+        range(len(charts)),
+        key=lambda index: (-(candidates[index][0][0] if candidates[index] else 0), index),
+    )
+    assigned: dict[int, str] = {}
+    taken: set[str] = set()
+    for index in choice_order:
+        for _overlap, key in candidates[index]:
+            if key not in taken:
+                assigned[index] = key
+                taken.add(key)
+                break
+    placed: dict[str, list[dict[str, Any]]] = {key: [] for key in CHART_HOST_SECTION_KEYS}
+    unplaced: list[dict[str, Any]] = []
+    for index, chart in enumerate(charts):
+        if index in assigned:
+            placed[assigned[index]].append(chart)
+        else:
+            unplaced.append(chart)
+    return placed, unplaced
+
+
+def _render_chart_figure(chart: dict[str, Any]) -> str:
+    return f"""
           <figure class="report-chart">
             <img src="{escape(str(chart['src']), quote=True)}" alt="{escape(replace_english_grade_labels(chart.get('alt') or chart.get('title') or '주요 차트'), quote=True)}">
             <figcaption>
               <strong class="chart-caption-title">{_text(replace_english_grade_labels(chart.get('title') or '주요 차트'))}</strong>
-              <span class="chart-observation">{_text(replace_english_grade_labels(chart.get('chart_observation')))}</span>
-              <span class="chart-interpretation">{_text(replace_english_grade_labels(chart.get('investment_interpretation')))}</span>
+              <span class="chart-observation">{_text(replace_english_grade_labels(chart.get('chart_observation') or ''))}</span>
+              <span class="chart-interpretation">{_text(replace_english_grade_labels(chart.get('investment_interpretation') or ''))}</span>
             </figcaption>
           </figure>"""
-        for chart in charts
-    )
+
+
+def _render_report_charts(charts: list[dict[str, Any]]) -> str:
+    """Render charts that no section claimed as a closing block in the main column."""
+
+    if not charts:
+        return ""
+    figures = "\n".join(_render_chart_figure(chart) for chart in charts)
     return f"""
         <section class="report-chart-section">
           <h1>주요 차트</h1>
@@ -257,6 +364,7 @@ def _render_section(
     *,
     location: str,
     metadata: dict[str, Any],
+    charts: list[dict[str, Any]] | None = None,
 ) -> str:
     section_payload = _dict(_dict(report_payload.get("sections")).get(section["key"]))
     if section["key"] == "data_limits" and not has_data_limit_content(report_payload):
@@ -275,10 +383,17 @@ def _render_section(
     display_title = section.get("display_title") or section["title"]
     if section["key"] == "catalysts_execution":
         display_title = f"향후 {metadata.get('investment_horizon') or ''} 전망"
+    chart_html = ""
+    if charts:
+        figures = "\n".join(_render_chart_figure(chart) for chart in charts)
+        chart_html = f"""
+      <div class="section-charts">
+{figures}
+      </div>"""
     return f"""
     <section id="{section["id"]}" class="{section_class}">
-      <h1>{index}. {_text(display_title)}</h1>
-{items}
+      <h1><span class="section-number">{index}.</span> {_text(display_title)}</h1>
+{items}{chart_html}
     </section>
 """
 
@@ -354,20 +469,29 @@ def _render_table(value: Any, *, item_key: str = "") -> str:
         for row in rows
     )
     column_group = ""
-    if item_key == "evidence_table":
-        column_group = """
-        <colgroup class="key-evidence-columns">
-          <col class="evidence-axis-column">
-          <col class="evidence-observation-column">
-          <col class="evidence-interpretation-column">
-          <col class="evidence-impact-column">
-        </colgroup>"""
-    elif item_key == "risk_monitoring_table":
-        column_group = """
-        <colgroup class="risk-monitoring-columns">
-          <col class="risk-title-column">
-          <col class="risk-current-column">
-          <col class="risk-monitoring-column">
+    column_classes = {
+        "evidence_table": (
+            "key-evidence-columns",
+            (
+                "evidence-axis-column",
+                "evidence-observation-column",
+                "evidence-interpretation-column",
+                "evidence-impact-column",
+            ),
+        ),
+        "risk_monitoring_table": (
+            "risk-monitoring-columns",
+            ("risk-title-column", "risk-current-column", "risk-monitoring-column"),
+        ),
+    }.get(item_key)
+    if column_classes:
+        group_class, col_classes = column_classes
+        # One <col> per rendered column so fixed widths match the real table.
+        cols = "".join(
+            f"\n          <col class=\"{name}\">" for name in col_classes[: len(columns)]
+        )
+        column_group = f"""
+        <colgroup class="{group_class}">{cols}
         </colgroup>"""
     return f"""
       <table>{column_group}
@@ -397,7 +521,7 @@ def _render_table_row(row: Any, columns: list[str], *, item_key: str = "") -> st
     for index, cell in enumerate(cells):
         display_cell = replace_english_grade_labels(cell)
         if item_key == "evidence_table" and index == 1:
-            rendered_cells.append(f'<td class="evidence-facts-cell">{_inline(display_cell)}</td>')
+            rendered_cells.append(f'<td class="evidence-facts-cell">{_render_fact_list(display_cell)}</td>')
         elif item_key == "evidence_table" and index == 3:
             effect_class = {
                 "긍정 요인": "impact-positive",
@@ -417,6 +541,46 @@ def _render_table_row(row: Any, columns: list[str], *, item_key: str = "") -> st
             rendered_cells.append(f"<td>{_inline(display_cell)}</td>")
     cell_html = "".join(rendered_cells)
     return f"          <tr>{cell_html}</tr>"
+
+
+def _render_fact_list(value: Any) -> str:
+    """Show one confirmed fact per line with a muted label and its value."""
+
+    lines = [line.strip() for line in str(value).splitlines() if line.strip()]
+    if not lines:
+        return _inline(value)
+    items = []
+    for line in lines:
+        label, value_text = _split_fact_label(line)
+        label_html = f'<span class="fact-label">{_inline(label)}</span> ' if label else ""
+        items.append(f"<li>{label_html}<span class=\"fact-value\">{_render_fact_value(value_text)}</span></li>")
+    return f'<ul class="fact-list">{"".join(items)}</ul>'
+
+
+def _split_fact_label(line: str) -> tuple[str, str]:
+    label, separator, rest = line.partition(": ")
+    if separator and rest.strip() and 0 < len(label) <= 40 and not re.search(r"[.。]$", label):
+        return label.strip(), rest.strip()
+    return "", line
+
+
+def _render_fact_value(value: str) -> str:
+    """Keep compound values on one line, muting the label of each "label: value" part."""
+
+    parts = value.split(" · ")
+    if len(parts) == 1:
+        return _inline(value)
+    rendered = []
+    for part in parts:
+        label, text = _split_fact_label(part)
+        # Short "label value" pairs stay unbroken; longer ones may wrap inside the cell.
+        part_class = "fact-part fact-part-short" if len(label) + len(text) <= 18 else "fact-part"
+        rendered.append(
+            f'<span class="{part_class}"><span class="fact-sublabel">{_inline(label)}</span> {_inline(text)}</span>'
+            if label
+            else f'<span class="{part_class}">{_inline(text)}</span>'
+        )
+    return '<span class="fact-sep"> · </span>'.join(rendered)
 
 
 def _table_cell(row: dict[str, Any], column: str) -> Any:
@@ -463,13 +627,16 @@ def _text(value: Any) -> str:
 
 def _css() -> str:
     return """    :root {
-      --text: #111827;
-      --muted: #4b5563;
-      --line: #9ca3af;
-      --ink: #020617;
-      --panel: #f8fafc;
-      --blue: #356dff;
-      --red: #e15b64;
+      --ink: #111827;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --accent: #1f3a5f;
+      --accent-soft: #eef2f7;
+      --buy: #c62828;
+      --hold: #6b7280;
+      --sell: #1565c0;
+      --paper: #ffffff;
+      --desk: #e5e7eb;
     }
     @page {
       size: A4;
@@ -480,171 +647,274 @@ def _css() -> str:
       width: 210mm;
       min-height: 297mm;
       margin: 0 auto;
-      background: #e5e7eb;
+      background: var(--desk);
     }
     body {
       margin: 0;
-      font-family: Arial, "Noto Sans KR", "Noto Sans CJK KR", "Apple SD Gothic Neo", sans-serif;
-      color: var(--text);
-      font-size: 8.2pt;
-      line-height: 1.23;
-      background: #e5e7eb;
+      font-family: "Pretendard", "Noto Sans KR", "Noto Sans CJK KR", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+      color: var(--ink);
+      font-size: 9.5pt;
+      line-height: 1.6;
+      background: var(--desk);
       word-break: keep-all;
+      overflow-wrap: break-word;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
     .a4-sheet {
       width: 210mm;
       min-height: 297mm;
       margin: 0 auto;
-      padding: 6mm 7mm;
+      padding: 8mm 7mm 6mm;
       position: relative;
-      background: #ffffff;
+      background: var(--paper);
       overflow: visible;
+    }
+    .document-header {
+      margin: 0 0 5mm;
+      padding: 3mm 4mm 3.5mm;
+      border-top: 3px solid var(--accent);
+      background: var(--accent-soft);
+    }
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 4mm;
+      margin: 0 0 1.5mm;
+      color: var(--muted);
+      font-size: 8pt;
+      line-height: 1.3;
+    }
+    .header-top p {
+      margin: 0;
+    }
+    .report-kicker {
+      color: var(--accent);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .header-date span {
+      margin-right: 1mm;
+    }
+    .header-main {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 6mm;
+    }
+    .header-title {
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .report-name {
+      margin: 0 0 1.5mm;
+      color: var(--ink);
+      font-size: 20pt;
+      line-height: 1.15;
+      font-weight: 700;
+    }
+    .stock-code {
+      margin-left: 2.5mm;
+      color: var(--muted);
+      font-size: 10pt;
+      font-weight: 400;
+      font-variant-numeric: tabular-nums;
+    }
+    .document-header h1 {
+      margin: 0;
+      padding: 0;
+      border: 0;
+      color: var(--accent);
+      font-size: 12pt;
+      line-height: 1.45;
+      font-weight: 600;
+    }
+    .opinion-badge {
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-width: 24mm;
+      padding: 2mm 3mm;
+      border-radius: 2mm;
+      color: #ffffff;
+      text-align: center;
+      line-height: 1.2;
+    }
+    .opinion-buy { background: var(--buy); }
+    .opinion-hold { background: var(--hold); }
+    .opinion-sell { background: var(--sell); }
+    .badge-caption,
+    .badge-horizon {
+      font-size: 7.5pt;
+      opacity: 0.9;
+    }
+    .opinion-badge .investment-opinion {
+      margin: 0.6mm 0;
+      color: #ffffff;
+      font-size: 15pt;
+      font-weight: 700;
+      line-height: 1.1;
     }
     .paper-grid {
       display: grid;
       grid-template-columns: minmax(0, 145mm) 44mm;
       column-gap: 7mm;
       align-items: start;
-      min-height: 281.5mm;
     }
     .main-column,
-    .visual-sidebar {
+    .visual-sidebar,
+    .full-width-flow {
       min-width: 0;
     }
+    .main-column {
+      grid-column: 1;
+      grid-row: 1;
+    }
+    .visual-sidebar {
+      grid-column: 2;
+      grid-row: 1;
+    }
+    .full-width-flow {
+      grid-column: 1 / -1;
+      grid-row: 2;
+    }
     .report-section {
-      margin: 0 0 2mm;
+      margin: 0 0 5mm;
       break-inside: avoid;
       page-break-inside: avoid;
     }
-    .document-header {
-      margin: 0 0 2.6mm;
-      padding: 0;
-    }
-    .report-name {
-      margin: 0 0 1.2mm;
-      color: var(--ink);
-      font-size: 12.6pt;
-      line-height: 1.08;
-      letter-spacing: 0;
-      font-weight: 800;
-    }
     h1 {
-      margin: 0 0 1.2mm;
+      margin: 0 0 2mm;
       color: var(--ink);
-      font-size: 10pt;
-      line-height: 1.1;
-      letter-spacing: 0;
-      font-weight: 800;
-    }
-    .main-section h1 {
-      padding-bottom: 0.8mm;
-      border-bottom: 1pt solid var(--ink);
-    }
-    h2 {
-      margin: 0 0 0.7mm;
-      color: var(--muted);
-      font-size: 6.6pt;
-      line-height: 1.1;
-      letter-spacing: 0;
+      font-size: 12pt;
+      line-height: 1.3;
       font-weight: 700;
     }
-    .report-section > h2 {
-      display: block;
+    .main-section > h1,
+    .report-chart-section > h1 {
+      padding: 0.3mm 0 0.3mm 2.2mm;
+      border-left: 3px solid var(--accent);
+      break-after: avoid;
+      page-break-after: avoid;
+    }
+    .section-number {
+      color: var(--accent);
+    }
+    h2 {
+      margin: 0 0 1.2mm;
+      color: var(--muted);
+      font-size: 8pt;
+      line-height: 1.3;
+      font-weight: 600;
+      break-after: avoid;
+      page-break-after: avoid;
     }
     p {
-      margin: 0 0 1.4mm;
-      text-align: justify;
+      margin: 0 0 0.7em;
+      text-align: left;
     }
     ul {
-      margin: 0 0 1.8mm;
-      padding-left: 3.6mm;
+      margin: 0 0 0.7em;
+      padding-left: 4mm;
     }
     li {
-      margin: 0 0 0.9mm;
+      margin: 0 0 0.3em;
     }
     strong {
       color: var(--ink);
-      font-weight: 800;
-    }
-    .meta-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 1.2mm;
-    }
-    .meta-grid div {
-      padding: 0;
-      border: 0;
-      background: transparent;
-    }
-    .meta-grid span {
-      display: inline;
-      color: var(--muted);
-      font-size: 6.1pt;
-      line-height: 1.05;
-      text-transform: uppercase;
-    }
-    .meta-grid span::after {
-      content: ": ";
+      font-weight: 700;
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      margin: 0.8mm 0 2mm;
-      background: #ffffff;
-      font-size: 5.8pt;
-      line-height: 1.18;
+      margin: 1mm 0 2mm;
+      background: var(--paper);
+      font-size: 7.6pt;
+      line-height: 1.45;
       table-layout: fixed;
-      word-break: break-word;
-      border-top: 1.2pt solid var(--ink);
-      border-bottom: 1.2pt solid var(--ink);
+      word-break: keep-all;
+      overflow-wrap: break-word;
+      font-variant-numeric: tabular-nums;
+      border-top: 1.5px solid var(--accent);
+      border-bottom: 1px solid var(--line);
     }
     th,
     td {
       border: 0;
-      border-bottom: 0.35pt solid #d1d5db;
-      padding: 0.62mm 0.7mm;
+      border-bottom: 1px solid var(--line);
+      padding: 1.5mm 2mm;
       vertical-align: top;
       text-align: left;
     }
     th {
-      background: #ffffff;
-      color: var(--ink);
-      font-weight: 800;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 700;
+    }
+    tr {
+      break-inside: avoid;
+      page-break-inside: avoid;
     }
     .key-evidence-columns .evidence-axis-column {
-      width: 16%;
+      width: 17%;
     }
     .key-evidence-columns .evidence-observation-column {
-      width: 42%;
+      width: 52%;
     }
     .key-evidence-columns .evidence-interpretation-column {
-      width: 32%;
+      width: 31%;
     }
     .key-evidence-columns .evidence-impact-column {
-      width: 10%;
+      width: 12%;
     }
     .evidence-impact-cell {
       text-align: center;
     }
-    .evidence-facts-cell {
-      white-space: pre-line;
+    .fact-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .fact-list li {
+      margin: 0 0 0.6mm;
+    }
+    .fact-list li:last-child {
+      margin-bottom: 0;
+    }
+    .fact-label,
+    .fact-sublabel {
+      color: var(--muted);
+    }
+    .fact-label {
+      margin-right: 0.6mm;
+    }
+    .fact-part-short {
+      white-space: nowrap;
+    }
+    .fact-sep {
+      color: #c4c9d1;
+    }
+    .fact-value {
+      font-variant-numeric: tabular-nums;
     }
     .impact-badge {
       display: inline-block;
       min-width: 12mm;
-      padding: 0.45mm 0.6mm;
+      padding: 0.45mm 0.8mm;
       border-radius: 2px;
-      font-weight: 800;
-      line-height: 1.05;
+      font-weight: 700;
+      line-height: 1.2;
       text-align: center;
     }
     .impact-positive {
-      color: #166534;
-      background: #dcfce7;
+      color: var(--buy);
+      background: #fdecea;
     }
     .impact-negative {
-      color: #991b1b;
-      background: #fee2e2;
+      color: var(--sell);
+      background: #e8f0fb;
     }
     .impact-mixed {
       color: #854d0e;
@@ -652,14 +922,14 @@ def _css() -> str:
     }
     .impact-neutral,
     .impact-reference {
-      color: #374151;
+      color: var(--muted);
       background: #f3f4f6;
     }
     .risk-monitoring-columns .risk-title-column {
-      width: 18%;
+      width: 20%;
     }
     .risk-monitoring-columns .risk-current-column {
-      width: 47%;
+      width: 45%;
     }
     .risk-monitoring-columns .risk-monitoring-column {
       width: 35%;
@@ -671,144 +941,110 @@ def _css() -> str:
     .report-disclaimer {
       position: static;
       margin: 2mm 0 0;
-      color: #6b7280;
-      font-size: 4.4pt;
+      color: var(--muted);
+      font-size: 6pt;
       font-weight: 400;
-      line-height: 1.2;
+      line-height: 1.35;
       text-align: center;
       white-space: normal;
       word-break: keep-all;
     }
-    .sidebar-summary {
-      margin: 0 0 3mm;
-      padding-bottom: 1.2mm;
-      border-bottom: 1.5pt solid var(--ink);
-    }
-    .sidebar-brand {
-      margin: 0 0 1mm;
-      color: var(--ink);
-      font-size: 9.2pt;
-      line-height: 1.1;
-      font-weight: 800;
-    }
-    .sidebar-summary dl {
-      margin: 0;
-    }
-    .sidebar-summary div {
-      display: grid;
-      grid-template-columns: 19mm minmax(0, 1fr);
-      gap: 1mm;
-      margin-bottom: 0.65mm;
-      font-size: 6.2pt;
-      line-height: 1.15;
-    }
-    .sidebar-summary dt {
-      color: var(--muted);
-      font-weight: 700;
-    }
-    .sidebar-summary dd {
-      margin: 0;
-      color: var(--ink);
-      font-weight: 800;
-      text-align: right;
-    }
     .sidebar-panel {
       margin: 0 0 3mm;
+      padding: 2.5mm 2.8mm 2mm;
+      border-top: 3px solid var(--accent);
+      background: var(--accent-soft);
       break-inside: avoid;
     }
     .sidebar-panel h2 {
       display: block;
-      margin: 0 0 1.2mm;
-      padding-bottom: 0.6mm;
-      border-bottom: 1.2pt solid var(--ink);
-      color: var(--ink);
-      font-size: 9pt;
-      font-weight: 800;
-      line-height: 1.1;
+      margin: 0 0 0.6mm;
+      color: var(--accent);
+      font-size: 10pt;
+      font-weight: 700;
+      line-height: 1.2;
       text-align: left;
+    }
+    .panel-note {
+      margin: 0 0 1.8mm;
+      color: var(--muted);
+      font-size: 6.8pt;
+      line-height: 1.3;
+    }
+    .metric-group {
+      margin: 0 0 2mm;
+    }
+    .metric-group:last-child {
+      margin-bottom: 0;
+    }
+    .metric-group h3 {
+      margin: 0 0 0.8mm;
+      padding-bottom: 0.5mm;
+      border-bottom: 1px solid #d5dde8;
+      color: var(--muted);
+      font-size: 7pt;
+      font-weight: 600;
+      line-height: 1.2;
     }
     .key-data-panel dl {
       margin: 0;
     }
-    .key-data-panel div {
+    .key-data-panel dl div {
       display: grid;
-      grid-template-columns: 24mm minmax(0, 1fr);
-      gap: 1mm;
-      margin-bottom: 0.85mm;
-      font-size: 6.4pt;
-      line-height: 1.15;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: baseline;
+      gap: 1.5mm;
+      padding: 0.55mm 0;
+      font-size: 7.6pt;
+      line-height: 1.3;
     }
     .key-data-panel dt {
-      color: var(--muted);
-      font-weight: 700;
+      color: var(--ink);
+      font-weight: 400;
     }
     .key-data-panel dd {
       margin: 0;
       color: var(--ink);
-      font-weight: 800;
+      font-weight: 700;
       text-align: right;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
     }
-    .signal-group {
-      margin: 0 0 2mm;
+    .key-data-panel dd.value-up {
+      color: var(--buy);
     }
-    .signal-group h3 {
-      margin: 0 0 0.8mm;
-      color: var(--muted);
-      font-size: 6.4pt;
-      line-height: 1.1;
+    .key-data-panel dd.value-down {
+      color: var(--sell);
     }
-    .signal-group ul {
-      margin: 0;
-      padding: 0;
-      list-style: none;
-    }
-    .signal-group li {
-      margin: 0 0 0.65mm;
-      padding-left: 2.2mm;
-      position: relative;
-      font-size: 6.4pt;
-      line-height: 1.15;
-    }
-    .signal-group li::before {
-      content: "";
-      position: absolute;
-      left: 0;
-      top: 0.45em;
-      width: 1.1mm;
-      height: 1.1mm;
-      background: var(--ink);
+    .section-charts {
+      margin: 2.5mm 0 0;
     }
     .report-chart-section {
-      margin: 2.5mm 0 0;
-      break-inside: avoid;
-      page-break-inside: avoid;
-    }
-    .report-chart-section > h1 {
-      margin-bottom: 1.5mm;
-      padding-bottom: 0.8mm;
-      border-bottom: 1pt solid var(--ink);
-    }
-    .report-chart-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 3mm;
-      align-items: start;
+      margin: 0 0 5mm;
     }
     .report-chart {
-      margin: 0;
+      max-width: 150mm;
+      margin: 0 auto 3mm;
       min-width: 0;
+      break-inside: avoid;
+      page-break-inside: avoid;
     }
     .report-chart img {
       display: block;
       width: 100%;
+      max-width: 100%;
       height: auto;
-      border: 0.35pt solid #d1d5db;
+      max-height: 70mm;
+      margin: 0 auto;
+      object-fit: contain;
+      border: 1px solid var(--line);
+      background: var(--paper);
     }
     .report-chart figcaption {
-      margin-top: 0.7mm;
+      margin-top: 1mm;
       color: var(--ink);
-      font-size: 6pt;
-      line-height: 1.22;
+      font-size: 7pt;
+      line-height: 1.45;
       text-align: left;
     }
     .chart-caption-title,
@@ -817,14 +1053,13 @@ def _css() -> str:
       display: block;
     }
     .chart-caption-title {
-      margin-bottom: 0.45mm;
-      font-size: 6.2pt;
-    }
-    .chart-observation {
-      color: var(--ink);
+      margin-bottom: 0.4mm;
+      color: var(--accent);
+      font-size: 7.5pt;
+      font-weight: 700;
     }
     .chart-interpretation {
-      margin-top: 0.35mm;
+      margin-top: 0.3mm;
       color: var(--muted);
     }
     @media print {
@@ -839,8 +1074,12 @@ def _css() -> str:
         min-height: 0;
         margin: 0 !important;
         padding: 0 !important;
-        background: #ffffff;
+        background: var(--paper);
         overflow: visible;
+      }
+      body {
+        font-size: 9pt;
+        line-height: 1.55;
       }
       .a4-sheet {
         width: 210mm;
@@ -848,7 +1087,7 @@ def _css() -> str:
         min-height: 594mm;
         max-height: none;
         margin: 0 !important;
-        padding: 6mm 7mm;
+        padding: 8mm 7mm 6mm;
         box-shadow: none !important;
         overflow: visible;
       }
@@ -864,27 +1103,12 @@ def _css() -> str:
         height: auto;
         overflow: visible;
       }
-      p {
-        margin-bottom: 1.2mm;
-      }
       .report-section {
-        margin-bottom: 1.8mm;
+        margin-bottom: 4mm;
       }
       #data-limits p {
-        font-size: 7.8pt;
-        line-height: 1.16;
-      }
-      .report-chart-grid {
-        grid-template-columns: 1fr;
-        gap: 4mm;
-      }
-      .report-chart img {
-        width: 100%;
-        max-height: 112mm;
-        object-fit: contain;
-      }
-      .report-chart figcaption {
-        font-size: 6pt;
+        font-size: 8.4pt;
+        line-height: 1.5;
       }
       .report-section,
       .sidebar-panel {
@@ -915,6 +1139,10 @@ def _css() -> str:
         padding: 16px;
         overflow: visible;
       }
+      .header-main {
+        flex-direction: column;
+        gap: 3mm;
+      }
       .paper-grid {
         display: block;
         height: auto;
@@ -929,11 +1157,5 @@ def _css() -> str:
         position: static;
         margin-top: 18px;
         white-space: normal;
-      }
-      .meta-grid {
-        grid-template-columns: 1fr;
-      }
-      .report-chart-grid {
-        grid-template-columns: 1fr;
       }
     }"""

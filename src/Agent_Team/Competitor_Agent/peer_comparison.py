@@ -269,7 +269,7 @@ def _build_dataset_payload(
         "comparison_limits": [
             "국내 비교군은 현재 확보된 동일 기준일 국내 비교 대상만 포함한다.",
             "글로벌 peer 비교는 현재 데이터 범위에 없어 생성하지 않는다.",
-            "기준일 계산 P/E, P/B, P/S는 동일 기준일끼리 비교하며 직접 YFinance EV 배수는 제공자 표시일을 별도로 유지한다.",
+            "기준일 계산 P/E, P/B, P/S, P/영업이익은 동일 기준일끼리 비교하며 직접 YFinance EV 배수는 제공자 표시일을 별도로 유지한다.",
             "완전한 업종 평균 비교는 업종 전체 표본이 없어 생성하지 않는다.",
             "누적 기간과 연간 기준이 섞일 수 있어 기간 기준을 확인한 뒤 해석해야 한다.",
         ],
@@ -322,6 +322,7 @@ def _valuation_metrics(report: dict[str, Any]) -> dict[str, Any]:
         "trailing_pe": calculated_value("trailing_pe"),
         "price_to_book": calculated_value("price_to_book"),
         "price_to_sales": calculated_value("price_to_sales"),
+        "price_to_operating_profit": calculated_value("price_to_operating_profit"),
         "direct_valuation_date": direct_latest.get("valuation_date"),
         "provider_values_basis": "reference_only_not_point_in_time_verified",
         "enterprise_value_100m_krw": (

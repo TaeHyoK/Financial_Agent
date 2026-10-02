@@ -676,7 +676,8 @@ def _css() -> str:
       font-weight: 400;
       line-height: 1.2;
       text-align: center;
-      white-space: nowrap;
+      white-space: normal;
+      word-break: keep-all;
     }
     .sidebar-summary {
       margin: 0 0 3mm;
@@ -843,7 +844,7 @@ def _css() -> str:
       }
       .a4-sheet {
         width: 210mm;
-        height: 594mm;
+        height: auto;
         min-height: 594mm;
         max-height: none;
         margin: 0 !important;
@@ -891,12 +892,9 @@ def _css() -> str:
         page-break-inside: auto;
       }
       .report-disclaimer {
-        position: absolute;
-        right: 7mm;
-        bottom: 2.2mm;
-        left: 7mm;
-        margin: 0;
-        white-space: nowrap;
+        position: static;
+        margin: 2mm 0 0;
+        white-space: normal;
       }
     }
     @media screen {

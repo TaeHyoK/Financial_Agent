@@ -1612,6 +1612,7 @@ _READER_METRIC_LABELS = {
     "trailing_pe": "P/E",
     "price_to_sales": "P/S",
     "price_to_book": "P/B",
+    "price_to_operating_profit": "P/영업이익",
     "enterprise_value_to_revenue": "EV/매출",
     "enterprise_value_to_ebitda": "EV/EBITDA",
 }

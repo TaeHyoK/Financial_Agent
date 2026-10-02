@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from matplotlib import font_manager
 import numpy as np
 import pandas as pd
-from matplotlib.ticker import FuncFormatter
+from matplotlib.ticker import FuncFormatter, MaxNLocator
 
 
 logger = logging.getLogger(__name__)
@@ -36,6 +36,111 @@ def _configure_matplotlib_fonts() -> None:
 
 
 _configure_matplotlib_fonts()
+
+
+# Report styling. Figures are drawn at their final printed size (about 150mm wide,
+# 16:7) so the point sizes below are the sizes readers see on the page.
+FIGURE_WIDTH_IN = 150 / 25.4
+FIGURE_SIZE = (FIGURE_WIDTH_IN, FIGURE_WIDTH_IN * 7 / 16)
+PNG_DPI = 300
+TITLE_SIZE = 11
+PANEL_TITLE_SIZE = 9.5
+LABEL_SIZE = 9
+TICK_SIZE = 8
+LEGEND_SIZE = 8
+VALUE_LABEL_SIZE = 7
+NOTE_SIZE = 7
+
+INK = "#111827"
+MUTED = "#6b7280"
+GRID = "#eceef1"
+SPINE = "#d1d5db"
+ACCENT = "#1f3a5f"  # target series
+BENCHMARK = "#9ca3af"  # market or benchmark series
+SECOND = "#5b9e96"  # muted teal, lighter than the accent in grayscale
+THIRD_LINE = "#b5833f"  # muted ochre, drawn dashed
+THIRD_BAR = "#c3ccd6"  # light slate
+OUTPERFORM_FILL = "#fde2e2"
+UNDERPERFORM_FILL = "#e3ecfa"
+NEGATIVE_BAR = "#7aa3d4"
+MISSING_BAR = "#d1d5db"
+
+
+def _new_figure(nrows: int = 1, ncols: int = 1, **kwargs):
+    """Create a report-sized figure whose layout engine keeps labels inside the canvas."""
+
+    fig, axes = plt.subplots(nrows, ncols, figsize=FIGURE_SIZE, layout="constrained", **kwargs)
+    fig.patch.set_facecolor("white")
+    fig.get_layout_engine().set(w_pad=0.04, h_pad=0.04, wspace=0.06, hspace=0.06)
+    return fig, axes
+
+
+def _set_title(ax, text: str, *, size: float = TITLE_SIZE) -> None:
+    ax.set_title(text, fontsize=size, loc="left", color=INK, pad=6)
+
+
+def _legend_above(ax, ncol: int, *, reverse: bool = False) -> None:
+    """Place the legend above the plot, right-aligned on the title row."""
+
+    handles, labels = ax.get_legend_handles_labels()
+    if reverse:
+        handles, labels = handles[::-1], labels[::-1]
+    ax.legend(
+        handles,
+        labels,
+        loc="lower right",
+        bbox_to_anchor=(1.0, 1.0),
+        ncol=ncol,
+        frameon=False,
+        fontsize=LEGEND_SIZE,
+        borderaxespad=0.3,
+        handlelength=1.6,
+        columnspacing=1.2,
+    )
+
+
+def _legend_below(ax, ncol: int) -> None:
+    """Place the legend under the tick labels for narrow side-by-side panels."""
+
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.12),
+        ncol=ncol,
+        frameon=False,
+        fontsize=LEGEND_SIZE,
+        borderaxespad=0.0,
+        handlelength=1.2,
+        columnspacing=1.0,
+    )
+
+
+def _end_label(ax, x, y, text: str, color: str, dy: float) -> None:
+    """Label the last point of a series just to its right."""
+
+    ax.annotate(
+        text,
+        xy=(x, y),
+        xytext=(3, dy),
+        textcoords="offset points",
+        ha="left",
+        va="center",
+        fontsize=VALUE_LABEL_SIZE,
+        color=color,
+    )
+
+
+def _reserve_end_label_space(ax, dates: pd.Series, share: float) -> None:
+    """Extend the date axis so end labels stay inside the plot area."""
+
+    start, end = pd.to_datetime(dates).min(), pd.to_datetime(dates).max()
+    pad = (end - start) * 0.01
+    ax.set_xlim(start - pad, end + (end - start) * share)
+
+
+def _date_axis(ax, dates: pd.Series) -> None:
+    span_days = (pd.to_datetime(dates).max() - pd.to_datetime(dates).min()).days
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=4, maxticks=8))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%y.%m" if span_days > 120 else "%m.%d"))
 
 
 def build_stock_price_ma_volume_chart(
@@ -63,48 +168,51 @@ def build_stock_price_ma_volume_chart(
     if chart_df.empty:
         raise ValueError("Market chart data is empty after excluding rows without stock_close.")
 
-    fig, axes = plt.subplots(
+    fig, axes = _new_figure(
         nrows=2,
         ncols=1,
-        figsize=(12, 6),
         sharex=True,
-        gridspec_kw={"height_ratios": [2.5, 1.0]},
+        gridspec_kw={"height_ratios": [2.6, 1.0]},
     )
-    fig.patch.set_facecolor("white")
 
     title_company = _safe_title_company(company_name)
     price_ax, volume_ax = axes
-    price_ax.plot(chart_df["date"], chart_df["stock_close"], color="#1f5a99", linewidth=2.0, label="종가")
-    price_ax.plot(chart_df["date"], chart_df["derived_ma20"], color="#2b8a3e", linewidth=1.5, label="20일 이동평균")
-    price_ax.plot(chart_df["date"], chart_df["derived_ma60"], color="#b7791f", linewidth=1.5, label="60일 이동평균")
-    latest = chart_df.iloc[-1]
-    price_ax.annotate(
-        f"{latest['stock_close']:,.0f}원",
-        xy=(latest["date"], latest["stock_close"]),
-        xytext=(-85, 18),
-        textcoords="offset points",
-        arrowprops={"arrowstyle": "->", "color": "#4a5568", "lw": 0.8},
-        fontsize=9,
-        color="#1a202c",
+    price_ax.plot(chart_df["date"], chart_df["stock_close"], color=ACCENT, linewidth=1.4, label="종가")
+    price_ax.plot(chart_df["date"], chart_df["derived_ma20"], color=SECOND, linewidth=1.0, label="20일 이동평균")
+    price_ax.plot(
+        chart_df["date"],
+        chart_df["derived_ma60"],
+        color=THIRD_LINE,
+        linewidth=1.0,
+        linestyle=(0, (4, 2)),
+        label="60일 이동평균",
     )
-    price_ax.set_title(f"{title_company} 주가와 이동평균", fontsize=12, loc="left")
-    price_ax.set_ylabel("주가(원)")
+    latest = chart_df.iloc[-1]
+    _end_label(price_ax, latest["date"], latest["stock_close"], f"{latest['stock_close']:,.0f}원", ACCENT, 0)
+    _reserve_end_label_space(price_ax, chart_df["date"], 0.11)
+    _set_title(price_ax, f"{title_company} 주가와 이동평균")
+    price_ax.set_ylabel("주가(원)", fontsize=LABEL_SIZE)
     price_ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:,.0f}"))
-    price_ax.legend(loc="upper left", ncol=3, frameon=False)
+    _legend_above(price_ax, ncol=3)
     _style_axis(price_ax)
 
-    volume_ax.plot(chart_df["date"], chart_df["stock_volume_ratio_20"], color="#5f6368", linewidth=1.5, label="20일 평균 대비 거래량")
-    volume_ax.axhline(1.0, color="#a0aec0", linewidth=1.0, linestyle="--")
-    volume_ax.set_title("20일 평균 대비 거래량", fontsize=11, loc="left")
-    volume_ax.set_ylabel("거래량 배수")
+    volume_ax.plot(chart_df["date"], chart_df["stock_volume_ratio_20"], color=BENCHMARK, linewidth=0.9, label="20일 평균 대비 거래량")
+    volume_ax.axhline(1.0, color=MUTED, linewidth=0.6, linestyle="--")
+    volume_ax.text(
+        0.005,
+        0.97,
+        "20일 평균 대비 거래량",
+        transform=volume_ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=TICK_SIZE,
+        color=MUTED,
+        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.8, "pad": 0.5},
+    )
+    volume_ax.set_ylabel("배수", fontsize=LABEL_SIZE)
     _style_axis(volume_ax)
+    _date_axis(volume_ax, chart_df["date"])
 
-    locator = mdates.AutoDateLocator(minticks=6, maxticks=10)
-    volume_ax.xaxis.set_major_locator(locator)
-    volume_ax.xaxis.set_major_formatter(mdates.DateFormatter("%m.%d"))
-    volume_ax.set_xlabel("거래일")
-
-    fig.tight_layout()
     _save_figure(fig, output_pdf, output_png)
     plt.close(fig)
     logger.info("Wrote market chart: %s, %s", output_pdf, output_png)
@@ -173,37 +281,35 @@ def build_fundamental_margin_trend_chart(
     if chart_df.empty:
         raise ValueError("Fundamental margin chart data is empty.")
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    fig.patch.set_facecolor("white")
+    fig, ax = _new_figure()
     x_positions = np.arange(len(chart_df))
-    width = 0.34
+    width = 0.3
     contribution_bars = ax.bar(
         x_positions - width / 2,
         chart_df["contribution_margin_pct"],
         width,
-        color="#1f5a99",
+        color=ACCENT,
         label="공헌이익률",
     )
     sga_bars = ax.bar(
         x_positions + width / 2,
         chart_df["sga_margin_pct"],
         width,
-        color="#b7791f",
+        color=SECOND,
         label="판매관리비율",
     )
     _label_bars(ax, contribution_bars, suffix="%")
     _label_bars(ax, sga_bars, suffix="%")
 
     title_company = _safe_title_company(company_name)
-    ax.set_title(f"{title_company} 동일 기간 수익성 비교", fontsize=12, loc="left")
+    _set_title(ax, f"{title_company} 동일 기간 수익성 비교")
     ax.set_xticks(x_positions)
     ax.set_xticklabels(chart_df["period_label"].tolist())
-    ax.set_ylabel("비율(%)")
+    ax.set_ylabel("비율(%)", fontsize=LABEL_SIZE)
     ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:.0f}%"))
-    ax.legend(loc="best", frameon=False)
+    _legend_above(ax, ncol=2)
     _style_axis(ax)
-    fig.text(0.01, 0.01, _period_comparison_note(chart_df), fontsize=9, color="#4a5568")
-    fig.tight_layout(rect=(0, 0.04, 1, 1))
+    _add_period_note(fig, chart_df)
     _save_figure(fig, output_pdf, output_png)
     plt.close(fig)
     logger.info("Wrote fundamental margin chart: %s, %s", output_pdf, output_png)
@@ -258,18 +364,15 @@ def build_indexed_stock_vs_kospi_chart(
     chart_df["relative_gap"] = chart_df["stock_index"] - chart_df["kospi_index"]
     latest = chart_df.iloc[-1]
 
-    fig, ax = plt.subplots(figsize=(11, 6))
-    fig.patch.set_facecolor("white")
+    fig, ax = _new_figure()
     title_company = _safe_title_company(company_name)
-    ax.plot(chart_df["date"], chart_df["stock_index"], color="#1f5a99", linewidth=2.2, label=title_company)
-    ax.plot(chart_df["date"], chart_df["kospi_index"], color="#5f6368", linewidth=1.8, label="KOSPI")
     ax.fill_between(
         chart_df["date"],
         chart_df["stock_index"],
         chart_df["kospi_index"],
         where=chart_df["relative_gap"] >= 0,
-        color="#2b8a3e",
-        alpha=0.10,
+        color=OUTPERFORM_FILL,
+        linewidth=0,
         interpolate=True,
     )
     ax.fill_between(
@@ -277,37 +380,23 @@ def build_indexed_stock_vs_kospi_chart(
         chart_df["stock_index"],
         chart_df["kospi_index"],
         where=chart_df["relative_gap"] < 0,
-        color="#c2410c",
-        alpha=0.10,
+        color=UNDERPERFORM_FILL,
+        linewidth=0,
         interpolate=True,
     )
-    ax.axhline(100.0, color="#a0aec0", linewidth=1.0, linestyle="--")
-    ax.annotate(
-        f"{latest['stock_index']:.1f}",
-        xy=(latest["date"], latest["stock_index"]),
-        xytext=(-48, 18),
-        textcoords="offset points",
-        arrowprops={"arrowstyle": "->", "color": "#1f5a99", "lw": 0.8},
-        fontsize=9,
-        color="#1f5a99",
-    )
-    ax.annotate(
-        f"KOSPI {latest['kospi_index']:.1f}",
-        xy=(latest["date"], latest["kospi_index"]),
-        xytext=(-78, -24),
-        textcoords="offset points",
-        arrowprops={"arrowstyle": "->", "color": "#5f6368", "lw": 0.8},
-        fontsize=9,
-        color="#5f6368",
-    )
-    ax.set_title(f"{title_company}와 KOSPI 지수화 성과", fontsize=12, loc="left")
-    ax.set_ylabel("지수(시작일=100)")
-    ax.legend(loc="upper left", frameon=False)
-    locator = mdates.AutoDateLocator(minticks=6, maxticks=10)
-    ax.xaxis.set_major_locator(locator)
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%m.%d"))
+    ax.axhline(100.0, color=MUTED, linewidth=0.6, linestyle="--")
+    ax.plot(chart_df["date"], chart_df["kospi_index"], color=BENCHMARK, linewidth=1.1, label="KOSPI")
+    ax.plot(chart_df["date"], chart_df["stock_index"], color=ACCENT, linewidth=1.4, label=title_company)
+    # End labels sit right of the last point; the higher series is nudged up, the lower down.
+    stock_on_top = latest["stock_index"] >= latest["kospi_index"]
+    _end_label(ax, latest["date"], latest["stock_index"], f"{latest['stock_index']:.1f}", ACCENT, 3 if stock_on_top else -3)
+    _end_label(ax, latest["date"], latest["kospi_index"], f"KOSPI {latest['kospi_index']:.1f}", MUTED, -3 if stock_on_top else 3)
+    _reserve_end_label_space(ax, chart_df["date"], 0.11)
+    _set_title(ax, f"{title_company}와 KOSPI 지수화 성과")
+    ax.set_ylabel("지수(시작일=100)", fontsize=LABEL_SIZE)
+    _legend_above(ax, ncol=2, reverse=True)
+    _date_axis(ax, chart_df["date"])
     _style_axis(ax)
-    fig.tight_layout()
     _save_figure(fig, output_pdf, output_png)
     plt.close(fig)
     logger.info("Wrote indexed stock vs KOSPI chart: %s, %s", output_pdf, output_png)
@@ -358,42 +447,40 @@ def build_peer_return_comparison_chart(
     x = np.arange(len(chart_df))
     width = 0.24
 
-    fig, axes = plt.subplots(2, 1, figsize=(11, 7), gridspec_kw={"height_ratios": [1.3, 1.0]})
-    fig.patch.set_facecolor("white")
+    fig, axes = _new_figure(1, 2, gridspec_kw={"width_ratios": [1.25, 1.0]})
     returns_ax, relative_ax = axes
 
     return_specs = [
-        ("stock_return_5d_pct", "5일", "#1f5a99", -width),
-        ("stock_return_20d_pct", "20일", "#2b8a3e", 0.0),
-        ("stock_return_60d_pct", "60일", "#b7791f", width),
+        ("stock_return_5d_pct", "5일", ACCENT, -width),
+        ("stock_return_20d_pct", "20일", SECOND, 0.0),
+        ("stock_return_60d_pct", "60일", THIRD_BAR, width),
     ]
     for column, label, color, offset in return_specs:
         bars = returns_ax.bar(x + offset, chart_df[column], width=width, label=label, color=color)
         _label_bars(returns_ax, bars)
-    returns_ax.axhline(0.0, color="#4a5568", linewidth=0.9)
-    returns_ax.set_title("대상기업과 비교기업 주가수익률", fontsize=12, loc="left")
-    returns_ax.set_ylabel("수익률(%)")
+    returns_ax.axhline(0.0, color=MUTED, linewidth=0.6)
+    _set_title(returns_ax, "대상기업과 비교기업 주가수익률", size=PANEL_TITLE_SIZE)
+    returns_ax.set_ylabel("수익률(%)", fontsize=LABEL_SIZE)
     returns_ax.set_xticks(x)
     returns_ax.set_xticklabels(chart_df["company_label"])
-    returns_ax.legend(loc="upper left", ncol=3, frameon=False)
+    _legend_below(returns_ax, ncol=3)
     _style_axis(returns_ax)
 
     relative_specs = [
-        ("stock_excess_return_20d_pct", "20일 KOSPI 초과수익률", "#0f766e", -width / 2),
-        ("stock_relative_strength_60_pct", "60일 상대강도", "#c2410c", width / 2),
+        ("stock_excess_return_20d_pct", "20일 KOSPI 초과수익률", ACCENT, -width / 2),
+        ("stock_relative_strength_60_pct", "60일 상대강도", SECOND, width / 2),
     ]
     for column, label, color, offset in relative_specs:
         bars = relative_ax.bar(x + offset, chart_df[column], width=width, label=label, color=color)
         _label_bars(relative_ax, bars)
-    relative_ax.axhline(0.0, color="#4a5568", linewidth=0.9)
-    relative_ax.set_title("시장 대비 상대성과", fontsize=11, loc="left")
-    relative_ax.set_ylabel("상대성과(%)")
+    relative_ax.axhline(0.0, color=MUTED, linewidth=0.6)
+    _set_title(relative_ax, "시장 대비 상대성과", size=PANEL_TITLE_SIZE)
+    relative_ax.set_ylabel("상대성과(%)", fontsize=LABEL_SIZE)
     relative_ax.set_xticks(x)
     relative_ax.set_xticklabels(chart_df["company_label"])
-    relative_ax.legend(loc="upper left", ncol=2, frameon=False)
+    _legend_below(relative_ax, ncol=2)
     _style_axis(relative_ax)
 
-    fig.tight_layout()
     _save_figure(fig, output_pdf, output_png)
     plt.close(fig)
     logger.info("Wrote peer return comparison chart: %s, %s", output_pdf, output_png)
@@ -456,14 +543,13 @@ def build_peer_profitability_comparison_chart(
     x = np.arange(len(chart_df))
     width = 0.34
 
-    fig, axes = plt.subplots(3, 1, figsize=(11.5, 8.2), gridspec_kw={"height_ratios": [1.1, 1.2, 1.0]})
-    fig.patch.set_facecolor("white")
+    fig, axes = _new_figure(1, 3, gridspec_kw={"width_ratios": [1.0, 1.25, 1.0]})
     revenue_ax, margin_ax, eps_ax = axes
 
-    revenue_bars = revenue_ax.bar(x, chart_df["revenue_100m"], width=0.46, color="#1f5a99", label="매출")
+    revenue_bars = revenue_ax.bar(x, chart_df["revenue_100m"], width=0.46, color=ACCENT, label="매출")
     _label_bars(revenue_ax, revenue_bars)
-    revenue_ax.set_title("대상기업과 비교기업 매출 규모", fontsize=12, loc="left")
-    revenue_ax.set_ylabel("억원")
+    _set_title(revenue_ax, "매출 규모", size=PANEL_TITLE_SIZE)
+    revenue_ax.set_ylabel("억원", fontsize=LABEL_SIZE)
     revenue_ax.set_xticks(x)
     revenue_ax.set_xticklabels(chart_df["company_label"])
     revenue_ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:,.0f}"))
@@ -474,7 +560,7 @@ def build_peer_profitability_comparison_chart(
         chart_df["contribution_margin_pct"],
         width=width,
         label="공헌이익률",
-        color="#2b8a3e",
+        color=ACCENT,
     )
     _label_bars(margin_ax, bars)
     bars = margin_ax.bar(
@@ -482,38 +568,38 @@ def build_peer_profitability_comparison_chart(
         chart_df["sga_margin_pct"],
         width=width,
         label="판매관리비율",
-        color="#b7791f",
+        color=SECOND,
     )
     _label_bars(margin_ax, bars)
-    margin_ax.set_title("수익성 구조", fontsize=11, loc="left")
-    margin_ax.set_ylabel("이익률(%)")
+    _set_title(margin_ax, "수익성 구조", size=PANEL_TITLE_SIZE)
+    margin_ax.set_ylabel("이익률(%)", fontsize=LABEL_SIZE)
     margin_ax.set_xticks(x)
     margin_ax.set_xticklabels(chart_df["company_label"])
-    margin_ax.legend(loc="upper right", frameon=False)
+    _legend_below(margin_ax, ncol=2)
     _style_axis(margin_ax)
 
-    eps_colors = ["#a0aec0" if pd.isna(value) else "#0f766e" if value >= 0 else "#c2410c" for value in chart_df["eps"]]
+    eps_colors = [MISSING_BAR if pd.isna(value) else ACCENT if value >= 0 else NEGATIVE_BAR for value in chart_df["eps"]]
     eps_bars = eps_ax.bar(x, chart_df["eps"], width=0.46, color=eps_colors, label="주당순이익")
     _label_bars(eps_ax, eps_bars)
     for index, value in enumerate(chart_df["eps"]):
         if pd.isna(value):
-            eps_ax.text(index, 0.05, "자료 없음", transform=eps_ax.get_xaxis_transform(), ha="center", fontsize=8, color="#4a5568")
-    eps_ax.axhline(0, color="#a0aec0", linewidth=1.0)
-    eps_ax.set_title("주당순이익", fontsize=11, loc="left")
-    eps_ax.set_ylabel("원")
+            eps_ax.text(index, 0.05, "자료 없음", transform=eps_ax.get_xaxis_transform(), ha="center", fontsize=VALUE_LABEL_SIZE, color=MUTED)
+    eps_ax.axhline(0, color=MUTED, linewidth=0.6)
+    _set_title(eps_ax, "주당순이익", size=PANEL_TITLE_SIZE)
+    eps_ax.set_ylabel("원", fontsize=LABEL_SIZE)
     eps_ax.set_xticks(x)
     eps_ax.set_xticklabels(chart_df["company_label"])
     eps_ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:,.0f}"))
     _style_axis(eps_ax)
 
-    fig.text(
-        0.01,
-        0.01,
+    # The report caption does not carry this scope note, so it stays in the figure.
+    fig.supxlabel(
         "주: 국내 비교기업 기준이며, 결측치는 보간하지 않았다. 해외 비교기업, 가치평가 지표, 업종 평균은 포함하지 않았다.",
-        fontsize=9,
-        color="#4a5568",
+        x=0.0,
+        ha="left",
+        fontsize=NOTE_SIZE,
+        color=MUTED,
     )
-    fig.tight_layout(rect=(0, 0.04, 1, 1))
     _save_figure(fig, output_pdf, output_png)
     plt.close(fig)
     logger.info("Wrote peer profitability comparison chart: %s, %s", output_pdf, output_png)
@@ -569,26 +655,34 @@ def build_revenue_profit_sga_trend_chart(
         raise ValueError("Revenue/profit/SG&A trend chart has no usable numeric data.")
 
     x = np.arange(len(chart_df))
-    fig, ax = plt.subplots(figsize=(10.5, 6))
-    fig.patch.set_facecolor("white")
+    fig, ax = _new_figure()
     specs = [
-        ("revenue_krw_bn", "매출", "#1f5a99"),
-        ("contribution_profit_krw_bn", "공헌이익", "#2b8a3e"),
-        ("sga_krw_bn", "판매관리비", "#b7791f"),
+        ("revenue_krw_bn", "매출", ACCENT, "-"),
+        ("contribution_profit_krw_bn", "공헌이익", SECOND, "-"),
+        ("sga_krw_bn", "판매관리비", THIRD_LINE, (0, (4, 2))),
     ]
-    for column, label, color in specs:
-        ax.plot(x, chart_df[column], linewidth=2.0, marker="o", label=label, color=color)
+    for column, label, color, linestyle in specs:
+        ax.plot(
+            x,
+            chart_df[column],
+            linewidth=1.4,
+            linestyle=linestyle,
+            marker="o",
+            markersize=3.5,
+            label=label,
+            color=color,
+        )
 
     title_company = _safe_title_company(company_name)
-    ax.set_title(f"{title_company} 매출·공헌이익·판매관리비 추이", fontsize=12, loc="left")
+    _set_title(ax, f"{title_company} 매출·공헌이익·판매관리비 추이")
     ax.set_xticks(x)
     ax.set_xticklabels(chart_df["period_label"].tolist())
-    ax.set_ylabel("십억원")
+    ax.set_xlim(-0.4, len(chart_df) - 0.6)
+    ax.set_ylabel("십억원", fontsize=LABEL_SIZE)
     ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:,.0f}"))
-    ax.legend(loc="upper left", ncol=3, frameon=False)
+    _legend_above(ax, ncol=3)
     _style_axis(ax)
-    fig.text(0.01, 0.01, _period_comparison_note(chart_df), fontsize=9, color="#4a5568")
-    fig.tight_layout(rect=(0, 0.04, 1, 1))
+    _add_period_note(fig, chart_df)
     _save_figure(fig, output_pdf, output_png)
     plt.close(fig)
     logger.info("Wrote revenue/profit/SG&A trend chart: %s, %s", output_pdf, output_png)
@@ -632,33 +726,31 @@ def build_liquidity_leverage_peer_comparison_chart(
     x = np.arange(len(chart_df))
     width = 0.34
 
-    fig, axes = plt.subplots(2, 1, figsize=(11, 7), gridspec_kw={"height_ratios": [1.0, 1.0]})
-    fig.patch.set_facecolor("white")
+    fig, axes = _new_figure(1, 2)
     liquidity_ax, leverage_ax = axes
 
-    bars = liquidity_ax.bar(x - width / 2, chart_df["current_ratio_pct"], width=width, label="유동비율", color="#1f5a99")
+    bars = liquidity_ax.bar(x - width / 2, chart_df["current_ratio_pct"], width=width, label="유동비율", color=ACCENT)
     _label_bars(liquidity_ax, bars)
-    bars = liquidity_ax.bar(x + width / 2, chart_df["cash_ratio_pct"], width=width, label="현금비율", color="#2b8a3e")
+    bars = liquidity_ax.bar(x + width / 2, chart_df["cash_ratio_pct"], width=width, label="현금비율", color=SECOND)
     _label_bars(liquidity_ax, bars)
-    liquidity_ax.set_title("대상기업과 비교기업 유동성", fontsize=12, loc="left")
-    liquidity_ax.set_ylabel("비율(%)")
+    _set_title(liquidity_ax, "대상기업과 비교기업 유동성", size=PANEL_TITLE_SIZE)
+    liquidity_ax.set_ylabel("비율(%)", fontsize=LABEL_SIZE)
     liquidity_ax.set_xticks(x)
     liquidity_ax.set_xticklabels(chart_df["company_label"])
-    liquidity_ax.legend(loc="upper center", ncol=2, frameon=False)
+    _legend_below(liquidity_ax, ncol=2)
     _style_axis(liquidity_ax)
 
-    bars = leverage_ax.bar(x - width / 2, chart_df["equity_ratio_pct"], width=width, label="자기자본비율", color="#0f766e")
+    bars = leverage_ax.bar(x - width / 2, chart_df["equity_ratio_pct"], width=width, label="자기자본비율", color=ACCENT)
     _label_bars(leverage_ax, bars)
-    bars = leverage_ax.bar(x + width / 2, chart_df["debt_to_equity_pct"], width=width, label="부채비율", color="#c2410c")
+    bars = leverage_ax.bar(x + width / 2, chart_df["debt_to_equity_pct"], width=width, label="부채비율", color=SECOND)
     _label_bars(leverage_ax, bars)
-    leverage_ax.set_title("자본구조와 레버리지", fontsize=11, loc="left")
-    leverage_ax.set_ylabel("비율(%)")
+    _set_title(leverage_ax, "자본구조와 레버리지", size=PANEL_TITLE_SIZE)
+    leverage_ax.set_ylabel("비율(%)", fontsize=LABEL_SIZE)
     leverage_ax.set_xticks(x)
     leverage_ax.set_xticklabels(chart_df["company_label"])
-    leverage_ax.legend(loc="upper center", ncol=2, frameon=False)
+    _legend_below(leverage_ax, ncol=2)
     _style_axis(leverage_ax)
 
-    fig.tight_layout()
     _save_figure(fig, output_pdf, output_png)
     plt.close(fig)
     logger.info("Wrote liquidity/leverage peer comparison chart: %s, %s", output_pdf, output_png)
@@ -745,7 +837,7 @@ def _label_bars(ax, bars, *, suffix: str = "") -> None:
         if pd.isna(height):
             continue
         va = "bottom" if height >= 0 else "top"
-        offset = 3 if height >= 0 else -3
+        offset = 2 if height >= 0 else -2
         ax.annotate(
             f"{height:.1f}{suffix}",
             xy=(bar.get_x() + bar.get_width() / 2, height),
@@ -753,23 +845,50 @@ def _label_bars(ax, bars, *, suffix: str = "") -> None:
             textcoords="offset points",
             ha="center",
             va=va,
-            fontsize=8,
-            color="#2d3748",
+            fontsize=VALUE_LABEL_SIZE,
+            color=INK,
         )
+    # Leave headroom so value labels stay inside the plot area.
+    ax.margins(y=0.12)
 
 
 def _style_axis(ax) -> None:
-    ax.grid(True, axis="y", color="#e2e8f0", linewidth=0.8)
+    ax.set_axisbelow(True)
+    # Round steps keep integer-formatted tick labels (such as "12%") truthful.
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=5, steps=[1, 2, 5, 10]))
+    ax.grid(True, axis="y", color=GRID, linewidth=0.6)
+    ax.grid(False, axis="x")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_color("#cbd5e0")
-    ax.spines["bottom"].set_color("#cbd5e0")
-    ax.tick_params(axis="both", colors="#2d3748", labelsize=9)
+    for side in ("left", "bottom"):
+        ax.spines[side].set_color(SPINE)
+        ax.spines[side].set_linewidth(0.6)
+    ax.tick_params(axis="both", colors=SPINE, labelcolor=MUTED, labelsize=TICK_SIZE, length=2.5, width=0.6)
+    ax.yaxis.label.set_color(MUTED)
+
+
+def _add_period_note(fig, chart_df: pd.DataFrame) -> None:
+    """Add the period note only when it says more than the period tick labels.
+
+    Tick labels already name the period and its cumulative or annual basis, and the
+    report caption names the comparison, so the note is kept only for mixed bases.
+    """
+
+    if _uses_single_period_basis(chart_df):
+        return
+    fig.supxlabel(_period_comparison_note(chart_df), x=0.0, ha="left", fontsize=NOTE_SIZE, color=MUTED)
+
+
+def _uses_single_period_basis(chart_df: pd.DataFrame) -> bool:
+    bases = chart_df["basis"].dropna().astype(str).unique().tolist()
+    period_types = chart_df["period_type"].dropna().astype(str).unique().tolist()
+    return bases == ["FULL_YEAR"] or (bases == ["YTD"] and len(period_types) == 1)
 
 
 def _save_figure(fig, output_pdf: Path, output_png: Path) -> None:
-    fig.savefig(output_pdf, bbox_inches="tight")
-    fig.savefig(output_png, dpi=220, bbox_inches="tight")
+    # Saved at the exact figure size so every chart keeps the same printed proportions.
+    fig.savefig(output_pdf)
+    fig.savefig(output_png, dpi=PNG_DPI)
 
 
 def _safe_title_company(company_name: str) -> str:

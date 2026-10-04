@@ -4,8 +4,10 @@ The default command is deliberately offline: it only prepares frozen requests.
 Paid API calls require the ``run`` subcommand plus two explicit confirmations.
 
 Protocol:
-    5 companies x 3 replicates x 4 Full-vs-ablation pairs
-    x 3 criteria x 2 candidate orders = 360 calls.
+    5 companies x 3 replicates x 3 Full-vs-ablation pairs
+    x 3 criteria x 2 candidate orders = 270 calls.
+
+The No-peer condition is evaluated by a separate judge, so it is not compared here.
 """
 from __future__ import annotations
 
@@ -29,12 +31,16 @@ WORKSPACE = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = WORKSPACE / "evaluation/final_report_llm_judge"
 DEFAULT_MODEL = "gpt-5.6-terra"
 DEFAULT_SEED = 20260919
-PROTOCOL_VERSION = "final_report_finrpt_reference_v1"
+PROTOCOL_VERSION = "final_report_finrpt_reference_v2"
 
 COMPANIES = ("현대건설", "두산", "BGF리테일", "아모레퍼시픽", "SK바이오팜")
 REPLICATES = ("r01", "r02", "r03")
-ABLATIONS = ("random_news", "no_subdata", "no_peer", "one_team")
+ABLATIONS = ("random_news", "no_subdata", "one_team")
 CRITERION_IDS = ("R1", "R2", "R3")
+# Each base pair is judged on every criterion in both candidate orders.
+BASE_PAIRS = len(COMPANIES) * len(REPLICATES) * len(ABLATIONS)
+PAIR_CRITERIA = BASE_PAIRS * len(CRITERION_IDS)
+EXPECTED_CALLS = PAIR_CRITERIA * 2
 AS_OF_DATES = {
     "현대건설": "2025-10-20",
     "두산": "2025-11-11",
@@ -285,11 +291,13 @@ def request_body(*, model: str, system_prompt: str, prompt: str) -> dict[str, An
 def pair_specs(seed: int) -> list[tuple[str, str, str, bool]]:
     base = [(company, replicate, ablation) for company in COMPANIES
             for replicate in REPLICATES for ablation in ABLATIONS]
-    flags = [True] * (len(base) // 2) + [False] * (len(base) // 2)
+    # An odd pair count cannot split evenly; Full-first takes the extra slot.
+    full_first_count = len(base) - len(base) // 2
+    flags = [True] * full_first_count + [False] * (len(base) // 2)
     random.Random(seed).shuffle(flags)
     specs = [(company, replicate, ablation, full_first)
-             for (company, replicate, ablation), full_first in zip(base, flags)]
-    if Counter(x[3] for x in specs) != Counter({True: 30, False: 30}):
+             for (company, replicate, ablation), full_first in zip(base, flags, strict=True)]
+    if Counter(x[3] for x in specs) != Counter({True: full_first_count, False: len(base) // 2}):
         raise AssertionError("Base A/B placement is not balanced")
     return specs
 
@@ -339,8 +347,8 @@ def build_tasks(*, model: str, seed: int) -> list[Task]:
                     "sources": {key: str(path.relative_to(WORKSPACE)) for key, path in paths.items()},
                     "source_sha256": {key: sha_file(path) for key, path in paths.items()},
                 })
-    if len(task_rows) != 360:
-        raise AssertionError(f"Expected 360 tasks, got {len(task_rows)}")
+    if len(task_rows) != EXPECTED_CALLS:
+        raise AssertionError(f"Expected {EXPECTED_CALLS} tasks, got {len(task_rows)}")
     random.Random(seed + 1).shuffle(task_rows)
     return [Task(custom_id=f"J{index:04d}", **row) for index, row in enumerate(task_rows, 1)]
 
@@ -408,9 +416,9 @@ def prepare(output: Path, *, model: str, seed: int, overwrite: bool = False) -> 
         "replicates": list(REPLICATES),
         "ablations": list(ABLATIONS),
         "criteria": list(CRITERION_IDS),
-        "base_pairs": 60,
+        "base_pairs": BASE_PAIRS,
         "orders_per_pair": 2,
-        "expected_calls": 360,
+        "expected_calls": EXPECTED_CALLS,
         "reference_policy": "one fixed masked professional analyst narrative per company; expert anchor, not ground truth",
         "verdicts": ["A", "B", "C"],
         "final_pair_rule": "same underlying candidate wins both orders; every other valid combination is Tie",
@@ -428,7 +436,7 @@ def prepare(output: Path, *, model: str, seed: int, overwrite: bool = False) -> 
     save_json(output / "status.json", {
         "state": "prepared_not_run",
         "prepared_at": manifest["prepared_at"],
-        "expected_calls": 360,
+        "expected_calls": EXPECTED_CALLS,
         "completed_calls": 0,
         "paid_api_calls": 0,
     })
@@ -442,8 +450,8 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def validate_prepared(output: Path) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, dict[str, Any]]]:
     manifest = read_json(output / "manifest.json")
-    if manifest["protocol_version"] != PROTOCOL_VERSION or manifest["expected_calls"] != 360:
-        raise ValueError("Prepared manifest does not match the current 360-call protocol")
+    if manifest["protocol_version"] != PROTOCOL_VERSION or manifest["expected_calls"] != EXPECTED_CALLS:
+        raise ValueError(f"Prepared manifest does not match the current {EXPECTED_CALLS}-call protocol")
     request_path = Path(manifest["requests_file"])
     audit_path = Path(manifest["audit_file"])
     if not request_path.is_absolute():
@@ -454,7 +462,7 @@ def validate_prepared(output: Path) -> tuple[dict[str, Any], list[dict[str, Any]
         raise ValueError("Prepared request or audit file changed after freezing")
     requests = load_jsonl(request_path)
     audits = {row["custom_id"]: row for row in load_jsonl(audit_path)}
-    if len(requests) != 360 or len(audits) != 360 or {r["custom_id"] for r in requests} != set(audits):
+    if len(requests) != EXPECTED_CALLS or len(audits) != EXPECTED_CALLS or {r["custom_id"] for r in requests} != set(audits):
         raise ValueError("Prepared request/audit IDs are incomplete or duplicated")
     for row in requests:
         expected = sha_bytes(canonical_json(row["body"]).encode("utf-8"))
@@ -509,8 +517,8 @@ def call_one(client: Any, row: dict[str, Any], *, attempts: int) -> dict[str, An
 
 def run_paid(output: Path, *, workers: int, retry_count: int,
              execute_paid_api: bool, confirm_call_count: int | None) -> None:
-    if not execute_paid_api or confirm_call_count != 360:
-        raise RuntimeError("Paid run blocked: pass --execute-paid-api --confirm-call-count 360")
+    if not execute_paid_api or confirm_call_count != EXPECTED_CALLS:
+        raise RuntimeError(f"Paid run blocked: pass --execute-paid-api --confirm-call-count {EXPECTED_CALLS}")
     if workers < 1:
         raise ValueError("--workers must be positive")
     manifest, requests, _ = validate_prepared(output)
@@ -642,9 +650,9 @@ def aggregate(output: Path) -> dict[str, Any]:
         "state": "aggregated",
         "aggregated_at": utc_now(),
         "protocol_version": manifest["protocol_version"],
-        "calls_expected": 360,
+        "calls_expected": EXPECTED_CALLS,
         "calls_successful": sum(row["state"] == "success" for row in raw_rows),
-        "pair_criteria_expected": 180,
+        "pair_criteria_expected": PAIR_CRITERIA,
         "pair_criteria_valid": sum(row["outcome_for_full"] != "Error" for row in pair_results),
         "overall_winner_generated": False,
     })
@@ -655,7 +663,7 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     sub = result.add_subparsers(dest="command")
-    prepare_parser = sub.add_parser("prepare", help="Freeze 360 requests offline; makes no API calls")
+    prepare_parser = sub.add_parser("prepare", help=f"Freeze {EXPECTED_CALLS} requests offline; makes no API calls")
     prepare_parser.add_argument("--model", default=DEFAULT_MODEL)
     prepare_parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     prepare_parser.add_argument("--overwrite", action="store_true")

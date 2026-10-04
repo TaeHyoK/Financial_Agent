@@ -30,27 +30,37 @@ def ordered_rows(first, second):
     ("first", "second", "expected"),
     [
         ("full", "full", "Win"),
-        ("no_peer", "no_peer", "Loss"),
-        ("full", "no_peer", "Tie"),
+        ("no_subdata", "no_subdata", "Loss"),
+        ("full", "no_subdata", "Tie"),
         ("full", None, "Tie"),
         (None, None, "Tie"),
     ],
 )
 def test_finrpt_order_combination(first, second, expected):
-    assert MODULE.combine_ordered_judgments(ordered_rows(first, second), "no_peer") == expected
+    assert MODULE.combine_ordered_judgments(ordered_rows(first, second), "no_subdata") == expected
 
 
 def test_error_is_not_converted_to_tie():
     rows = ordered_rows("full", "full")
     rows[1]["state"] = "error"
-    assert MODULE.combine_ordered_judgments(rows, "no_peer") == "Error"
+    assert MODULE.combine_ordered_judgments(rows, "no_subdata") == "Error"
+
+
+def test_design_excludes_no_peer_and_counts_270_calls():
+    assert MODULE.ABLATIONS == ("random_news", "no_subdata", "one_team")
+    assert "no_peer" not in MODULE.ABLATIONS
+    assert MODULE.BASE_PAIRS == 45
+    assert MODULE.PAIR_CRITERIA == 135
+    assert MODULE.EXPECTED_CALLS == 270
 
 
 def test_pair_specs_are_complete_and_balanced():
     specs = MODULE.pair_specs(MODULE.DEFAULT_SEED)
-    assert len(specs) == 60
-    assert len({(company, replicate, ablation) for company, replicate, ablation, _ in specs}) == 60
-    assert sum(full_first for *_, full_first in specs) == 30
+    assert len(specs) == MODULE.BASE_PAIRS
+    assert len({(company, replicate, ablation) for company, replicate, ablation, _ in specs}) == MODULE.BASE_PAIRS
+    assert {ablation for _, _, ablation, _ in specs} == set(MODULE.ABLATIONS)
+    full_first = sum(full_first for *_, full_first in specs)
+    assert full_first - (len(specs) - full_first) in {0, 1}
 
 
 def test_reference_masking_removes_rating_and_target_price_cues():
@@ -65,12 +75,12 @@ def test_reference_masking_removes_rating_and_target_price_cues():
 def test_build_tasks_has_two_swapped_orders_per_pair_and_criterion():
     require_report_bundle()
     tasks = MODULE.build_tasks(model=MODULE.DEFAULT_MODEL, seed=MODULE.DEFAULT_SEED)
-    assert len(tasks) == 360
-    assert len({task.custom_id for task in tasks}) == 360
+    assert len(tasks) == MODULE.EXPECTED_CALLS
+    assert len({task.custom_id for task in tasks}) == MODULE.EXPECTED_CALLS
     groups = {}
     for task in tasks:
         groups.setdefault((task.pair_id, task.criterion), []).append(task)
-    assert len(groups) == 180
+    assert len(groups) == MODULE.PAIR_CRITERIA
     for rows in groups.values():
         assert {row.orientation for row in rows} == {1, 2}
         first, second = sorted(rows, key=lambda row: row.orientation)
@@ -81,7 +91,7 @@ def test_prepare_is_offline_and_paid_run_is_double_gated(tmp_path):
     require_report_bundle()
     output = tmp_path / "judge"
     manifest = MODULE.prepare(output, model=MODULE.DEFAULT_MODEL, seed=MODULE.DEFAULT_SEED)
-    assert manifest["expected_calls"] == 360
+    assert manifest["expected_calls"] == MODULE.EXPECTED_CALLS
     assert manifest["paid_api_calls"] == 0
     assert json.loads((output / "status.json").read_text(encoding="utf-8"))["state"] == "prepared_not_run"
     with pytest.raises(RuntimeError, match="Paid run blocked"):

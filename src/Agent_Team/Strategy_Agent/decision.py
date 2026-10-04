@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import copy
+import math
+import re
 from typing import Any
 
 from shared.evidence_cards import (
@@ -18,7 +20,7 @@ from .context import build_base_strategy_context
 
 CONTEXT_VERSION = "strategy_context_package"
 DECISION_VERSION = "strategy_decision_output"
-STRATEGY_CACHE_VERSION = "21"
+STRATEGY_CACHE_VERSION = "24"
 SCHEMA_REVISION = "12m_v3"
 # Counts are editorial guidance, not limits on preserving valid citations.
 # The model leaves this duplicate index empty; alignment fills it afterwards.
@@ -33,6 +35,14 @@ _COVERAGE_DIMENSIONS = (
     "events",
     "peer",
 )
+
+# Opening of decision_rationale required by the annual grade rule:
+# "사업 궤적은 <trajectory>, 가격 위치는 <price position>".
+_RATIONALE_HEAD = re.compile(
+    r"^\s*사업\s*궤적은\s*['\"‘’“”]?(개선|유지|악화)['\"‘’“”]?\s*[,，]\s*"
+    r"가격\s*위치는\s*['\"‘’“”]?(같은\s*방향|반대|뚜렷하지\s*않음|판정\s*불가)"
+)
+_PRICE_TREND_CARD = "market.absolute_trend"
 
 _NEWS_SELECTION_METADATA = {"relevance_rank", "final_score", "scores", "ablation_selection"}
 
@@ -401,6 +411,7 @@ def validate_strategy_decision(
                 raise ValueError("Empty decision_limitation must not cite cards.")
         if field not in {"decision_limitation", "counterview"} and not refs:
             raise ValueError(f"strategy_brief.{field} requires at least one selected card.")
+    _validate_price_position_sign(brief, cards=cards)
     if brief.get("evidence_sufficiency") not in {"high", "medium", "low"}:
         raise ValueError("strategy_brief.evidence_sufficiency is invalid.")
     if brief.get("decision_confidence") not in {"high", "medium", "low"}:
@@ -463,6 +474,7 @@ def align_strategy_decision_evidence_plan(
     """
 
     normalized = copy.deepcopy(output)
+    _dedupe_card_references(normalized)
     cards = _dict(context.get("evidence_cards"))
     plan = _dict(normalized.get("evidence_plan"))
     decision_items = _list(plan.get("decision_basis_cards"))
@@ -545,6 +557,37 @@ def align_strategy_decision_evidence_plan(
     return normalized
 
 
+def _dedupe_card_references(value: Any) -> None:
+    """Drop repeated card references in place, keeping the first occurrence.
+
+    A model may cite the same card twice in one field or list one card twice in
+    the evidence plan. Repetition carries no extra meaning, so it is removed
+    before strict validation; no text or judgment is changed.
+    """
+
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key == "card_keys" and isinstance(child, list):
+                value[key] = _dedupe_strings(child)
+            elif key in {"decision_basis_cards", "report_context_cards"} and isinstance(child, list):
+                seen: set[str] = set()
+                kept = []
+                for item in child:
+                    card_key = str(_dict(item).get("card_key") or "")
+                    if card_key and card_key in seen:
+                        continue
+                    seen.add(card_key)
+                    kept.append(item)
+                value[key] = kept
+                for item in kept:
+                    _dedupe_card_references(item)
+            else:
+                _dedupe_card_references(child)
+    elif isinstance(value, list):
+        for child in value:
+            _dedupe_card_references(child)
+
+
 def _unique_plan_keys(
     items: list[Any],
     *,
@@ -573,6 +616,63 @@ def _validate_refs(values: Any, *, allowed: set[str], location: str) -> list[str
     if unknown:
         raise ValueError(f"{location} references unselected card(s): {unknown}")
     return refs
+
+
+def parse_rationale_categories(text: Any) -> tuple[str, str] | None:
+    """Return (trajectory, price position) from the rationale opening, or None.
+
+    Whitespace inside multi-word categories is normalized to a single space.
+    """
+
+    if not isinstance(text, str):
+        return None
+    match = _RATIONALE_HEAD.match(text)
+    if match is None:
+        return None
+    trajectory, position = (" ".join(group.split()) for group in match.groups())
+    return trajectory, position
+
+
+def _stock_returns(cards: dict[str, Any]) -> tuple[float, float] | None:
+    """Return the observed (12-month, 3-month) stock returns when both exist."""
+
+    metrics = _dict(_dict(_dict(cards.get(_PRICE_TREND_CARD)).get("primary_observation")).get("metrics"))
+    values = []
+    for name in ("stock_return_12m", "stock_return_3m"):
+        value = metrics.get(name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            return None
+        values.append(float(value))
+    return values[0], values[1]
+
+
+def _validate_price_position_sign(brief: dict[str, Any], *, cards: dict[str, Any]) -> None:
+    """Reject a stated price position that contradicts the sign of observed returns.
+
+    When both the 12-month and 3-month returns moved against the stated
+    business trajectory, the price cannot have moved in the same direction.
+    The check is skipped when the rationale opening or either return is absent.
+    """
+
+    parsed = parse_rationale_categories(_dict(brief.get("decision_rationale")).get("text"))
+    returns = _stock_returns(cards)
+    if parsed is None or returns is None:
+        return
+    trajectory, position = parsed
+    if position != "같은 방향":
+        return
+    return_12m, return_3m = returns
+    against = (
+        (trajectory == "개선" and return_12m < 0 and return_3m < 0)
+        or (trajectory == "악화" and return_12m > 0 and return_3m > 0)
+    )
+    if against:
+        raise ValueError(
+            "strategy_brief.decision_rationale states 사업 궤적은 "
+            f"{trajectory}, 가격 위치는 같은 방향, but the 12-month ({return_12m:+.1%}) "
+            f"and 3-month ({return_3m:+.1%}) stock returns both moved against that "
+            "trajectory; the price position cannot be 같은 방향."
+        )
 
 
 def _validate_peer_context(row: dict[str, Any], *, cards: dict[str, Any], index: int) -> None:
@@ -712,6 +812,7 @@ __all__ = [
     "MAX_MODEL_REPORT_CONTEXT_CARDS",
     "STRATEGY_CACHE_VERSION",
     "build_strategy_context_package",
+    "parse_rationale_categories",
     "align_strategy_decision_evidence_plan",
     "strategy_decision_response_format",
     "validate_strategy_context_package",

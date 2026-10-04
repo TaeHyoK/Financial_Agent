@@ -91,8 +91,14 @@ class EvidencePreservationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown card"):
             align_strategy_decision_evidence_plan(decision, context=context)
         decision["strategy_brief"]["outlook"]["card_keys"] = [keys[0], keys[0]]
+        # The validator itself stays strict about repeated references.
         with self.assertRaises(ValueError):
-            validate_strategy_decision(align_strategy_decision_evidence_plan(decision, context=context), context=context)
+            validate_strategy_decision(decision, context=context)
+        # Alignment drops the repetition (first occurrence kept) without changing text.
+        aligned = align_strategy_decision_evidence_plan(decision, context=context)
+        self.assertEqual(aligned["strategy_brief"]["outlook"]["card_keys"], [keys[0]])
+        self.assertEqual(aligned["strategy_brief"]["outlook"]["text"], decision["strategy_brief"]["outlook"]["text"])
+        validate_strategy_decision(aligned, context=context)
 
     def test_postprocessing_failure_retains_raw_and_history(self):
         _, context, decision, _ = strategy_fixture()

@@ -1712,8 +1712,11 @@ def _margin_changes(
 ) -> dict[str, float]:
     return {
         metric_key: float(current[metric_key]) - float(previous[metric_key])
-        for metric_key in current.keys() & previous.keys()
-        if _finite(current.get(metric_key)) and _finite(previous.get(metric_key))
+        # Follow the current mapping's order; set intersection order varies per process.
+        for metric_key in current
+        if metric_key in previous
+        and _finite(current.get(metric_key))
+        and _finite(previous.get(metric_key))
     }
 
 

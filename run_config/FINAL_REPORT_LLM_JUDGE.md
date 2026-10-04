@@ -8,15 +8,17 @@
 
 - 기업 5개: 현대건설, 두산, BGF리테일, 아모레퍼시픽, SK바이오팜
 - 생성 회차 3개: r01, r02, r03
-- 비교 4개: Full vs Random news / No-subdata / No-peer / One-team
+- 비교 3개: Full vs Random news / No-subdata / One-team
 - 기준 3개: R1 핵심 이슈, R2 투자 논지, R3 전망·위험요인
 - 각 기준에서 A/B와 B/A를 모두 평가
-- 총 호출: `5 × 3 × 4 × 3 × 2 = 360`
+- 총 호출: `5 × 3 × 3 × 3 × 2 = 270`
 - Judge: `gpt-5.6-terra`, `reasoning.effort=low`
 - 응답: `A / B / C`; `C`는 명시적 동률
 - 두 순서에서 동일한 실제 후보가 모두 선택된 경우에만 그 후보의 승리로 확정하고, 그 외의 모든 유효 조합은 Tie
 - 집계: `(Win + 0.5 × Tie) / (Win + Loss + Tie)`
 - API·형식 오류는 Tie로 바꾸지 않고 Error로 분리
+
+No-peer는 별도 Judge로 평가하므로 여기서는 비교하지 않는다.
 
 Reference의 공식 투자의견과 목표주가는 준비 과정에서 마스킹한다. Reference는 정답이나 모범답안이 아니라 전문가가 중요하게 본 이슈를 보여주는 앵커다.
 
@@ -32,7 +34,7 @@ python run_config/final_report_llm_judge.py validate
 기본 출력 디렉터리는 `evaluation/final_report_llm_judge`다. 준비 결과에는 다음 파일이 생긴다.
 
 - `manifest.json`: 프로토콜·모델·해시·호출 수·토큰 추정치
-- `requests_PREPARED_NOT_SUBMITTED.jsonl`: 동결한 360개 요청
+- `requests_PREPARED_NOT_SUBMITTED.jsonl`: 동결한 270개 요청
 - `task_audit.jsonl`: 익명 요청 ID와 실제 조건·순서·원천 파일의 대응표
 - `status.json`: `prepared_not_run`, `paid_api_calls: 0`
 
@@ -43,7 +45,7 @@ python run_config/final_report_llm_judge.py validate
 ```bash
 python run_config/final_report_llm_judge.py run \
   --execute-paid-api \
-  --confirm-call-count 360 \
+  --confirm-call-count 270 \
   --workers 4
 ```
 

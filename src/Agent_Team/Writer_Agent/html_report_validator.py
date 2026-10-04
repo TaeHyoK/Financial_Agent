@@ -12,7 +12,9 @@ from .html_report_spec import (
     INVESTMENT_THESIS_SECTION_KEY,
     REPORT_DISCLAIMER,
     REPORT_SECTIONS,
+    RISK_ANALYSIS_ITEM_KEY,
     RISK_DISPLAY_COLUMNS,
+    RISK_SECTION_KEY,
     SUPPORTED_INVESTMENT_HORIZONS,
     investment_horizon_heading,
     has_data_limit_content,
@@ -23,6 +25,7 @@ from .html_report_writer import (
     _evidence_interpretation_column,
     _qualify_partial_product_scope,
     _reader_display_text,
+    risk_analysis_expected,
 )
 from .writer_handoff import (
     EDITORIAL_PACKET_VERSION,
@@ -704,7 +707,12 @@ def _validate_compact_text_sections(
             item = _dict(section_payload.get(item_key))
             paragraphs = [str(value).strip() for value in _list(item.get("paragraphs")) if str(value).strip()]
             bullets = [str(value).strip() for value in _list(item.get("bullets")) if str(value).strip()]
-            if not paragraphs and section["key"] != "data_limits":
+            optional = section["key"] == "data_limits" or (
+                section["key"] == RISK_SECTION_KEY
+                and item_key == RISK_ANALYSIS_ITEM_KEY
+                and not risk_analysis_expected(writer_handoff)
+            )
+            if not paragraphs and not optional:
                 errors.append(
                     f"{section['key']}.{item_key} must contain analysis paragraphs"
                 )

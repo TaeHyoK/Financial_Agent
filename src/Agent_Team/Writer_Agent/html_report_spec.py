@@ -16,6 +16,9 @@ SUPPORTED_INVESTMENT_HORIZONS = (
 )
 INVESTMENT_THESIS_SECTION_KEY = "investment_call_thesis"
 INVESTMENT_THESIS_ITEM_KEY = "section_analysis"
+RISK_SECTION_KEY = "risk_monitoring_matrix"
+# Writer-authored prose placed above the deterministic risk table.
+RISK_ANALYSIS_ITEM_KEY = "section_analysis"
 REPORT_DISCLAIMER = (
     "본 자료는 투자자의 투자 판단에 참고가 되는 정보 제공을 목적으로 작성되었으며, "
     "투자 권유를 목적으로 하지 않습니다. 본 자료에 수록된 내용은 신뢰할 수 있는 "
@@ -68,6 +71,7 @@ REPORT_SECTIONS: list[dict[str, Any]] = [
         "title": "Risk & Monitoring Matrix",
         "display_title": "리스크 점검",
         "items": [
+            ("section_analysis", "전망을 훼손할 핵심 위험과 판단 전환 조건", "text"),
             ("risk_monitoring_table", "현재 위험과 투자 판단에 미치는 영향", "table"),
         ],
     },

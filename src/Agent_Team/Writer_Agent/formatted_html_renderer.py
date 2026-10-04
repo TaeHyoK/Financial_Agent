@@ -14,6 +14,8 @@ from shared.coerce import as_dict as _dict
 from .html_report_spec import (
     REPORT_DISCLAIMER,
     REPORT_SECTIONS,
+    RISK_ANALYSIS_ITEM_KEY,
+    RISK_SECTION_KEY,
     TABLE_ITEM_KEYS,
     resolve_report_item_title,
     has_data_limit_content,
@@ -415,6 +417,14 @@ def _render_item(
     )
     item_id = f"{section_id}-{item_key.replace('_', '-')}"
     raw_value = section_payload.get(item_key)
+    if (
+        section_key == RISK_SECTION_KEY
+        and item_key == RISK_ANALYSIS_ITEM_KEY
+        and not _clean_list(_dict(raw_value).get("paragraphs"))
+    ):
+        # The risk paragraph is optional when Strategy gave nothing to explain,
+        # and payloads written before it existed render the table alone.
+        return ""
     if item_type == "table" or item_key in TABLE_ITEM_KEYS:
         body = _render_table(raw_value, item_key=item_key)
     else:

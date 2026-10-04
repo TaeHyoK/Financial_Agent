@@ -157,6 +157,11 @@ def build_writer_editorial_packet(
     available_by_component = copy.deepcopy(required_by_component)
     for component in ("investment_call_thesis", "business_market_context", "catalysts_execution"):
         available_by_component[component] = list(selected_keys)
+    # The risk paragraph states the opinion's switch conditions, so it may cite
+    # the decision-limitation basis next to the risks' own basis cards.
+    available_by_component["risk_monitoring_matrix"] = _dedupe(
+        [*risk_keys, *linked_keys("decision_limitation")]
+    )
 
     risk_factors = []
     for item in risk_rows:

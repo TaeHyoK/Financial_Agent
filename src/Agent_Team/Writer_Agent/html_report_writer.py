@@ -10,7 +10,9 @@ from typing import Any
 
 from .html_report_spec import (
     REPORT_SECTIONS,
+    RISK_ANALYSIS_ITEM_KEY,
     RISK_DISPLAY_COLUMNS,
+    RISK_SECTION_KEY,
     replace_english_grade_labels,
 )
 from shared.coerce import as_dict as _dict, is_finite_number
@@ -30,7 +32,7 @@ from .writer_handoff import (
 
 DEFAULT_LLM_MODEL = "gpt-5.4"
 MISSING_VALUE = "데이터 추가 필요"
-WRITER_CACHE_VERSION = "22"
+WRITER_CACHE_VERSION = "24"
 DETERMINISTIC_WRITER_MODE = "deterministic"
 FREE_FORM_WRITER_MODE = "free_form"
 WRITER_MODES = {DETERMINISTIC_WRITER_MODE, FREE_FORM_WRITER_MODE}
@@ -196,7 +198,14 @@ def normalize_report_payload(
                 else _normalize_text(
                     raw_item,
                     preserve_claim_units=is_editorial_packet,
-                    allow_empty=section["key"] == "data_limits",
+                    allow_empty=(
+                        section["key"] == "data_limits"
+                        or (
+                            section["key"] == RISK_SECTION_KEY
+                            and item_key == RISK_ANALYSIS_ITEM_KEY
+                            and not risk_analysis_expected(writer_handoff)
+                        )
+                    ),
                 )
             )
         normalized_sections[section["key"]] = normalized_items
@@ -403,13 +412,14 @@ def _build_editorial_context(
             ),
             "risk_row_policy": (
                 (
-                    "writer_input.risk_factors의 각 risk를 입력 순서대로 정확히 한 행씩 직접 작성한다. "
-                    "숨은 basis/Strategy 필드는 output_contract 값을 그대로 복사한다."
+                    "risk_monitoring_table에는 writer_input.risk_factors의 각 risk를 입력 순서대로 정확히 "
+                    "한 행씩 직접 작성한다. 숨은 basis/Strategy 필드는 output_contract 값을 그대로 복사한다."
                 )
                 if free_form
                 else (
-                    "risk_monitoring_matrix의 rows는 빈 배열로 반환한다. 시스템이 Strategy risk와 "
-                    "현재 판단에 미치는 영향으로 최종 행을 구성한다."
+                    "risk_monitoring_matrix.risk_monitoring_table의 rows는 빈 배열로 반환한다. 시스템이 "
+                    "Strategy risk와 현재 판단에 미치는 영향으로 최종 행을 구성한다. 표 앞의 "
+                    "section_analysis 문단은 직접 작성한다."
                 )
             ),
             "current_input_only": (
@@ -771,22 +781,89 @@ def _section_role_guidance() -> list[dict[str, Any]]:
             ),
         },
         "risk_monitoring_matrix": {
-            "reader_question": "확인된 위험은 무엇이고 현재 투자 판단에 어떤 영향을 미치는가?",
+            "reader_question": (
+                "향후 12개월 전망을 가장 크게 훼손할 위험은 무엇이고, 어떤 조건에서 현재 투자 판단이 "
+                "바뀌는가?"
+            ),
             "content_focus": (
-                "risks의 각 항목만 리스크 행으로 만들고 대응하는 current_implication을 판단 영향에 연결한다. "
-                "risks에 없는 데이터 부재나 촉매 불확실성은 새 리스크 행으로 만들지 않는다."
+                "표 앞의 section_analysis는 짧은 1~2문단이다. risk_factors 중 향후 12개월 전망을 가장 크게 "
+                "위협하는 위험 1~2개를 골라 current_implication이 현재 판단에 주는 의미를 쓰고, "
+                "residual_uncertainty가 투자의견이 바뀔 수 있는 조건을 제시하면 그 조건을 이 문단에서 한 번 "
+                "서술한다. 표의 행을 차례로 되풀이하지 않는다. 리스크 행은 risk_factors의 각 항목으로만 "
+                "만들고 대응하는 current_implication을 판단 영향에 연결한다. risk_factors에 없는 데이터 "
+                "부재나 촉매 불확실성은 새 위험으로 만들지 않는다."
             ),
         },
         "data_limits": {
             "reader_question": "자료의 기준 시점과 현재 판단의 핵심 해석 한계는 무엇인가?",
             "content_focus": (
                 "Strategy가 제시한 실질적인 판단 한계와 필요한 자료 기준만 설명한다. residual_uncertainty가 "
-                "투자의견이 바뀔 수 있는 조건을 제시하면 그 조건을 보존한다. 제시된 내용이 없으면 빈 배열을 "
+                "제시한 투자의견 전환 조건은 리스크 점검 문단에서 서술하므로 여기서 같은 조건을 다시 쓰지 "
+                "않고, 현재 판단에서 확인되지 않은 범위와 그 이유를 설명한다. 제시된 내용이 없으면 빈 배열을 "
                 "반환한다. 새로운 의견 전환 조건이나 일반적인 자료 부족 문구를 만들지 않는다."
             ),
         },
     }
     return [{"section_key": section["key"], "title": section["title"], **roles[section["key"]]} for section in REPORT_SECTIONS]
+
+
+def risk_analysis_expected(writer_packet: dict[str, Any]) -> bool:
+    """Whether Strategy supplied risks or switch conditions for the risk paragraph."""
+
+    risks = [
+        item for item in writer_packet.get("risk_factors") or [] if isinstance(item, dict)
+    ]
+    residual = _dict(writer_packet.get("recommendation_bridge")).get("residual_uncertainty")
+    return bool(risks) or bool(str(residual or "").strip())
+
+
+def _risk_analysis_contract(writer_packet: dict[str, Any]) -> dict[str, Any]:
+    """Describe the short risk paragraph written above the deterministic risk table."""
+
+    if not risk_analysis_expected(writer_packet):
+        return {"paragraphs": [], "bullets": [], "card_keys": [], "_claim_units": []}
+    risk_keys = _clean_identifiers(
+        _dict(writer_packet.get("required_card_keys_by_component")).get(RISK_SECTION_KEY)
+    )
+    bridge = _dict(writer_packet.get("recommendation_bridge"))
+    switch_keys = _clean_identifiers(bridge.get("residual_uncertainty_card_keys"))
+    paragraphs = []
+    claim_units = []
+    if risk_keys:
+        paragraphs.append(
+            "risk_factors 중 향후 12개월 전망을 가장 크게 훼손할 위험 1~2개와 그 current_implication이 "
+            "현재 판단에 주는 의미를 쓴 문단"
+        )
+        claim_units.append(
+            {
+                "claim": (
+                    "선택한 위험과 현재 판단에 주는 의미를 쓴 완결 문장. card_keys는 선택한 위험의 "
+                    "basis_card_keys만 연결한다"
+                ),
+                "card_keys": risk_keys,
+                "limitation_categories": [],
+            }
+        )
+    if str(bridge.get("residual_uncertainty") or "").strip():
+        paragraphs.append(
+            "residual_uncertainty가 제시한 투자의견 전환 조건을 새 조건 없이 쓴 문단"
+        )
+        claim_units.append(
+            {
+                "claim": (
+                    "투자의견이 바뀌는 조건을 쓴 완결 문장. card_keys는 "
+                    "residual_uncertainty_card_keys 중 실제 사용한 근거만 연결한다"
+                ),
+                "card_keys": switch_keys,
+                "limitation_categories": [],
+            }
+        )
+    return {
+        "paragraphs": paragraphs,
+        "bullets": [],
+        "card_keys": list(dict.fromkeys([*risk_keys, *switch_keys])),
+        "_claim_units": claim_units,
+    }
 
 
 def _output_contract(
@@ -841,7 +918,7 @@ def _output_contract(
                         }
                         for card_key in card_keys
                     ]
-            elif component == "risk_monitoring_matrix":
+            elif component == RISK_SECTION_KEY and item_type == "table":
                 section_items[item_key] = {
                     "columns": (
                         list(RISK_DISPLAY_COLUMNS)
@@ -873,6 +950,9 @@ def _output_contract(
                     "card_keys": card_keys,
                 }
             else:
+                if component == RISK_SECTION_KEY:
+                    section_items[item_key] = _risk_analysis_contract(writer_packet)
+                    continue
                 if component == "investment_call_thesis":
                     section_items[item_key] = {
                         "paragraphs": [
@@ -1007,6 +1087,12 @@ def _writer_report_schema(
                 )
                 row_schema = _strict_schema_object({})
                 row_count = 0
+                # The risk paragraph may cite more cards than the risk table rows use.
+                table_card_keys = (
+                    _clean_identifiers(required_by_component.get(component))
+                    if component == RISK_SECTION_KEY
+                    else allowed_card_keys
+                )
                 if free_form and component == "key_evidence_table":
                     row_fields = {
                             "핵심 근거": {"type": "string"},
@@ -1047,8 +1133,8 @@ def _writer_report_schema(
                         "maxItems": row_count,
                     },
                     "card_keys": _bounded_string_array_schema(
-                        allowed_card_keys,
-                        exact_count=len(allowed_card_keys),
+                        table_card_keys,
+                        exact_count=len(table_card_keys),
                     ),
                 }
                 if not free_form and component == "key_evidence_table":
@@ -1091,11 +1177,17 @@ def _writer_report_schema(
                     ),
                 }
             )
+            min_paragraphs = 0 if component == "data_limits" else 1
+            min_text_card_keys = len(_clean_identifiers(required_by_component.get(component)))
+            if component == RISK_SECTION_KEY:
+                # The table covers every risk; the paragraph cites only the risks it names.
+                min_paragraphs = 1 if risk_analysis_expected(writer_packet) else 0
+                min_text_card_keys = 1 if risks else 0
             text_properties: dict[str, Any] = {
                 "paragraphs": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "minItems": 0 if component == "data_limits" else 1,
+                    "minItems": min_paragraphs,
                 },
                 "bullets": {
                     "type": "array",
@@ -1105,13 +1197,13 @@ def _writer_report_schema(
                 },
                 "card_keys": _bounded_string_array_schema(
                     allowed_card_keys,
-                    min_items=len(_clean_identifiers(required_by_component.get(component))),
+                    min_items=min_text_card_keys,
                     max_items=len(allowed_card_keys),
                 ),
                 "_claim_units": {
                     "type": "array",
                     "items": claim_unit,
-                    "minItems": 0 if component == "data_limits" else 1,
+                    "minItems": min_paragraphs,
                 },
             }
             if component == "data_limits":
@@ -1216,14 +1308,14 @@ def _editorial_system_prompt(
         """
 - investment_call_thesis의 paragraphs와 _claim_units를 직접 작성한다.
 - key_evidence_table은 output_contract의 각 card에 대응하는 행을 순서대로 직접 작성한다.
-- risk_monitoring_matrix는 output_contract의 각 risk에 대응하는 행을 순서대로 직접 작성한다.
+- risk_monitoring_matrix.risk_monitoring_table은 output_contract의 각 risk에 대응하는 행을 순서대로 직접 작성한다.
 - 밑줄로 시작하는 Strategy/card/risk 필드는 output_contract 값을 정확히 복사하며 보이는 셀에는 노출하지 않는다.
 """.strip()
         if writer_mode == FREE_FORM_WRITER_MODE
         else """
 - investment_call_thesis의 paragraphs와 _claim_units를 직접 작성한다. Strategy의 thesis와 최종 투자 의견의 의미를 보존하되 문구를 그대로 복사하지 않고, 중복되거나 어색한 표현을 자연스러운 조사보고서 문장으로 정리한다. 문단 수를 목표로 삼지 않고 근거 비교와 선택 이유를 충분히 설명한다. 첫 문단에는 decision.investment_horizon을 표시된 그대로 한 번 포함한다.
 - key_evidence_table의 rows는 빈 배열로 반환하고, 각 card의 구체적인 독자용 근거명을 _display_labels에 입력 순서대로 작성한다. 최종 표의 사실·수치와 투자 해석은 시스템이 만든다.
-- risk_monitoring_matrix의 rows는 빈 배열로 반환한다. 최종 리스크 행도 시스템이 Strategy 의미와 확인 항목으로 만든다.
+- risk_monitoring_matrix.risk_monitoring_table의 rows는 빈 배열로 반환한다. 최종 리스크 행도 시스템이 Strategy 의미와 확인 항목으로 만든다.
 """.strip()
     )
     return f"""
@@ -1234,7 +1326,7 @@ def _editorial_system_prompt(
 - Strategy 판단을 재평가하거나 새로운 해석, 인과관계, 전망, 수치, 회사, 제품·서비스, 이벤트를 만들지 않는다.
 - 문장과 표를 편집할 때 대상기업·지주회사·그룹·계열사 중 각 실적·수치·사건의 주체와 연결·별도 기준을 유지한다. 기업명을 생략해 그룹 수치가 대상기업 수치로 읽히게 하지 않는다. Strategy가 근거에 따라 설명한 대상기업의 사업 변화와 그룹 성과에 대한 기여를 보존하며, 이를 기업 구분에 관한 내부 검토 문구로 대체하지 않는다. 입력에 없는 기여 원인·규모를 보충하지 않고, 판단에 실질적인 영향을 주는 불확실성은 해당 범위에서 유지한다.
 - 판단 방향과 투자기간을 변경하지 않는다.
-- 투자 판단 요약은 최종 투자 의견과 그것을 결정한 근거를 결론부터 쓴다. recommendation_bridge.decision_rationale의 근거 간 우선순위와 대안 의견을 채택하지 않은 이유를 보존한다. 각 근거는 지지·반대로 나누지 않고 투자 판단상 의미로 서술하며, 별도 소제목이나 정해진 비교표를 추가하지 않는다.
+- 투자 판단 요약은 최종 투자 의견과 그것을 결정한 근거를 결론부터 쓴다. recommendation_bridge.decision_rationale의 근거 간 우선순위와 대안 의견을 채택하지 않은 이유를 보존한다. 각 근거는 지지·반대로 나누지 않고 투자 판단상 의미로 서술하며, 별도 소제목이나 정해진 비교표를 추가하지 않는다. 투자 판단 요약은 결정 변수 1~2개와 가장 강한 반대 변수의 비교로 논지를 세우고, 개별 사업 사례를 나열하지 않는다. 사업 사례는 향후 12개월 전망 절에서 다룬다.
 - recommendation_bridge.counterview에 대안을 뒷받침하는 구체적 사실·가정이 있으면 그 내용과 근거를 보존하고 '긍정 요인도 있다' 같은 일반론으로 대체하지 않는다. 대안을 설명한 뒤에는 그럼에도 현재 의견을 선택한 이유로 문단을 끝낸다. 다른 절에서 설명한 사실은 되풀이하지 않아도 되지만 대안과의 비교 관계는 남긴다. 입력에 유의미한 대안이 없으면 새로 만들지 않는다.
 - decision.decision_confidence가 high이면 '고확신은 아니다', '확신은 중간 수준이다'처럼 확신을 낮추는 수식어를 쓰지 않는다. medium이나 low이면 Strategy 입력이 밝힌 범위에서만 확신의 제한을 쓰고 새로 덧붙이지 않는다. 투자의견과 확신 수준은 투자 판단 요약에서 결론짓고 다른 절의 마지막 문장에서 다시 결론짓지 않는다.
 - 실적 검토의 변화 원인과 지표 간 차이, 전망의 지속성과 가정을 보존한다. 해석을 모두 증가·감소 나열로 축약하지 않는다. 전망에서 설명한 가정이나 위험을 판단 한계에서 같은 문장으로 반복하지 않는다.
@@ -1245,7 +1337,8 @@ def _editorial_system_prompt(
 {assembly_policy}
 - 밑줄로 시작하는 필드는 검증 전용이다. 그 값을 보이는 문장이나 표 셀에 노출하지 않는다.
 - 각 텍스트 item의 실제 완결 문장을 _claim_units.claim에 그대로 복사하고 문장별 사용 card_keys를 연결한다. 각 item의 _claim_units.card_keys 합집합은 item.card_keys와 정확히 같아야 한다.
-- data_limits는 residual_uncertainty의 의미와 required_limitations의 자료 기준을 독자용 문장으로 편집한다. 실제 작성 문장과 근거를 _claim_units에 연결하고 자료 기준의 category를 limitation_categories에 표시하되, category 이름과 card key는 문장에 쓰지 않는다. 두 입력이 모두 비어 있으면 paragraphs와 _claim_units를 빈 배열로 둔다.
+- risk_monitoring_matrix.section_analysis는 리스크 표 앞에 놓이는 짧은 1~2문단이다. writer_input.risk_factors 중 향후 12개월 전망을 가장 크게 훼손할 위험 1~2개를 골라 그 current_implication이 현재 판단에 주는 의미를 쓰고, recommendation_bridge.residual_uncertainty가 투자의견이 바뀔 수 있는 조건을 제시하면 그 조건을 이 문단에서 서술한다. risk_factors와 residual_uncertainty에 없는 위험이나 전환 조건을 만들지 않고, 표의 행을 하나씩 되풀이하지 않는다. 각 문장은 _claim_units에 복사하고 언급한 위험의 basis_card_keys와 실제 사용한 residual_uncertainty_card_keys를 연결한다. 두 입력이 모두 비어 있으면 paragraphs와 _claim_units를 빈 배열로 둔다.
+- data_limits는 residual_uncertainty가 밝힌 판단 한계와 required_limitations의 자료 기준을 독자용 문장으로 편집한다. residual_uncertainty의 투자의견 전환 조건은 리스크 점검 문단에서 한 번만 쓰므로 data_limits에서 같은 조건을 다시 쓰지 않고, 현재 판단에서 확인되지 않은 범위와 그 이유를 설명한다. 실제 작성 문장과 근거를 _claim_units에 연결하고 자료 기준의 category를 limitation_categories에 표시하되, category 이름과 card key는 문장에 쓰지 않는다. 두 입력이 모두 비어 있으면 paragraphs와 _claim_units를 빈 배열로 둔다.
 - data_limits에서 residual_uncertainty에 없는 판단 한계를 추가하지 않는다. required_limitations로 지정되지 않은 정상 공시 시차, 후행 사건의 과거 재무표 미반영, 재무 기여 미확인을 별도 한계 문장으로 붙이지 않는다. 문단 수를 채우지 말고 핵심 제약을 한 번 설명하는 것으로 충분하다.
 - available_charts가 있으면 requested_chart_keys와 chart_selection_details를 같은 길이와 순서로 작성한다. 각 차트는 최종 판단에 실제 사용된 card를 basis_card_keys로 연결한다. selection_reason은 내부 검증용 선택 이유로 작성한다. chart_observation은 chart_facts에서 직접 확인되는 사실만 한 문장으로 쓰고, investment_interpretation은 연결된 card의 Strategy 해석이 대상기업 판단에 미치는 의미만 한 문장으로 쓴다.
 
@@ -1265,11 +1358,11 @@ def _editorial_system_prompt(
 - 데이터 한계나 미공개 정보를 새 리스크로 승격하지 않는다.
 - 입력 숫자는 표시된 값과 단위를 그대로 사용하고 계산, 단위 환산, 임의 반올림을 하지 않는다.
 - 원천 evidence/claim/opinion ID, card key, Agent, prompt, validation, 절대 파일 경로를 보이는 문장에 쓰지 않는다.
-- 목표주가와 컨센서스를 작성하지 않는다. 투자의견이 바뀔 수 있는 조건은 residual_uncertainty에 Strategy가 제시한 것만 데이터 한계 절에서 한 번 서술하고 새로 만들지 않는다.
+- 목표주가와 컨센서스를 작성하지 않는다. 투자의견이 바뀔 수 있는 조건은 residual_uncertainty에 Strategy가 제시한 것만 리스크 점검 문단에서 한 번 서술하고 새로 만들지 않는다.
 - decision.opinion은 Buy=매수, Hold=중립, Sell=매도로 표시하며 최종 의견을 바꾸지 않는다. 입력 문장에 나온 Buy·Hold·Sell도 같은 한국어 의견명으로 바꿔 쓴다. 투자의견이 아닌 판단, 예컨대 가격 위치를 설명할 때는 매수·중립·매도라는 말을 쓰지 않고 풀어 쓴다. 기존 보유자·신규 진입자의 별도 대응으로 다시 작성하지 않는다.
 - 후속 공시·수치·사건을 확인하거나 향후 재검토하라는 작업 계획을 쓰지 않는다. residual_uncertainty가 제시한 의견 전환 조건은 작업 계획이 아니라 현재 판단의 한계이므로 그 의미를 보존한다. 입력에 없는 내용은 현재 판단에 반영할 수 없는 범위로만 설명한다.
 - 독자에게 보이는 한국어 문장은 간결한 '-다' 체로 통일하고 '-습니다' 체를 섞지 않는다.
-- 투자 판단 요약은 최종 의견과 결정적 이유, 최근 실적과 가격 평가는 earnings_review와 price_context, 향후 전망은 outlook의 성장 동인·가정과 예상 영향, 리스크는 전망을 약화시킬 요인, 데이터 한계는 자료 시점과 해석 범위를 쓴다. 같은 결론·수치·사건 설명을 표현만 바꿔 반복하지 않는다.
+- 투자 판단 요약은 최종 의견과 결정적 이유, 최근 실적과 가격 평가는 earnings_review와 price_context, 향후 전망은 outlook의 성장 동인·가정과 예상 영향, 리스크는 전망을 약화시킬 핵심 위험과 의견 전환 조건, 데이터 한계는 자료 시점과 해석 범위를 쓴다. 같은 결론·수치·사건 설명을 표현만 바꿔 반복하지 않는다.
 - 같은 기업·제품·요약 근거를 공유해도 사건의 발생 시점이나 사업상 의미가 다르면 중복 설명으로 취급하지 않는다. report_insights의 유형이 같다는 이유로 서로 다른 사건을 하나의 포괄적 표현으로 대체하지 않는다.
 - 독립적인 논거와 가정에 맞춰 문단을 나눈다. 핵심 논거와 가정은 분량 때문에 생략하지 않고 같은 사실·해석의 반복만 줄인다. bullets는 빈 배열로 둔다.
 - inline HTML은 <strong>만 허용하며 Markdown이나 raw HTML 문서는 반환하지 않는다.

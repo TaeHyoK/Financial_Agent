@@ -32,3 +32,6 @@ r01 의 두 실행기는 삼성전자와 코웨이까지 7개 기업을 생성�
 - 끝의 고지문이 PR #27 이전 문구다.
 
 논문의 평가는 이 HTML 그대로를 대상으로 했다. `ablation_results/repeated_standard_5companies/metrics.csv` 의 `report_sha256` 은 75개 파일과 모두 일치한다.
+
+
+같은 보고서를 현재 디자인으로 다시 그린 판은 [`final_reports_redesigned/`](../final_reports_redesigned/README.md) 에 있다. 본문은 같고 겉모습과 표시 방식이 다르다.

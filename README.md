@@ -124,6 +124,7 @@ src/
 ```text
 run_config/                    # 논문 실험의 수집·생성·평가·LLM Judge 실행기
 final_reports/                 # 논문 실험 최종 보고서 HTML 75개
+final_reports_redesigned/      # 같은 보고서를 현재 디자인으로 다시 그린 판
 ablation_results/              # 최종 보고서 BERTScore 결과
 docs/                          # 방법 문서, docs/history/ 는 작업 기록
 scripts/                       # 점검·비교용 보조 스크립트

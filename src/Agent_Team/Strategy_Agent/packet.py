@@ -58,7 +58,7 @@ CARD_BUDGETS = {
     "financial": 7,
     "news": 8,
     "market": 3,
-    "valuation": 3,
+    "valuation": 2,
     "peer": 6,
 }
 INVESTMENT_EFFECTS = frozenset({"positive", "negative", "mixed", "neutral", "reference"})
@@ -70,14 +70,6 @@ OBSERVATION_BASES = frozenset(
     {"point_in_time", "period_snapshot", "period_comparison", "time_series", "event", "pairwise_comparison", "reference"}
 )
 DECISION_USES = frozenset({"factor_eligible", "context_only"})
-VALUATION_HISTORY_MULTIPLES = ("trailing_pe", "price_to_book", "price_to_sales", "price_to_operating_profit")
-EARNINGS_BASE_WARNING_NOTE = (
-    "후행 P/E의 분모인 순이익에 손실 구간이나 영업외 손익 변동이 섞여 있어 P/E는 이익 수준을 과대 또는 과소하게 "
-    "반영한 배수일 수 있으므로, 결정 근거로는 영업이익 기준 배수(P/영업이익)를 먼저 본다."
-)
-PRIOR_YEAR_END_NOTE = (
-    "직전 회계연도 말 배수는 과거 한 시점의 참고값이며, 배수 변화는 주가 변화와 이익·자본 변화 어느 쪽에서도 생길 수 있다."
-)
 
 
 class PacketOverflowError(ValueError):
@@ -679,17 +671,6 @@ def _valuation_cards(report: dict[str, Any]) -> list[tuple[dict[str, Any], list[
                 blockers.append({"code": "invalid_calculated_valuation", "reason": str(key)})
             if key == "trailing_pe" and _finite(row.get("value")) and float(row["value"]) <= 0:
                 blockers.append({"code": "invalid_loss_company_pe", "reason": "trailing_pe_non_positive"})
-        earnings_warnings = _dedupe_strings(calculated.get("earnings_base_warnings") or [])
-        observation = {
-            "as_of_date": calculated.get("as_of_date"),
-            "method": calculated.get("calculation_basis", "disclosed_share_count_estimate"),
-            "statement_scope": calculated.get("statement_scope"),
-            "data_limits": calculated.get("data_limits", []),
-            "metrics": copy.deepcopy(calculated_metrics),
-            "inputs": _compact_valuation_inputs(_dict(calculated.get("inputs"))),
-        }
-        if earnings_warnings:
-            observation["earnings_base_warnings"] = earnings_warnings
         cards.append(
             (
                 _card(
@@ -700,9 +681,15 @@ def _valuation_cards(report: dict[str, Any]) -> list[tuple[dict[str, Any], list[
                     allowed_sections=("investment_thesis", "valuation_view", "risk_view", "decision_balance"),
                     evidence_family="valuation",
                     observation_basis="point_in_time",
-                    observation=observation,
+                    observation={
+                        "as_of_date": calculated.get("as_of_date"),
+                        "method": calculated.get("calculation_basis", "disclosed_share_count_estimate"),
+                        "statement_scope": calculated.get("statement_scope"),
+                        "data_limits": calculated.get("data_limits", []),
+                        "metrics": copy.deepcopy(calculated_metrics),
+                        "inputs": _compact_valuation_inputs(_dict(calculated.get("inputs"))),
+                    },
                     eligibility="incomparable" if blockers else "eligible",
-                    reader_limitations=[EARNINGS_BASE_WARNING_NOTE] if earnings_warnings else [],
                     machine_blockers=blockers,
                 ),
                 [
@@ -713,15 +700,6 @@ def _valuation_cards(report: dict[str, Any]) -> list[tuple[dict[str, Any], list[
                 ["yfinance.valuation_snapshot.calculated_from_close_and_dart"],
             )
         )
-        prior_card = _prior_year_end_card(calculated, calculated_metrics, earnings_warnings)
-        if prior_card is not None:
-            cards.append(
-                (
-                    prior_card,
-                    [],
-                    ["yfinance.valuation_snapshot.calculated_from_close_and_dart.prior_year_end_reference"],
-                )
-            )
     direct = _dict(snapshot.get("direct_yfinance"))
     latest = _dict(direct.get("latest_period"))
     if direct.get("status") == "available" and latest:
@@ -753,80 +731,6 @@ def _valuation_cards(report: dict[str, Any]) -> list[tuple[dict[str, Any], list[
             )
         )
     return cards
-
-
-def _prior_year_end_card(
-    calculated: dict[str, Any],
-    current_metrics: dict[str, Any],
-    earnings_warnings: list[str],
-) -> dict[str, Any] | None:
-    """Pair current multiples with the same-formula multiples at the prior fiscal year end."""
-
-    reference = _dict(calculated.get("prior_year_end_reference"))
-    reference_metrics = _dict(reference.get("metrics"))
-    if reference.get("status") not in {"available", "partial"} or not reference_metrics:
-        return None
-    pairs = []
-    blockers = []
-    for key in VALUATION_HISTORY_MULTIPLES:
-        reference_row = _dict(reference_metrics.get(key))
-        if reference_row.get("status") != "ok" or not _finite(reference_row.get("value")):
-            continue
-        current_row = _dict(current_metrics.get(key))
-        current_value = current_row.get("value") if current_row.get("status") == "ok" else None
-        reference_value = reference_row.get("value")
-        comparable = _finite(current_value) and float(current_value) > 0 and float(reference_value) > 0
-        if not comparable:
-            blockers.append({"code": "valuation_history_pair_incomparable", "reason": key})
-        pairs.append(
-            {
-                "metric_key": key,
-                "current_value": current_value if _finite(current_value) else None,
-                "reference_value": reference_value,
-                "change_rate": _change_rate(current_value, reference_value) if comparable else None,
-                "comparability": "comparable" if comparable else "incomparable",
-            }
-        )
-    if not pairs:
-        return None
-    inputs = _dict(calculated.get("inputs"))
-    reference_inputs = _dict(reference.get("inputs"))
-    current_close = _dict(inputs.get("selected_date_close")).get("value")
-    reference_close = _dict(reference_inputs.get("reference_close")).get("value")
-    observation: dict[str, Any] = {
-        "current_as_of_date": calculated.get("as_of_date"),
-        "reference_date": reference.get("reference_date"),
-        "reference_fiscal_period_end": reference.get("fiscal_period_end"),
-        "statement_scope": reference.get("statement_scope"),
-        "share_count_basis": reference.get("share_count_basis"),
-        "close": {
-            "current": current_close,
-            "reference": reference_close,
-            "change_rate": _change_rate(current_close, reference_close),
-        },
-        "pairs": pairs,
-        "reference_inputs": _compact_valuation_inputs(reference_inputs),
-    }
-    if earnings_warnings:
-        observation["current_earnings_base_warnings"] = list(earnings_warnings)
-    limitations = [PRIOR_YEAR_END_NOTE, *_list(reference.get("data_limits"))]
-    if earnings_warnings:
-        limitations.append(EARNINGS_BASE_WARNING_NOTE)
-    return _card(
-        "valuation.prior_year_end",
-        domain="valuation",
-        card_type="prior_year_end_calculated",
-        label="직전 회계연도 말 같은 산식 가치평가 비교",
-        allowed_sections=("investment_thesis", "valuation_view", "risk_view", "decision_balance"),
-        evidence_family="valuation",
-        observation_basis="period_comparison",
-        comparison_scope="company_history",
-        comparison_label="직전 회계연도 말 대비",
-        observation=observation,
-        eligibility="eligible" if any(pair["comparability"] == "comparable" for pair in pairs) else "incomparable",
-        reader_limitations=limitations,
-        machine_blockers=blockers,
-    )
 
 
 def build_peer_pair_cards(
@@ -899,7 +803,6 @@ def build_peer_pair_cards(
                 ("valuation_metrics.trailing_pe", "times", "lower_multiple", "multiple_gap"),
                 ("valuation_metrics.price_to_book", "times", "lower_multiple", "multiple_gap"),
                 ("valuation_metrics.price_to_sales", "times", "lower_multiple", "multiple_gap"),
-                ("valuation_metrics.price_to_operating_profit", "times", "lower_multiple", "multiple_gap"),
             ),
             "calculated_as_of_date",
             "valuation",

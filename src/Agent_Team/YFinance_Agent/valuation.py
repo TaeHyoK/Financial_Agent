@@ -23,23 +23,6 @@ COMMON_ONLY_MARKET_CAP_LIMIT = (
     "보통주 외 주식 종류가 있거나 확인되지 않아, 보통주 종가×보통주 발행주식 수 기준 시가총액이며 "
     "우선주 등 다른 종류 주식의 시가총액은 포함하지 않는다."
 )
-EARNINGS_BASE_WARNING_LIMIT = (
-    "후행 P/E의 분모인 순이익에 손실 구간이나 영업외 손익 변동이 섞여 있어, P/E가 평상시 이익 수준보다 "
-    "배수를 과대 또는 과소하게 보여줄 수 있으므로 영업이익 기준 배수(P/영업이익)를 먼저 읽는다."
-)
-PRIOR_YEAR_END_REFERENCE_LIMIT = (
-    "직전 회계연도 말 종가와 그 회계연도의 연간 실적·기말 자본으로 계산한 같은 산식의 참고 배수다."
-)
-PRIOR_YEAR_END_CURRENT_SHARES_LIMIT = (
-    "직전 회계연도 말 시가총액은 그 시점의 주식 수가 아니라 현재 계산에 쓴 공시 주식 수를 적용한 추정값이며, "
-    "그 사이 주식 수가 변했다면 배수도 달라질 수 있다."
-)
-# A fiscal-year-end close older than this is too far from the period end to stand in for it.
-PRIOR_YEAR_END_MAX_GAP_DAYS = 10
-# Base metrics whose availability defines the calculated block status; later
-# additive metrics must not change the status contract of existing outputs.
-_BASE_CALCULATED_METRICS = ("market_cap", "trailing_pe", "price_to_sales", "price_to_book")
-_REFERENCE_MULTIPLES = ("trailing_pe", "price_to_book", "price_to_sales", "price_to_operating_profit")
 _SUFFIX_MULTIPLIERS = {
     "K": 1_000.0,
     "M": 1_000_000.0,
@@ -211,9 +194,6 @@ def build_valuation_snapshot(
         shares = None
     ttm_revenue = _dart_metric_value(dart_payload, "revenue", flow_period)
     ttm_net_income = _dart_metric_value(dart_payload, income_key, flow_period) if scope in {"consolidated", "separate"} else None
-    # Operating profit has no parent/non-controlling split, so like revenue it
-    # does not depend on the statement scope; the period rules are shared.
-    ttm_operating_profit = _dart_metric_value(dart_payload, "operating_profit", flow_period)
     total_equity = _dart_metric_value(dart_payload, equity_key, "current_fiscal_year") if scope in {"consolidated", "separate"} else None
 
     def period_eligible(key: str) -> bool:
@@ -225,7 +205,7 @@ def build_valuation_snapshot(
                    and str(periods[component]["period_end"]) <= market_date for component in components)
 
     if not period_eligible(flow_period):
-        ttm_revenue = ttm_net_income = ttm_operating_profit = None
+        ttm_revenue = ttm_net_income = None
         input_problems.append("income_period_not_eligible")
     if not period_eligible("current_fiscal_year"):
         total_equity = None
@@ -260,14 +240,8 @@ def build_valuation_snapshot(
             denominator_name="total_equity",
             formula=f"estimated_market_cap / latest_disclosed_{equity_key}",
         ),
-        "price_to_operating_profit": _ratio_metric(
-            market_cap,
-            ttm_operating_profit,
-            denominator_name="ttm_operating_profit",
-            formula=f"estimated_market_cap / {flow_period}_operating_profit",
-        ),
     }
-    calculation_statuses = [calculated_metrics[key]["status"] for key in _BASE_CALCULATED_METRICS]
+    calculation_statuses = [metric["status"] for metric in calculated_metrics.values()]
     calculated_status = (
         "available"
         if all(status == "ok" for status in calculation_statuses)
@@ -282,21 +256,11 @@ def build_valuation_snapshot(
     ]
     if common_only_market_cap:
         calculated_limits.append(COMMON_ONLY_MARKET_CAP_LIMIT)
-    earnings_base_warnings = _earnings_base_warnings(
-        dart_payload,
-        income_key=income_key,
-        flow_period=flow_period,
-        ttm_net_income=ttm_net_income,
-        ttm_operating_profit=ttm_operating_profit,
-    )
-    if earnings_base_warnings:
-        calculated_limits.append(EARNINGS_BASE_WARNING_LIMIT)
     calculated = {
         "status": calculated_status,
         "calculation_basis": "disclosed_share_count_estimate",
         "statement_scope": scope,
         "input_problems": input_problems,
-        "earnings_base_warnings": earnings_base_warnings,
         "data_limits": calculated_limits,
         "as_of_date": market_date,
         "inputs": {
@@ -313,20 +277,8 @@ def build_valuation_snapshot(
             "ttm_revenue": _dart_metric_input(dart_payload, "revenue", flow_period),
             "ttm_net_income": _dart_metric_input(dart_payload, income_key, flow_period),
             "total_equity": _dart_metric_input(dart_payload, equity_key, "current_fiscal_year"),
-            "ttm_operating_profit": _dart_metric_input(dart_payload, "operating_profit", flow_period),
         },
         "metrics": calculated_metrics,
-        "prior_year_end_reference": _prior_year_end_reference(
-            dart_payload,
-            selected_date=selected_date,
-            market_frame=market_frame,
-            shares=shares,
-            shares_payload=shares_payload,
-            scope=scope,
-            income_key=income_key,
-            equity_key=equity_key,
-            common_only_market_cap=common_only_market_cap,
-        ),
     }
 
     direct_latest = direct_valuation.get("latest_period") or {}
@@ -377,184 +329,6 @@ def build_valuation_snapshot(
             "Provider historical valuation dates do not establish what was available on the analysis date.",
             "Enterprise-value multiples are not recalculated without point-in-time debt, cash, and EBITDA inputs.",
         ],
-    }
-
-
-def _earnings_base_warnings(
-    payload: dict[str, Any],
-    *,
-    income_key: str,
-    flow_period: str,
-    ttm_net_income: float | None,
-    ttm_operating_profit: float | None,
-) -> list[str]:
-    """Flag trailing net income that is a poor proxy for the recurring earnings level."""
-
-    warnings: list[str] = []
-    if ttm_net_income is None:
-        return warnings
-    if flow_period == "ttm":
-        # TTM = FY_prev + YTD_cur - YTD_prev, so it spans the remainder of the
-        # prior year after the same YTD window and the current YTD window.
-        previous_year = _dart_metric_value(payload, income_key, "previous_fiscal_year")
-        previous_ytd = _dart_metric_value(payload, income_key, "same_period_previous_year")
-        current_ytd = _dart_metric_value(payload, income_key, "current_fiscal_year")
-        prior_remainder = (
-            previous_year - previous_ytd if previous_year is not None and previous_ytd is not None else None
-        )
-        if (prior_remainder is not None and prior_remainder < 0) or (current_ytd is not None and current_ytd < 0):
-            warnings.append("ttm_includes_loss_half_year")
-    if (
-        ttm_operating_profit is not None
-        and ttm_operating_profit > 0
-        and ttm_net_income < 0.5 * ttm_operating_profit
-    ):
-        warnings.append("ttm_net_income_far_below_operating_profit")
-    return warnings
-
-
-def _prior_year_end_reference(
-    payload: dict[str, Any],
-    *,
-    selected_date: str,
-    market_frame: pd.DataFrame | None,
-    shares: float | None,
-    shares_payload: dict[str, Any],
-    scope: str,
-    income_key: str,
-    equity_key: str,
-    common_only_market_cap: bool,
-) -> dict[str, Any]:
-    """Recompute the same multiples at the previous fiscal year end as a history reference."""
-
-    period_key = "previous_fiscal_year"
-    period = (payload.get("periods") or {}).get(period_key) or {}
-    period_end = str(period.get("period_end") or "")
-    receipt_date = str(period.get("receipt_date") or "")
-    share_date = str(shares_payload.get("as_of_date") or "")
-    base = {
-        "status": "unavailable",
-        "reason": None,
-        "fiscal_period_key": period_key,
-        "fiscal_period_end": period_end or None,
-        "reference_date": None,
-        "statement_scope": scope,
-        "share_count_basis": None,
-        "inputs": {},
-        "metrics": {},
-        "data_limits": [],
-    }
-
-    def unavailable(reason: str) -> dict[str, Any]:
-        return {**base, "reason": reason}
-
-    if not period or period.get("basis") != "FULL_YEAR" or not period_end:
-        return unavailable("previous_fiscal_year_not_available")
-    # Same pre-open rule as the current calculation: the annual report must be
-    # filed strictly before the selected date to be usable on that date.
-    if not receipt_date or receipt_date >= selected_date:
-        return unavailable("fiscal_year_report_not_received_before_selected_date")
-    if market_frame is None or not {"date", "stock_close"}.issubset(market_frame.columns):
-        return unavailable("price_history_not_provided")
-    history = pd.DataFrame({
-        "date": pd.to_datetime(market_frame["date"], errors="coerce"),
-        "close": pd.to_numeric(market_frame["stock_close"], errors="coerce"),
-    }).dropna()
-    # Never read prices on or after the selected date, nor after the period end.
-    history = history[(history["date"] <= pd.Timestamp(period_end))
-                      & (history["date"] < pd.Timestamp(selected_date))
-                      & (history["close"] > 0)]
-    if history.empty:
-        return unavailable("no_close_on_or_before_fiscal_year_end")
-    reference_row = history.sort_values("date").iloc[-1]
-    reference_timestamp = pd.Timestamp(reference_row["date"])
-    reference_date = reference_timestamp.date().isoformat()
-    if (pd.Timestamp(period_end) - reference_timestamp).days > PRIOR_YEAR_END_MAX_GAP_DAYS:
-        return unavailable("no_close_near_fiscal_year_end")
-    close = _number(reference_row["close"])
-    if shares is None:
-        return unavailable("missing_common_issued_shares")
-    fiscal_year_end_count = share_date == period_end
-    if not fiscal_year_end_count and "stock_splits" in market_frame and share_date:
-        # A split between the two dates makes the later share count inconsistent
-        # with the earlier unadjusted close.
-        frame_dates = pd.to_datetime(market_frame["date"], errors="coerce")
-        start, end = sorted((reference_timestamp, pd.Timestamp(share_date)))
-        split_rows = market_frame[(frame_dates > start) & (frame_dates <= end)]
-        if (pd.to_numeric(split_rows["stock_splits"], errors="coerce").fillna(0) != 0).any():
-            return unavailable("split_between_reference_date_and_share_count")
-
-    attributable = scope in {"consolidated", "separate"}
-    revenue = _dart_metric_value(payload, "revenue", period_key)
-    operating_profit = _dart_metric_value(payload, "operating_profit", period_key)
-    net_income = _dart_metric_value(payload, income_key, period_key) if attributable else None
-    equity = _dart_metric_value(payload, equity_key, period_key) if attributable else None
-    market_cap = close * shares if close is not None else None
-    metrics = {
-        "market_cap": _calculated_metric(
-            value=market_cap,
-            unit="KRW",
-            formula="fiscal_year_end_close * common_issued_shares",
-            missing_reason=_missing_reason(("reference_close", close)),
-        ),
-        "trailing_pe": _ratio_metric(
-            market_cap, net_income, denominator_name="annual_net_income",
-            formula=f"reference_market_cap / {period_key}_{income_key}",
-        ),
-        "price_to_book": _ratio_metric(
-            market_cap, equity, denominator_name="total_equity",
-            formula=f"reference_market_cap / {period_key}_{equity_key}",
-        ),
-        "price_to_sales": _ratio_metric(
-            market_cap, revenue, denominator_name="annual_revenue",
-            formula=f"reference_market_cap / {period_key}_revenue",
-        ),
-        "price_to_operating_profit": _ratio_metric(
-            market_cap, operating_profit, denominator_name="annual_operating_profit",
-            formula=f"reference_market_cap / {period_key}_operating_profit",
-        ),
-    }
-    statuses = [metrics[key]["status"] for key in _REFERENCE_MULTIPLES]
-    status = (
-        "available"
-        if all(value == "ok" for value in statuses)
-        else "partial"
-        if any(value == "ok" for value in statuses)
-        else "unavailable"
-    )
-    limits = [PRIOR_YEAR_END_REFERENCE_LIMIT]
-    if not fiscal_year_end_count:
-        limits.append(PRIOR_YEAR_END_CURRENT_SHARES_LIMIT)
-    if common_only_market_cap:
-        limits.append(COMMON_ONLY_MARKET_CAP_LIMIT)
-    return {
-        **base,
-        "status": status,
-        "reason": None if status != "unavailable" else "no_reference_multiple_available",
-        "reference_date": reference_date,
-        "share_count_basis": (
-            "fiscal_year_end_disclosed_common_shares"
-            if fiscal_year_end_count
-            else "current_calculation_common_shares"
-        ),
-        "inputs": {
-            "reference_close": _input_value(
-                close,
-                as_of_date=reference_date,
-                source={"provider": "YFinance", "method": "historical_ohlcv_close"},
-            ),
-            "common_issued_shares": _input_value(
-                shares,
-                as_of_date=share_date,
-                source=shares_payload.get("source") or {},
-            ),
-            "annual_revenue": _dart_metric_input(payload, "revenue", period_key),
-            "annual_operating_profit": _dart_metric_input(payload, "operating_profit", period_key),
-            "annual_net_income": _dart_metric_input(payload, income_key, period_key),
-            "total_equity": _dart_metric_input(payload, equity_key, period_key),
-        },
-        "metrics": metrics,
-        "data_limits": limits,
     }
 
 

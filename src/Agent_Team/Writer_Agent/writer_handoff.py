@@ -836,7 +836,6 @@ def _reader_observation(
             "trailing_pe": "P/E",
             "price_to_sales": "P/S",
             "price_to_book": "P/B",
-            "price_to_operating_profit": "P/영업이익",
         }
         metrics = _dict(observation.get("metrics"))
         return {
@@ -890,7 +889,6 @@ def _reader_observation(
             "trailing_pe": "P/E",
             "price_to_book": "P/B",
             "price_to_sales": "P/S",
-            "price_to_operating_profit": "P/영업이익",
         }
         return {
             "대상 기업": observation.get("target_company"),

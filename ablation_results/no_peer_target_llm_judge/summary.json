@@ -1,0 +1,32 @@
+[
+  {
+    "comparison": "full_vs_no_peer",
+    "criterion": "NP1",
+    "win": 9,
+    "loss": 0,
+    "tie": 6,
+    "error": 0,
+    "valid_n": 15,
+    "adjusted_win_rate": 0.8
+  },
+  {
+    "comparison": "full_vs_no_peer",
+    "criterion": "NP2",
+    "win": 7,
+    "loss": 0,
+    "tie": 8,
+    "error": 0,
+    "valid_n": 15,
+    "adjusted_win_rate": 0.7333333333333333
+  },
+  {
+    "comparison": "full_vs_no_peer",
+    "criterion": "NP3",
+    "win": 9,
+    "loss": 0,
+    "tie": 6,
+    "error": 0,
+    "valid_n": 15,
+    "adjusted_win_rate": 0.8
+  }
+]

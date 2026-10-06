@@ -1,0 +1,4 @@
+﻿comparison,criterion,win,loss,tie,error,valid_n,adjusted_win_rate
+full_vs_no_peer,NP1,9,0,6,0,15,0.8
+full_vs_no_peer,NP2,7,0,8,0,15,0.7333333333333333
+full_vs_no_peer,NP3,9,0,6,0,15,0.8

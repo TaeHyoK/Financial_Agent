@@ -1,0 +1,3782 @@
+[
+  {
+    "custom_id": "NPJ0001",
+    "pair_id": "NP007",
+    "company": "BGF리테일",
+    "as_of_date": "2025-11-07",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/BGF리테일.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/BGF리테일.json",
+      "full": "evaluation/texts/generated/full/BGF리테일.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/BGF리테일.txt"
+    },
+    "source_sha256": {
+      "reference": "b59eeb5ac0bad25fb1900f227064a33cb053b02d5efd98fb78ae00fc4d106016",
+      "peer_evidence": "9ed6ef0e6541a17a6a1730b5c97f77f45bba3f13a2d324ec6ee3eb1d24fc9dee",
+      "full": "518571ecec83b0e011581a971dca62755c475398ef9b5d4d8831baca4067a0e7",
+      "no_peer": "128faba95499d1085b0830984c6c54587b77d4e17819d9b9d6ab6c82f76c137b"
+    },
+    "request_sha256": "73e9282491d36dc7628534bb760e3c62a3b541962150a0f7dff68cd3c196b667",
+    "estimated_input_tokens": 6754,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 GS리테일 대비 더 높은 P/B·P/S를 근거로 BGF리테일의 가격 매력이 뚜렷하지 않다는 상대적 약점을 정확히 짚고, 이를 절대 배수의 저평가 판단 한계와 분리했다. 또한 CU의 점포·상품 경쟁력이 매출 방어 요인이나 전사 이익 기여는 미확인이라는 식으로 경쟁력과 수익화 한계를 함께 제시해 B보다 차별성이 선명하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6741,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6738
+      },
+      "output_tokens": 333,
+      "output_tokens_details": {
+        "reasoning_tokens": 197
+      },
+      "total_tokens": 7074
+    }
+  },
+  {
+    "custom_id": "NPJ0002",
+    "pair_id": "NP012",
+    "company": "아모레퍼시픽",
+    "as_of_date": "2025-11-07",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/아모레퍼시픽.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/아모레퍼시픽.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/아모레퍼시픽.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/아모레퍼시픽.txt"
+    },
+    "source_sha256": {
+      "reference": "8ac149215512a5340d927d9adc3f495ce9e0df5dcc27acb5839709497da1c0ce",
+      "peer_evidence": "e005ca2fdb44ce704e26d3b6a2a1290f3ccb51085f099ea1e7161d13a2d8d6c1",
+      "full": "1ea96eccf6db156f0227dbfb4455682b629fabffdc73f352454f45abbba36d49",
+      "no_peer": "0df10b56f834c050ad87d6db011909c3ea74482813e20f37928dcaac366d3a78"
+    },
+    "request_sha256": "89c80b60016ef26953538174abf8614cfadbf67b969ea3c10600456c1bff30e2",
+    "estimated_input_tokens": 6896,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 매출·영업이익 개선을 수익성 정상화와 현금창출로 해석하되, 순이익 변동성 및 코스알엑스·중국 재편 효과의 정량 분리 불가를 함께 제시해 구조적 개선을 단정하지 않았다. B도 한계를 언급하지만 해외·디지털 채널 지표의 동시 발생을 ‘사업 구조 변화’로 더 강하게 연결해, 제한된 비교 근거만으로 기업 고유의 지속적 경쟁력으로 해석하는 정도가 크다. A의 유보적 해석이 대상기업의 개선 강도와 지속성 판단에 더 타당하다.",
+    "normalized_winner": "no_peer",
+    "usage": {
+      "input_tokens": 6883,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6880
+      },
+      "output_tokens": 289,
+      "output_tokens_details": {
+        "reasoning_tokens": 118
+      },
+      "total_tokens": 7172
+    }
+  },
+  {
+    "custom_id": "NPJ0003",
+    "pair_id": "NP007",
+    "company": "BGF리테일",
+    "as_of_date": "2025-11-07",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/BGF리테일.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/BGF리테일.json",
+      "full": "evaluation/texts/generated/full/BGF리테일.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/BGF리테일.txt"
+    },
+    "source_sha256": {
+      "reference": "b59eeb5ac0bad25fb1900f227064a33cb053b02d5efd98fb78ae00fc4d106016",
+      "peer_evidence": "9ed6ef0e6541a17a6a1730b5c97f77f45bba3f13a2d324ec6ee3eb1d24fc9dee",
+      "full": "518571ecec83b0e011581a971dca62755c475398ef9b5d4d8831baca4067a0e7",
+      "no_peer": "128faba95499d1085b0830984c6c54587b77d4e17819d9b9d6ab6c82f76c137b"
+    },
+    "request_sha256": "b4ba10c6d584ae2a0bc8f8557549063f7278e79760ab965a0494565a8dcb08fd",
+    "estimated_input_tokens": 6742,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 상반기 외형 성장 대비 수익성 저하와 3분기 반등을 병존시켜, 단기 반등을 구조적 회복으로 단정하지 않고 소비쿠폰·비용 정상화 여부를 유보했다. 공통 근거상 BGF리테일의 낮은 마진과 주가 상대 약세는 확인되지만, 영업성과의 동종사 대비 우위·열위를 단정할 비교 근거는 제한적이며 양측 모두 이를 대체로 신중하게 다뤘다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6729,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6726
+      },
+      "output_tokens": 456,
+      "output_tokens_details": {
+        "reasoning_tokens": 311
+      },
+      "total_tokens": 7185
+    }
+  },
+  {
+    "custom_id": "NPJ0004",
+    "pair_id": "NP003",
+    "company": "현대건설",
+    "as_of_date": "2025-10-20",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/현대건설.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/현대건설.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/현대건설.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/현대건설.txt"
+    },
+    "source_sha256": {
+      "reference": "820e186230a202be893320efa1863f411bb299ff3868ddfeabe4eb717f4c137e",
+      "peer_evidence": "a2559e0c7285317fc6c5d2209cfda3bd9c19c956c7413429ca8aa4b91d1b64da",
+      "full": "8bf56ad496b2ad0fa71b95f570d43c554680f67d27b6522f1868314dd03c1a48",
+      "no_peer": "158d62fbedcd2cbc896b5ceb681aeb0e42e7f44983b0956486035178508166fc"
+    },
+    "request_sha256": "3cb3d49f47dfc624ac7d6c35d66e045b8b67aaa290280ea579a8f9196443d707",
+    "estimated_input_tokens": 8129,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 수주 기반·정비사업 경쟁력을 강점으로, 현금흐름·미청구공사 및 해외 원가 리스크를 약점으로 유사하게 제시한다. 공통 비교근거상 현대건설은 GS건설보다 부채비율이 낮고 순이익이 흑자인 반면, 매출 감소폭이 더 크고 영업현금흐름은 크게 음수라는 차별점이 있으나, 어느 보고서도 이를 업종 내 상대적 특징으로 명확히 해석하지 않았다. B의 수치 세분화는 상대적 강점·약점 식별의 선명도를 실질적으로 높이지 않는다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 8116,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 8113
+      },
+      "output_tokens": 387,
+      "output_tokens_details": {
+        "reasoning_tokens": 212
+      },
+      "total_tokens": 8503
+    }
+  },
+  {
+    "custom_id": "NPJ0005",
+    "pair_id": "NP003",
+    "company": "현대건설",
+    "as_of_date": "2025-10-20",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/현대건설.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/현대건설.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/현대건설.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/현대건설.txt"
+    },
+    "source_sha256": {
+      "reference": "820e186230a202be893320efa1863f411bb299ff3868ddfeabe4eb717f4c137e",
+      "peer_evidence": "a2559e0c7285317fc6c5d2209cfda3bd9c19c956c7413429ca8aa4b91d1b64da",
+      "full": "8bf56ad496b2ad0fa71b95f570d43c554680f67d27b6522f1868314dd03c1a48",
+      "no_peer": "158d62fbedcd2cbc896b5ceb681aeb0e42e7f44983b0956486035178508166fc"
+    },
+    "request_sha256": "818f05d56330aa177c29a679eb4b65a59f943fca33cf11088021c98cb865066b",
+    "estimated_input_tokens": 8105,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 현대건설의 차별적 매력인 대형 정비사업·해외 플랜트 수주와 에너지 확장 가능성을, 핵심 위험인 현금유출·미청구공사·원가/실행 리스크와 연결해 중립 판단 및 변경 조건으로 제시했다. B가 일부 수치를 더 상세히 썼지만, 수주가 현금·이익으로 전환되는지 확인해야 한다는 핵심 변별 논리와 최종 판단은 A와 실질적으로 동일하다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 8092,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 8089
+      },
+      "output_tokens": 356,
+      "output_tokens_details": {
+        "reasoning_tokens": 213
+      },
+      "total_tokens": 8448
+    }
+  },
+  {
+    "custom_id": "NPJ0006",
+    "pair_id": "NP015",
+    "company": "SK바이오팜",
+    "as_of_date": "2025-11-06",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/SK바이오팜.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/SK바이오팜.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/SK바이오팜.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/SK바이오팜.txt"
+    },
+    "source_sha256": {
+      "reference": "58c33340319e96090a8e84d3bd6f3753ce1b2b44278c0429d483bf3693845b98",
+      "peer_evidence": "1367a8fdba849d056d108b5e3f78e3bbe894508204356ec731f71905239e38c1",
+      "full": "949fba09d9ab835370ff342cd35c0d7d6f2334415712288f68f2608b70a099f8",
+      "no_peer": "dc7f8b624e49bf456b5bdbcdc5517a99d21c7ac3cd4a7b442809d22b69229567"
+    },
+    "request_sha256": "67c494a9ccacff5260d63a83b49d9e712798494515605badb8b27f5dfc19722f",
+    "estimated_input_tokens": 6491,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 유한양행 대비 SK바이오팜의 수익성·현금창출력이 높다는 관측을 제한적으로 활용하면서도, 단일 제품 집중이 그 수익성의 질과 지속성에 동시에 제약이라는 점을 연결해 해석했다. 또한 상대 주가 강세를 장기 재평가의 증거로 과대해석하지 않고, 동일 기준 밸류에이션 비교 부재를 명시했다. B도 유사한 유보적 해석을 제시하지만 공통 비교 근거를 통해 대상기업 성과의 상대적 의미를 구체화한 정도는 A가 더 높다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6478,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6475
+      },
+      "output_tokens": 547,
+      "output_tokens_details": {
+        "reasoning_tokens": 382
+      },
+      "total_tokens": 7025
+    }
+  },
+  {
+    "custom_id": "NPJ0007",
+    "pair_id": "NP013",
+    "company": "SK바이오팜",
+    "as_of_date": "2025-11-06",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/SK바이오팜.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/SK바이오팜.json",
+      "full": "evaluation/texts/generated/full/SK바이오팜.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/SK바이오팜.txt"
+    },
+    "source_sha256": {
+      "reference": "58c33340319e96090a8e84d3bd6f3753ce1b2b44278c0429d483bf3693845b98",
+      "peer_evidence": "1367a8fdba849d056d108b5e3f78e3bbe894508204356ec731f71905239e38c1",
+      "full": "a17b088febac2ac183370c45ebc1ceb626baf7a34b32df5e2002030ecc1f0967",
+      "no_peer": "a5ed711b72cb8bc9358fd2f46874e54ed5e13ad5fa9c9a3abb3175570465008b"
+    },
+    "request_sha256": "ad1961227f1caaacb2979ac8abcee34c419886c1b653af676a91c7154e933a90",
+    "estimated_input_tokens": 7352,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 상반기 성장률·수익성이 유한양행보다 강하다는 동일기간 비교를 본업 체질 개선의 상대적 근거로 쓰되, 이를 단일품목·미국 집중 위험이 상쇄한다는 중립 판단에 연결했다. 또한 중국 등 지역 확장이 미국 직판과 다른 이익 귀속 구조를 가진다는 점을 구분해, 어떤 조건에서 성장의 질이 달라지는지를 더 선명하게 제시했다. B도 핵심 강점과 위험을 잘 다루지만, 단기 매출화가 불확실한 확장 이벤트를 인정하면서도 매수 결론으로 연결하는 경로의 설득력은 상대적으로 약하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7339,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7336
+      },
+      "output_tokens": 421,
+      "output_tokens_details": {
+        "reasoning_tokens": 244
+      },
+      "total_tokens": 7760
+    }
+  },
+  {
+    "custom_id": "NPJ0008",
+    "pair_id": "NP007",
+    "company": "BGF리테일",
+    "as_of_date": "2025-11-07",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/BGF리테일.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/BGF리테일.json",
+      "full": "evaluation/texts/generated/full/BGF리테일.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/BGF리테일.txt"
+    },
+    "source_sha256": {
+      "reference": "b59eeb5ac0bad25fb1900f227064a33cb053b02d5efd98fb78ae00fc4d106016",
+      "peer_evidence": "9ed6ef0e6541a17a6a1730b5c97f77f45bba3f13a2d324ec6ee3eb1d24fc9dee",
+      "full": "518571ecec83b0e011581a971dca62755c475398ef9b5d4d8831baca4067a0e7",
+      "no_peer": "128faba95499d1085b0830984c6c54587b77d4e17819d9b9d6ab6c82f76c137b"
+    },
+    "request_sha256": "0f88276e0289762880ed4234025f10e5794cd65b92f1e1500211f715588134df",
+    "estimated_input_tokens": 6730,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 GS리테일 대비 더 높은 P/B·P/S를 단일 국내 비교기업이라는 한계 내에서 가격 매력 부족의 근거로 연결해, 절대 배수와 주가 부진만으로 저평가를 주장하지 않았다. 또한 CU의 본업 경쟁력·상품 확장이 이익 회복으로 전환되는지와 비용 부담 완화 여부를 판단 변경 조건으로 제시해 상대적 위치를 최종 중립 판단에 반영했다. A도 상품력과 마진 압박을 구체화했지만, 비교 가능한 상대 가치 근거가 있음에도 비교 기준이 없다고 처리해 변별력이 다소 낮다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6717,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6714
+      },
+      "output_tokens": 280,
+      "output_tokens_details": {
+        "reasoning_tokens": 113
+      },
+      "total_tokens": 6997
+    }
+  },
+  {
+    "custom_id": "NPJ0009",
+    "pair_id": "NP014",
+    "company": "SK바이오팜",
+    "as_of_date": "2025-11-06",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/SK바이오팜.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/SK바이오팜.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/SK바이오팜.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/SK바이오팜.txt"
+    },
+    "source_sha256": {
+      "reference": "58c33340319e96090a8e84d3bd6f3753ce1b2b44278c0429d483bf3693845b98",
+      "peer_evidence": "1367a8fdba849d056d108b5e3f78e3bbe894508204356ec731f71905239e38c1",
+      "full": "0ba499510c2a2edb4bcc99cb919f44eb0b0ead5c522a698e6b64b0a28f14be18",
+      "no_peer": "7b0939e97a34e540108e1220597c22875fe54adf817efe0181701412fd0f0ac5"
+    },
+    "request_sha256": "5e789557c30b3506cb61ae8d6b409508656794de238ea34ee58ff2865bb96217",
+    "estimated_input_tokens": 6898,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 세노바메이트·미국 매출 집중을 핵심 강점이자 지속성 위험으로 연결하고, 적응증·지역 확장은 허가와 수익화 시차 때문에 옵션으로 제한해 중립 판단에 반영했다. A는 공급망 대응과 현금·유동성 여력을, B는 중국 수익귀속 구조와 분기 미국 매출 추세를 조금 더 구체화하지만, 어느 쪽도 공통 비교기업 근거를 통해 대상기업의 상대적 위치를 최종 판단에 유의미하게 더 선명하게 반영하지는 못했다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6885,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6882
+      },
+      "output_tokens": 322,
+      "output_tokens_details": {
+        "reasoning_tokens": 164
+      },
+      "total_tokens": 7207
+    }
+  },
+  {
+    "custom_id": "NPJ0010",
+    "pair_id": "NP004",
+    "company": "두산",
+    "as_of_date": "2025-11-11",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/두산.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/두산.json",
+      "full": "evaluation/texts/generated/full/두산.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/두산.txt"
+    },
+    "source_sha256": {
+      "reference": "4e86766973d13350d29d1169e5e839a4c76edd35eeeb2a619ce3a92352f45ac0",
+      "peer_evidence": "da12081e6528a0355b5b945b8658deaae13ce797d2ee9268bc20f1366a65213e",
+      "full": "148a4427e70c163b512c0455af3139c90a2a11cf6e2fd4c7bfc20015558668fe",
+      "no_peer": "a23b2825781eb58b64fae12fd2601e32883a63582ca9f6c90f2d9d4991ea6a11"
+    },
+    "request_sha256": "254b6074dcd16d82c64460535e4c1032b3a7a6dcd07191237114f91b954f9f43",
+    "estimated_input_tokens": 6546,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 상반기 매출 증가를 곧바로 전사 실적 질 개선으로 보지 않고 이익률·영업현금흐름 악화와 함께 해석하며, 3분기 반등도 구조적 변화인지 계열사 변동·일시 요인인지 분리 확인이 어렵다고 유보한다. A도 현금흐름과 레버리지 위험을 지적하지만, 전자BG 관련 일련의 뉴스만으로 구조적 수요 확대를 더 강하게 해석해 일시성과 고유 경쟁력의 구분이 상대적으로 약하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6533,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6530
+      },
+      "output_tokens": 399,
+      "output_tokens_details": {
+        "reasoning_tokens": 246
+      },
+      "total_tokens": 6932
+    }
+  },
+  {
+    "custom_id": "NPJ0011",
+    "pair_id": "NP011",
+    "company": "아모레퍼시픽",
+    "as_of_date": "2025-11-07",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/아모레퍼시픽.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/아모레퍼시픽.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/아모레퍼시픽.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/아모레퍼시픽.txt"
+    },
+    "source_sha256": {
+      "reference": "8ac149215512a5340d927d9adc3f495ce9e0df5dcc27acb5839709497da1c0ce",
+      "peer_evidence": "e005ca2fdb44ce704e26d3b6a2a1290f3ccb51085f099ea1e7161d13a2d8d6c1",
+      "full": "00a5fdecc718a0e9b9812c3335b133f11567a61286b2b5c000f71b4aceeebb25",
+      "no_peer": "b7efab0cb8f8c718a73b355e9c988bcf6476fb715d58ee3401ef48e3e4bf4b9b"
+    },
+    "request_sha256": "006019bd0aa9da642933e83b84d0182fc92a8866aec39cec66ebdce623ef9ed7",
+    "estimated_input_tokens": 7290,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 동일한 2025년 반기 누적 기준에서 아모레퍼시픽의 매출 성장률, 영업이익률·순이익률·영업현금흐름 마진이 LG생활건강보다 높다는 점을 연결해, 회복이 단순 업황 반등만은 아닐 수 있다는 차별적 강점을 구체화했다. 또한 코스알엑스 둔화와 중국·북미 실행 리스크를 별도 약점으로 구분했다. B는 대상기업의 절대적 개선과 위험을 잘 서술했지만, 공통 비교근거로 확인 가능한 업종 내 상대적 차별성을 거의 활용하지 못했다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7277,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7274
+      },
+      "output_tokens": 324,
+      "output_tokens_details": {
+        "reasoning_tokens": 148
+      },
+      "total_tokens": 7601
+    }
+  },
+  {
+    "custom_id": "NPJ0012",
+    "pair_id": "NP004",
+    "company": "두산",
+    "as_of_date": "2025-11-11",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/두산.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/두산.json",
+      "full": "evaluation/texts/generated/full/두산.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/두산.txt"
+    },
+    "source_sha256": {
+      "reference": "4e86766973d13350d29d1169e5e839a4c76edd35eeeb2a619ce3a92352f45ac0",
+      "peer_evidence": "da12081e6528a0355b5b945b8658deaae13ce797d2ee9268bc20f1366a65213e",
+      "full": "148a4427e70c163b512c0455af3139c90a2a11cf6e2fd4c7bfc20015558668fe",
+      "no_peer": "a23b2825781eb58b64fae12fd2601e32883a63582ca9f6c90f2d9d4991ea6a11"
+    },
+    "request_sha256": "640fa47a133842afd5ce1dfb303923220ee1a502d7b6ded8183488cee94fef31",
+    "estimated_input_tokens": 6534,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 전자BG의 CCL 성장, 연결 현금흐름 약화·레버리지, 급등한 주가를 두산의 매력과 위험을 가르는 핵심 경로로 제시해 대상기업 논지는 유사한 수준으로 구체적이다. 다만 공통 비교근거상 확인 가능한 두산의 성장성·수익성 대비 현금창출력 및 EV 배수의 상대적 위치를 어느 쪽도 최종 판단에 실질적으로 반영하지 않아, 상대적 변별력 측면의 우위는 분명하지 않다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6521,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6518
+      },
+      "output_tokens": 306,
+      "output_tokens_details": {
+        "reasoning_tokens": 152
+      },
+      "total_tokens": 6827
+    }
+  },
+  {
+    "custom_id": "NPJ0013",
+    "pair_id": "NP002",
+    "company": "현대건설",
+    "as_of_date": "2025-10-20",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/현대건설.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/현대건설.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/현대건설.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/현대건설.txt"
+    },
+    "source_sha256": {
+      "reference": "820e186230a202be893320efa1863f411bb299ff3868ddfeabe4eb717f4c137e",
+      "peer_evidence": "a2559e0c7285317fc6c5d2209cfda3bd9c19c956c7413429ca8aa4b91d1b64da",
+      "full": "28fab3929dd98adebf3bc255115f57e6e3fd97de9518821d26ef683222319807",
+      "no_peer": "73d20d756a5350d17c1e13dc371a0bba9c64925a41f34aee005a2bd84e9ef40a"
+    },
+    "request_sha256": "dc5e679b20285656f22b12b0d0a36095c7e6a943535e02478c8822edbb17597f",
+    "estimated_input_tokens": 8318,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 GS건설 대비 현대건설의 부채비율·유동비율·자본비율이 상대적으로 양호하다는 점을 제한적으로 연결해, 대상기업의 재무 완충력이라는 차별적 강점을 식별했다. 동시에 매출 감소폭, 영업마진 및 영업현금흐름 측면에서는 우위라고 과장하지 않고 현금화 취약성을 핵심 약점으로 유지했다. A도 현금흐름 위험을 잘 짚었지만, 공통 비교 근거로 확인되는 대상기업의 상대적 특성을 거의 활용하지 못했다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 8305,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 8302
+      },
+      "output_tokens": 445,
+      "output_tokens_details": {
+        "reasoning_tokens": 287
+      },
+      "total_tokens": 8750
+    }
+  },
+  {
+    "custom_id": "NPJ0014",
+    "pair_id": "NP006",
+    "company": "두산",
+    "as_of_date": "2025-11-11",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/두산.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/두산.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/두산.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/두산.txt"
+    },
+    "source_sha256": {
+      "reference": "4e86766973d13350d29d1169e5e839a4c76edd35eeeb2a619ce3a92352f45ac0",
+      "peer_evidence": "da12081e6528a0355b5b945b8658deaae13ce797d2ee9268bc20f1366a65213e",
+      "full": "a3d570b27f4e3af71979a4fc963a3a695f4751cf159a56a92d3598978955b7f8",
+      "no_peer": "0208933692a14e0f3509c64fe45ba3677798255967d0a2995a1c4868877fe507"
+    },
+    "request_sha256": "f08dec29ef4adbbc453ca3d20dc43b80a172638c21cb5595034951036bc67f3e",
+    "estimated_input_tokens": 6550,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 전자BG 성장→연결 이익·현금흐름 보완 가능성이라는 경로와, 이미 크게 재평가된 주가·악화된 현금흐름·인수 자금부담을 구체적으로 연결해 중립 판단의 조건을 제시한다. B도 유사한 결론이지만 수익성·현금흐름 전이의 논지가 더 일반적이며, 비교기업 자료가 없다고 한정한 서술은 실제 제공된 국내 비교 근거와 맞지 않는다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6537,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6534
+      },
+      "output_tokens": 350,
+      "output_tokens_details": {
+        "reasoning_tokens": 208
+      },
+      "total_tokens": 6887
+    }
+  },
+  {
+    "custom_id": "NPJ0015",
+    "pair_id": "NP009",
+    "company": "BGF리테일",
+    "as_of_date": "2025-11-07",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/BGF리테일.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/BGF리테일.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/BGF리테일.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/BGF리테일.txt"
+    },
+    "source_sha256": {
+      "reference": "b59eeb5ac0bad25fb1900f227064a33cb053b02d5efd98fb78ae00fc4d106016",
+      "peer_evidence": "9ed6ef0e6541a17a6a1730b5c97f77f45bba3f13a2d324ec6ee3eb1d24fc9dee",
+      "full": "f28c4df05541d6ce86e325a49bbafa0326cce3cc86760e548c5fbafa90c212ba",
+      "no_peer": "117347b8776c26884ed27c7f68759d21e126c7f6941081b9976319907a3f4bd2"
+    },
+    "request_sha256": "60cc729eccac4961979ce46eb967b51c8936ca6cec51d5f8d2fa52d661395bbd",
+    "estimated_input_tokens": 6529,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 동일 반기 기준 GS리테일 대비 BGF리테일의 더 높은 매출성장률과 순이익률·영업현금흐름률, 유사한 영업이익률을 연결해 외형·현금창출 강점과 비용 부담이라는 약점을 상대적으로 구분했다. 또한 P/B·P/S 프리미엄을 수익성 우위가 제한적인 상황과 함께 해석해 가격 매력의 한계를 구체화했다. B는 비교 가능한 상대가치 근거가 없다고 서술해 제공된 국내 비교 근거를 활용한 차별성 식별이 더 약하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6516,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6513
+      },
+      "output_tokens": 268,
+      "output_tokens_details": {
+        "reasoning_tokens": 103
+      },
+      "total_tokens": 6784
+    }
+  },
+  {
+    "custom_id": "NPJ0016",
+    "pair_id": "NP013",
+    "company": "SK바이오팜",
+    "as_of_date": "2025-11-06",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/SK바이오팜.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/SK바이오팜.json",
+      "full": "evaluation/texts/generated/full/SK바이오팜.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/SK바이오팜.txt"
+    },
+    "source_sha256": {
+      "reference": "58c33340319e96090a8e84d3bd6f3753ce1b2b44278c0429d483bf3693845b98",
+      "peer_evidence": "1367a8fdba849d056d108b5e3f78e3bbe894508204356ec731f71905239e38c1",
+      "full": "a17b088febac2ac183370c45ebc1ceb626baf7a34b32df5e2002030ecc1f0967",
+      "no_peer": "a5ed711b72cb8bc9358fd2f46874e54ed5e13ad5fa9c9a3abb3175570465008b"
+    },
+    "request_sha256": "3bb9f3a9b372011435f5b629af521d4e22da4c6dfeeb4d3292d8b2bdc6abce21",
+    "estimated_input_tokens": 7352,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 유한양행 대비 상반기 매출성장률(29.3% 대 10.0%)과 영업이익률(27.3% 대 5.3%) 우위를 제한된 국내 비교 범위 안에서 본업 체질 개선의 상대적 강점으로 연결했다. 동시에 이 우위가 세노바메이트 단일품목·미국 의존 위험을 상쇄하지 못한다는 이유로 중립 판단에 반영해, 강점과 판단 변경 요인을 더 변별력 있게 제시했다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7339,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7336
+      },
+      "output_tokens": 466,
+      "output_tokens_details": {
+        "reasoning_tokens": 322
+      },
+      "total_tokens": 7805
+    }
+  },
+  {
+    "custom_id": "NPJ0017",
+    "pair_id": "NP009",
+    "company": "BGF리테일",
+    "as_of_date": "2025-11-07",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/BGF리테일.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/BGF리테일.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/BGF리테일.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/BGF리테일.txt"
+    },
+    "source_sha256": {
+      "reference": "b59eeb5ac0bad25fb1900f227064a33cb053b02d5efd98fb78ae00fc4d106016",
+      "peer_evidence": "9ed6ef0e6541a17a6a1730b5c97f77f45bba3f13a2d324ec6ee3eb1d24fc9dee",
+      "full": "f28c4df05541d6ce86e325a49bbafa0326cce3cc86760e548c5fbafa90c212ba",
+      "no_peer": "117347b8776c26884ed27c7f68759d21e126c7f6941081b9976319907a3f4bd2"
+    },
+    "request_sha256": "41319b507c94b5c4265c61e8eb1b3bbd898cc0221b35032495717f6c182530d0",
+    "estimated_input_tokens": 6517,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 GS리테일 대비 BGF리테일의 반기 매출 성장·순이익률·영업현금흐름률 우위와 거의 유사한 영업이익률을 함께 제시해, 외형 우위가 뚜렷한 수익성 차별화로 아직 이어지지 않았다는 점을 더 선명하게 해석한다. 또한 상대적으로 높은 P/B·P/S와 주가 부진을 회복 신뢰 부족으로 제한적으로 연결하며, 3분기 개선도 일시 수요 요인 가능성을 유보한다. B는 비교 가능한 국내 peer가 있음에도 상대가치 근거가 없다고 하여 공통 비교근거를 통한 성과의 상대적 의미를 충분히 활용하지 못했다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6504,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6501
+      },
+      "output_tokens": 359,
+      "output_tokens_details": {
+        "reasoning_tokens": 167
+      },
+      "total_tokens": 6863
+    }
+  },
+  {
+    "custom_id": "NPJ0018",
+    "pair_id": "NP014",
+    "company": "SK바이오팜",
+    "as_of_date": "2025-11-06",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/SK바이오팜.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/SK바이오팜.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/SK바이오팜.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/SK바이오팜.txt"
+    },
+    "source_sha256": {
+      "reference": "58c33340319e96090a8e84d3bd6f3753ce1b2b44278c0429d483bf3693845b98",
+      "peer_evidence": "1367a8fdba849d056d108b5e3f78e3bbe894508204356ec731f71905239e38c1",
+      "full": "0ba499510c2a2edb4bcc99cb919f44eb0b0ead5c522a698e6b64b0a28f14be18",
+      "no_peer": "7b0939e97a34e540108e1220597c22875fe54adf817efe0181701412fd0f0ac5"
+    },
+    "request_sha256": "22ef9dc18d96ba0b5da07bf895b1212a6e13230523b377573e3a4b0474bc2faf",
+    "estimated_input_tokens": 6910,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 반기 매출·이익·현금흐름 개선을 영업레버리지와 함께 해석하되, 장기 KOSPI 대비 부진과 가치평가 데이터의 기준일 한계를 분리해 결론 강도를 제한했다. B도 수익성 개선을 적절히 제시했지만, 장기 상대수익률 부진을 시장이 제품집중·미국 노출 등을 할인한 결과라고 해석해 공통 근거만으로 확인되지 않는 인과를 부여했다.",
+    "normalized_winner": "no_peer",
+    "usage": {
+      "input_tokens": 6897,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6894
+      },
+      "output_tokens": 427,
+      "output_tokens_details": {
+        "reasoning_tokens": 288
+      },
+      "total_tokens": 7324
+    }
+  },
+  {
+    "custom_id": "NPJ0019",
+    "pair_id": "NP010",
+    "company": "아모레퍼시픽",
+    "as_of_date": "2025-11-07",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/아모레퍼시픽.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/아모레퍼시픽.json",
+      "full": "evaluation/texts/generated/full/아모레퍼시픽.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/아모레퍼시픽.txt"
+    },
+    "source_sha256": {
+      "reference": "8ac149215512a5340d927d9adc3f495ce9e0df5dcc27acb5839709497da1c0ce",
+      "peer_evidence": "e005ca2fdb44ce704e26d3b6a2a1290f3ccb51085f099ea1e7161d13a2d8d6c1",
+      "full": "37e16034bdd607d0a45fdfde523dfde44b25ce328674b7fe0c5326bd70ac38de",
+      "no_peer": "12af420b2e1c601c6e7f957fd888bd773a3ec28362c852327f07e97406fc7055"
+    },
+    "request_sha256": "d7e17f12f8747af7c99b50f40776d71c7ae1aff2423c57771b2c9964d46c39ab",
+    "estimated_input_tokens": 7198,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 동일한 2025년 상반기 기준의 LG생활건강과 비교해 아모레퍼시픽의 매출 성장(14.11% vs -5.32%)과 영업·순이익·영업현금흐름 마진 우위를 확인함으로써, 개선이 단순 절대 증가만은 아니라는 점을 구체화했다. 동시에 단일 국내 비교기업만으로 구조적 우위를 단정하지 않고 순이익 감소, 코스알엑스·중국·공급망 변수 및 기간·범위 차이를 유보 요인으로 제시해 회복의 의미를 더 균형 있게 해석했다. A도 수익성 및 현금흐름 개선의 한계를 언급하지만, 공통 비교 근거를 통한 상대적 성과의 판별은 B보다 약하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7185,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7182
+      },
+      "output_tokens": 351,
+      "output_tokens_details": {
+        "reasoning_tokens": 141
+      },
+      "total_tokens": 7536
+    }
+  },
+  {
+    "custom_id": "NPJ0020",
+    "pair_id": "NP002",
+    "company": "현대건설",
+    "as_of_date": "2025-10-20",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/현대건설.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/현대건설.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/현대건설.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/현대건설.txt"
+    },
+    "source_sha256": {
+      "reference": "820e186230a202be893320efa1863f411bb299ff3868ddfeabe4eb717f4c137e",
+      "peer_evidence": "a2559e0c7285317fc6c5d2209cfda3bd9c19c956c7413429ca8aa4b91d1b64da",
+      "full": "28fab3929dd98adebf3bc255115f57e6e3fd97de9518821d26ef683222319807",
+      "no_peer": "73d20d756a5350d17c1e13dc371a0bba9c64925a41f34aee005a2bd84e9ef40a"
+    },
+    "request_sha256": "d8794456b9302be45e4a7f4313234df43f88f3c462d1a7e27bc0f5c8cd193942",
+    "estimated_input_tokens": 8318,
+    "state": "success",
+    "verdict": "C",
+    "reason": "A는 GS건설 대비 재무구조가 상대적으로 나쁘지 않다고 언급하지만, 부채비율·자본비율·유동비율 우위와 현금비율 열위라는 혼재된 비교 근거를 구체화하지 않아 차별성을 선명하게 만들지는 못했다. B도 현대건설의 현금흐름·운전자본 약점을 잘 짚지만 동종사 대비 의미를 연결하지 못한다. 따라서 공통 근거상 확인되는 현대건설의 상대적 재무안정성 및 수익성·현금흐름 열위를 어느 쪽도 명확히 부각했다고 보기 어렵다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 8305,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 8302
+      },
+      "output_tokens": 389,
+      "output_tokens_details": {
+        "reasoning_tokens": 219
+      },
+      "total_tokens": 8694
+    }
+  },
+  {
+    "custom_id": "NPJ0021",
+    "pair_id": "NP008",
+    "company": "BGF리테일",
+    "as_of_date": "2025-11-07",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/BGF리테일.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/BGF리테일.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/BGF리테일.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/BGF리테일.txt"
+    },
+    "source_sha256": {
+      "reference": "b59eeb5ac0bad25fb1900f227064a33cb053b02d5efd98fb78ae00fc4d106016",
+      "peer_evidence": "9ed6ef0e6541a17a6a1730b5c97f77f45bba3f13a2d324ec6ee3eb1d24fc9dee",
+      "full": "b3057da2dfbc1d0237a0c82b86964b706dcc6ba260186924d0a4128ebf298aad",
+      "no_peer": "f706d2473e01ab8d46021eedd6c64c86bad3dee945da3c1f9aba753c73b538a9"
+    },
+    "request_sha256": "0ccdc0af539bd6b5cad9fdccf3153117a8eab1ba907560d27b0540d2c83e5f60",
+    "estimated_input_tokens": 7102,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 BGF리테일의 상반기 매출성장률·순이익률·영업현금흐름마진이 GS리테일보다 높다는 동일 기간 비교를 통해, 이익 둔화가 본업 체력의 전면 훼손을 뜻하지는 않는다고 해석했다. 동시에 P/B·P/S의 상대적 프리미엄과 3분기 개선의 지속성 불확실성을 분리해 과도한 낙관을 피했다. B는 비교기업이 없다고 서술해 제공된 국내 비교 근거를 활용하지 못했고, 절대적 마진·현금흐름 감소에 더 의존했다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7089,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7086
+      },
+      "output_tokens": 322,
+      "output_tokens_details": {
+        "reasoning_tokens": 148
+      },
+      "total_tokens": 7411
+    }
+  },
+  {
+    "custom_id": "NPJ0022",
+    "pair_id": "NP014",
+    "company": "SK바이오팜",
+    "as_of_date": "2025-11-06",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/SK바이오팜.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/SK바이오팜.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/SK바이오팜.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/SK바이오팜.txt"
+    },
+    "source_sha256": {
+      "reference": "58c33340319e96090a8e84d3bd6f3753ce1b2b44278c0429d483bf3693845b98",
+      "peer_evidence": "1367a8fdba849d056d108b5e3f78e3bbe894508204356ec731f71905239e38c1",
+      "full": "0ba499510c2a2edb4bcc99cb919f44eb0b0ead5c522a698e6b64b0a28f14be18",
+      "no_peer": "7b0939e97a34e540108e1220597c22875fe54adf817efe0181701412fd0f0ac5"
+    },
+    "request_sha256": "36d24d2577f0010ce0d7973e550b7365980a85ee14237d20123014d92ef5a352",
+    "estimated_input_tokens": 6910,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 절대 실적 개선을 영업레버리지와 단일품목·미국 의존 리스크의 공존으로 해석하고, 장기 시장 상대성과 부진을 단기 주가 반등과 구분했다. 다만 공통 비교근거상 국내 피어는 유한양행 한 곳뿐이고 양측 모두 이를 활용해 대상사의 수익성·성장성이 기업 고유 경쟁력인지 업종 공통 흐름인지 검증하지 않았으며, 제공되지 않은 P/E·P/S 등의 참고 배수도 사용했다. 따라서 이번 기준에서 한쪽의 해석이 명확히 더 타당하다고 보기 어렵다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6897,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6894
+      },
+      "output_tokens": 367,
+      "output_tokens_details": {
+        "reasoning_tokens": 197
+      },
+      "total_tokens": 7264
+    }
+  },
+  {
+    "custom_id": "NPJ0023",
+    "pair_id": "NP005",
+    "company": "두산",
+    "as_of_date": "2025-11-11",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/두산.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/두산.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/두산.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/두산.txt"
+    },
+    "source_sha256": {
+      "reference": "4e86766973d13350d29d1169e5e839a4c76edd35eeeb2a619ce3a92352f45ac0",
+      "peer_evidence": "da12081e6528a0355b5b945b8658deaae13ce797d2ee9268bc20f1366a65213e",
+      "full": "021c732ad5d05f8ed27be40ad9836c5e5bbfcb8eab44bc209127468402c9679c",
+      "no_peer": "d72065712ec936c230b510e5598ed027c7386bfa3265abab70a3f678d7bd7541"
+    },
+    "request_sha256": "9b252f79348f8211e52bb97cbb3fe47a4f82e1f2b38ac98df845eab5d85c22a8",
+    "estimated_input_tokens": 6795,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 두산의 반기 매출 성장과 영업이익률을 SK의 역성장·낮은 영업이익률과 제한적으로 대조해, 절대 수치만이 아닌 상대적 성과의 의미를 보완했다. 동시에 전자BG 성장과 전사 현금창출 개선을 구분하고 기여도 분리가 어렵다고 유보해 구조적 개선을 과단하지 않았다. 다만 최근 월간 상대 약세 언급은 제공된 초과수익 수치와 정합성이 낮다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6782,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6779
+      },
+      "output_tokens": 417,
+      "output_tokens_details": {
+        "reasoning_tokens": 275
+      },
+      "total_tokens": 7199
+    }
+  },
+  {
+    "custom_id": "NPJ0024",
+    "pair_id": "NP014",
+    "company": "SK바이오팜",
+    "as_of_date": "2025-11-06",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/SK바이오팜.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/SK바이오팜.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/SK바이오팜.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/SK바이오팜.txt"
+    },
+    "source_sha256": {
+      "reference": "58c33340319e96090a8e84d3bd6f3753ce1b2b44278c0429d483bf3693845b98",
+      "peer_evidence": "1367a8fdba849d056d108b5e3f78e3bbe894508204356ec731f71905239e38c1",
+      "full": "0ba499510c2a2edb4bcc99cb919f44eb0b0ead5c522a698e6b64b0a28f14be18",
+      "no_peer": "7b0939e97a34e540108e1220597c22875fe54adf817efe0181701412fd0f0ac5"
+    },
+    "request_sha256": "33b1a07d1f5535d2c16823b1d8348c334d681924673c5727130efa3ab9037913",
+    "estimated_input_tokens": 6922,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 세노바메이트·미국 집중을 구조적 약점으로, 고마진 판매 확대와 영업레버리지를 강점으로 식별했지만 이를 유한양행 대비 높은 공헌이익률·영업이익률·성장률이라는 공통 근거와 명시적으로 연결하지는 않았다. A는 고마진 구조와 집중 리스크의 양면성을, B는 비용구조 및 현금흐름 동반 개선을 좀 더 강조했으나 대상기업의 업종 내 차별성을 식별하는 완성도 차이는 명확하지 않다. 또한 양측 모두 공통 자료에서 결측인 일부 PER·P/S·P/B 수치를 가치판단에 사용해 자료 한계 측면의 우열도 뚜렷하지 않다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6909,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6906
+      },
+      "output_tokens": 554,
+      "output_tokens_details": {
+        "reasoning_tokens": 351
+      },
+      "total_tokens": 7463
+    }
+  },
+  {
+    "custom_id": "NPJ0025",
+    "pair_id": "NP015",
+    "company": "SK바이오팜",
+    "as_of_date": "2025-11-06",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/SK바이오팜.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/SK바이오팜.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/SK바이오팜.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/SK바이오팜.txt"
+    },
+    "source_sha256": {
+      "reference": "58c33340319e96090a8e84d3bd6f3753ce1b2b44278c0429d483bf3693845b98",
+      "peer_evidence": "1367a8fdba849d056d108b5e3f78e3bbe894508204356ec731f71905239e38c1",
+      "full": "949fba09d9ab835370ff342cd35c0d7d6f2334415712288f68f2608b70a099f8",
+      "no_peer": "dc7f8b624e49bf456b5bdbcdc5517a99d21c7ac3cd4a7b442809d22b69229567"
+    },
+    "request_sha256": "da8cffd87779d59d8822d9683fbccf4a2430543d10ba8ba52fdb8cd310b194ca",
+    "estimated_input_tokens": 6503,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 동일한 2025년 반기 기준으로 유한양행보다 높은 영업·순이익률 및 영업현금흐름 마진을 연결해 SK바이오팜의 고마진·현금창출력이라는 차별성을 더 선명하게 제시했다. 동시에 이를 단일 제품·미국 시장 집중과 연결해 강점의 구조적 취약성도 설명했으며, 밸류에이션은 동일 기준 비교가 없다는 한계를 명시했다. A도 집중위험을 잘 짚지만 공통 비교근거상 확인되는 상대적 수익성 우위를 업종 맥락에서 충분히 부각하지 못했다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6490,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6487
+      },
+      "output_tokens": 458,
+      "output_tokens_details": {
+        "reasoning_tokens": 285
+      },
+      "total_tokens": 6948
+    }
+  },
+  {
+    "custom_id": "NPJ0026",
+    "pair_id": "NP010",
+    "company": "아모레퍼시픽",
+    "as_of_date": "2025-11-07",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/아모레퍼시픽.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/아모레퍼시픽.json",
+      "full": "evaluation/texts/generated/full/아모레퍼시픽.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/아모레퍼시픽.txt"
+    },
+    "source_sha256": {
+      "reference": "8ac149215512a5340d927d9adc3f495ce9e0df5dcc27acb5839709497da1c0ce",
+      "peer_evidence": "e005ca2fdb44ce704e26d3b6a2a1290f3ccb51085f099ea1e7161d13a2d8d6c1",
+      "full": "37e16034bdd607d0a45fdfde523dfde44b25ce328674b7fe0c5326bd70ac38de",
+      "no_peer": "12af420b2e1c601c6e7f957fd888bd773a3ec28362c852327f07e97406fc7055"
+    },
+    "request_sha256": "f808871b44d8f4201f40019f6c4e7849ed0c4df8728d1a299e0768f9e0cbd584",
+    "estimated_input_tokens": 7198,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 동일 반기 기준 LG생활건강 대비 매출 성장·영업수익성·현금창출력 우위를 구체적으로 확인하되, 이를 완전한 업종 평균으로 일반화하지 않고 지속성 검증이 필요하다고 유보한다. 또한 상반기 공시와 이후 분기 보도의 기간·범위 차이, 순이익과 영업단 개선의 괴리를 명시해 구조적 회복을 단정하지 않는다. B도 위험을 언급하지만 상대 비교 근거 없이 주가 부진을 실적 회복의 미반영으로 기울여 해석하며 매수 결론을 더 강하게 제시한다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7185,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7182
+      },
+      "output_tokens": 296,
+      "output_tokens_details": {
+        "reasoning_tokens": 125
+      },
+      "total_tokens": 7481
+    }
+  },
+  {
+    "custom_id": "NPJ0027",
+    "pair_id": "NP015",
+    "company": "SK바이오팜",
+    "as_of_date": "2025-11-06",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/SK바이오팜.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/SK바이오팜.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/SK바이오팜.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/SK바이오팜.txt"
+    },
+    "source_sha256": {
+      "reference": "58c33340319e96090a8e84d3bd6f3753ce1b2b44278c0429d483bf3693845b98",
+      "peer_evidence": "1367a8fdba849d056d108b5e3f78e3bbe894508204356ec731f71905239e38c1",
+      "full": "949fba09d9ab835370ff342cd35c0d7d6f2334415712288f68f2608b70a099f8",
+      "no_peer": "dc7f8b624e49bf456b5bdbcdc5517a99d21c7ac3cd4a7b442809d22b69229567"
+    },
+    "request_sha256": "43e76198f4dafc1379bf2fe6405665b0547e44058b165c15019361b408425927",
+    "estimated_input_tokens": 6491,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 유한양행과의 동일 반기 누적 기준에서 SK바이오팜의 수익성·현금창출력이 더 높다는 점을 제한적으로 활용하면서도, 이를 업종 전체 우위로 일반화하지 않았다. 또한 단기 주가 강세와 12개월 KOSPI 대비 부진을 함께 제시하고, 밸류에이션 비교 근거 부족을 명시해 성과 개선과 재평가를 구분했다. A도 보수적 해석은 적절하지만 공통 비교근거를 통한 실적의 상대적 의미 부여는 B보다 약하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6478,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6475
+      },
+      "output_tokens": 387,
+      "output_tokens_details": {
+        "reasoning_tokens": 229
+      },
+      "total_tokens": 6865
+    }
+  },
+  {
+    "custom_id": "NPJ0028",
+    "pair_id": "NP012",
+    "company": "아모레퍼시픽",
+    "as_of_date": "2025-11-07",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/아모레퍼시픽.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/아모레퍼시픽.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/아모레퍼시픽.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/아모레퍼시픽.txt"
+    },
+    "source_sha256": {
+      "reference": "8ac149215512a5340d927d9adc3f495ce9e0df5dcc27acb5839709497da1c0ce",
+      "peer_evidence": "e005ca2fdb44ce704e26d3b6a2a1290f3ccb51085f099ea1e7161d13a2d8d6c1",
+      "full": "1ea96eccf6db156f0227dbfb4455682b629fabffdc73f352454f45abbba36d49",
+      "no_peer": "0df10b56f834c050ad87d6db011909c3ea74482813e20f37928dcaac366d3a78"
+    },
+    "request_sha256": "2ade8a967f11bf3e441fbc925cd8b9261318b5bb9288cc477a744a53b85a1cf0",
+    "estimated_input_tokens": 6884,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 중국 채널 재편과 코스알엑스 둔화, 북미 공급망 전환이 수익성 지속성과 재평가를 제한하는 경로를 중립 판단 및 판단 변경 조건에 직접 연결했다. A도 해외·채널 다변화를 제시하지만, 비교 가능한 밸류에이션 근거가 약하다고 인정하면서도 매수 결론을 뒷받침하는 가격 매력의 연결은 상대적으로 약하다. 공통 근거상 대상기업의 성장·마진 회복은 확인되지만, B가 이를 단기 주가 매력과 구분해 더 변별력 있게 해석했다.",
+    "normalized_winner": "no_peer",
+    "usage": {
+      "input_tokens": 6871,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6868
+      },
+      "output_tokens": 408,
+      "output_tokens_details": {
+        "reasoning_tokens": 241
+      },
+      "total_tokens": 7279
+    }
+  },
+  {
+    "custom_id": "NPJ0029",
+    "pair_id": "NP013",
+    "company": "SK바이오팜",
+    "as_of_date": "2025-11-06",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/SK바이오팜.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/SK바이오팜.json",
+      "full": "evaluation/texts/generated/full/SK바이오팜.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/SK바이오팜.txt"
+    },
+    "source_sha256": {
+      "reference": "58c33340319e96090a8e84d3bd6f3753ce1b2b44278c0429d483bf3693845b98",
+      "peer_evidence": "1367a8fdba849d056d108b5e3f78e3bbe894508204356ec731f71905239e38c1",
+      "full": "a17b088febac2ac183370c45ebc1ceb626baf7a34b32df5e2002030ecc1f0967",
+      "no_peer": "a5ed711b72cb8bc9358fd2f46874e54ed5e13ad5fa9c9a3abb3175570465008b"
+    },
+    "request_sha256": "33deb3f009c8c6ef2e29965b934e9b9bdd61fc806d8b4d815e979b912a445e72",
+    "estimated_input_tokens": 7364,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 동일한 2025년 반기 누적 기준에서 유한양행 대비 성장률·수익성이 높다는 제한적 상대 근거를 제시하면서도, 단일 비교기업을 업종 전체로 일반화하지 않았다. 또한 3분기 뉴스와 반기 정기 재무수치의 시점 차이를 명시해 실적 지속성을 유보한 반면, A는 제한된 기간의 개선을 ‘구조적 전환’으로 다소 강하게 해석한다. 두 보고서 모두 제품 집중 위험을 지적하지만, B가 수익성 개선의 의미와 검증 한계를 더 균형 있게 구분했다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7351,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7348
+      },
+      "output_tokens": 303,
+      "output_tokens_details": {
+        "reasoning_tokens": 136
+      },
+      "total_tokens": 7654
+    }
+  },
+  {
+    "custom_id": "NPJ0030",
+    "pair_id": "NP004",
+    "company": "두산",
+    "as_of_date": "2025-11-11",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/두산.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/두산.json",
+      "full": "evaluation/texts/generated/full/두산.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/두산.txt"
+    },
+    "source_sha256": {
+      "reference": "4e86766973d13350d29d1169e5e839a4c76edd35eeeb2a619ce3a92352f45ac0",
+      "peer_evidence": "da12081e6528a0355b5b945b8658deaae13ce797d2ee9268bc20f1366a65213e",
+      "full": "148a4427e70c163b512c0455af3139c90a2a11cf6e2fd4c7bfc20015558668fe",
+      "no_peer": "a23b2825781eb58b64fae12fd2601e32883a63582ca9f6c90f2d9d4991ea6a11"
+    },
+    "request_sha256": "26d400479f0fa063af0d0c05df4d9771d8ed5d1e7fdd1f3061c691aac780b711",
+    "estimated_input_tokens": 6558,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 전자BG의 고성장과 연결 현금흐름·레버리지 부담을 두산의 핵심 강점과 약점으로 제시하지만, 공통 근거상 확인되는 매출 성장·영업수익성의 상대적 우위와 순이익률·영업현금흐름의 상대적 열위를 비교 맥락에서 명확히 분리하지는 못했다. B의 연결 포트폴리오 보완 설명과 A의 자체사업 중심 서술은 있으나, 어느 한쪽이 두산만의 차별성을 더 정확하고 선명하게 식별했다고 보기에는 차이가 충분히 크지 않다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6545,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6542
+      },
+      "output_tokens": 333,
+      "output_tokens_details": {
+        "reasoning_tokens": 162
+      },
+      "total_tokens": 6878
+    }
+  },
+  {
+    "custom_id": "NPJ0031",
+    "pair_id": "NP015",
+    "company": "SK바이오팜",
+    "as_of_date": "2025-11-06",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/SK바이오팜.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/SK바이오팜.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/SK바이오팜.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/SK바이오팜.txt"
+    },
+    "source_sha256": {
+      "reference": "58c33340319e96090a8e84d3bd6f3753ce1b2b44278c0429d483bf3693845b98",
+      "peer_evidence": "1367a8fdba849d056d108b5e3f78e3bbe894508204356ec731f71905239e38c1",
+      "full": "949fba09d9ab835370ff342cd35c0d7d6f2334415712288f68f2608b70a099f8",
+      "no_peer": "dc7f8b624e49bf456b5bdbcdc5517a99d21c7ac3cd4a7b442809d22b69229567"
+    },
+    "request_sha256": "ed7081c92ff9122914e0d980c653d0236b7dd5e0280e6d4f7eda897bee865af7",
+    "estimated_input_tokens": 6479,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 유한양행 대비 더 높은 수익성·현금창출력을 최근 실적의 질을 뒷받침하는 보조 근거로 연결하면서도, 단일 제품·미국 집중이 그 강점의 지속성 위험이라는 점을 최종 중립 판단에 반영했다. B도 집중위험과 확장 수익 귀속의 불확실성을 잘 설명하지만, 대상기업의 상대적 강점이 판단에 주는 의미는 더 약하게 제시된다. 다만 A 역시 제공 근거상 확인되지 않는 PER·P/S를 언급한 점은 한계다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6466,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6463
+      },
+      "output_tokens": 409,
+      "output_tokens_details": {
+        "reasoning_tokens": 251
+      },
+      "total_tokens": 6875
+    }
+  },
+  {
+    "custom_id": "NPJ0032",
+    "pair_id": "NP001",
+    "company": "현대건설",
+    "as_of_date": "2025-10-20",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/현대건설.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/현대건설.json",
+      "full": "evaluation/texts/generated/full/현대건설.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/현대건설.txt"
+    },
+    "source_sha256": {
+      "reference": "820e186230a202be893320efa1863f411bb299ff3868ddfeabe4eb717f4c137e",
+      "peer_evidence": "a2559e0c7285317fc6c5d2209cfda3bd9c19c956c7413429ca8aa4b91d1b64da",
+      "full": "d4e327e67ca1743453403e89da066d5092f691644d004eacef35ac2e17aee06a",
+      "no_peer": "20c00d1f68322eaab28f5122ad63a3a78fa8d9d499e3bddd7a2af0dcba149d53"
+    },
+    "request_sha256": "6465c13a30ddc44f23cde701ab804e2221efcd2c322f2c197db435aa06085cd2",
+    "estimated_input_tokens": 7917,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 매출 감소·마진 회복·영업현금흐름 악화를 함께 제시하며 손익 반등을 구조적 정상화로 과대해석하지 않았다. A는 GS건설 대비 유동성·레버리지 상대 우위를 제한적으로 활용하지만, B도 수주와 실적·현금흐름 전환의 불확실성을 적절히 유보한다. 어느 쪽도 공통 비교근거상 현대건설의 더 큰 매출 감소나 낮은 영업마진을 상대적으로 해석하지 않아 우열은 뚜렷하지 않다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 7904,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7901
+      },
+      "output_tokens": 628,
+      "output_tokens_details": {
+        "reasoning_tokens": 468
+      },
+      "total_tokens": 8532
+    }
+  },
+  {
+    "custom_id": "NPJ0033",
+    "pair_id": "NP001",
+    "company": "현대건설",
+    "as_of_date": "2025-10-20",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/현대건설.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/현대건설.json",
+      "full": "evaluation/texts/generated/full/현대건설.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/현대건설.txt"
+    },
+    "source_sha256": {
+      "reference": "820e186230a202be893320efa1863f411bb299ff3868ddfeabe4eb717f4c137e",
+      "peer_evidence": "a2559e0c7285317fc6c5d2209cfda3bd9c19c956c7413429ca8aa4b91d1b64da",
+      "full": "d4e327e67ca1743453403e89da066d5092f691644d004eacef35ac2e17aee06a",
+      "no_peer": "20c00d1f68322eaab28f5122ad63a3a78fa8d9d499e3bddd7a2af0dcba149d53"
+    },
+    "request_sha256": "f02483a684cd01ca5ec5782a2360db0eaed72a9a3ab8d34b45dfffd98dd4dfc3",
+    "estimated_input_tokens": 7917,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 GS건설 대비 현대건설의 낮은 부채비율과 높은 유동비율을 제한적으로 활용해 재무 부담의 상대적 수준을 해석하면서도 이를 업종 전체나 완전한 턴어라운드의 증거로 과장하지 않았다. 또한 12개월 강세와 최근 3개월 시장 대비 부진을 함께 제시해 단기 조정을 구조적 경쟁력 훼손으로 단정하지 않았다. A도 회복 초기라는 유보적 해석은 타당하지만, 공통 비교 근거를 통한 상대적 성과 해석은 더 약하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7904,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7901
+      },
+      "output_tokens": 429,
+      "output_tokens_details": {
+        "reasoning_tokens": 272
+      },
+      "total_tokens": 8333
+    }
+  },
+  {
+    "custom_id": "NPJ0034",
+    "pair_id": "NP011",
+    "company": "아모레퍼시픽",
+    "as_of_date": "2025-11-07",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/아모레퍼시픽.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/아모레퍼시픽.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/아모레퍼시픽.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/아모레퍼시픽.txt"
+    },
+    "source_sha256": {
+      "reference": "8ac149215512a5340d927d9adc3f495ce9e0df5dcc27acb5839709497da1c0ce",
+      "peer_evidence": "e005ca2fdb44ce704e26d3b6a2a1290f3ccb51085f099ea1e7161d13a2d8d6c1",
+      "full": "00a5fdecc718a0e9b9812c3335b133f11567a61286b2b5c000f71b4aceeebb25",
+      "no_peer": "b7efab0cb8f8c718a73b355e9c988bcf6476fb715d58ee3401ef48e3e4bf4b9b"
+    },
+    "request_sha256": "5cc1699c8e9c366d1112dba68d84532388cd268a373739884e20de0f2e471f14",
+    "estimated_input_tokens": 7290,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 동일한 2025년 반기 누적 기준에서 LG생활건강 대비 아모레퍼시픽의 매출 성장, 영업·순이익률, 영업현금흐름 마진 우위를 연결해 회복이 단순 업황 공통 효과만은 아니라는 차별성을 구체화했다. A도 수익성 회복과 중국·코스알엑스 리스크를 잘 짚지만, 공통 비교 근거로 확인되는 상대적 강점의 의미를 대상기업 고유의 경쟁력으로 검증·부각하는 정도는 B가 더 높다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7277,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7274
+      },
+      "output_tokens": 326,
+      "output_tokens_details": {
+        "reasoning_tokens": 168
+      },
+      "total_tokens": 7603
+    }
+  },
+  {
+    "custom_id": "NPJ0035",
+    "pair_id": "NP007",
+    "company": "BGF리테일",
+    "as_of_date": "2025-11-07",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/BGF리테일.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/BGF리테일.json",
+      "full": "evaluation/texts/generated/full/BGF리테일.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/BGF리테일.txt"
+    },
+    "source_sha256": {
+      "reference": "b59eeb5ac0bad25fb1900f227064a33cb053b02d5efd98fb78ae00fc4d106016",
+      "peer_evidence": "9ed6ef0e6541a17a6a1730b5c97f77f45bba3f13a2d324ec6ee3eb1d24fc9dee",
+      "full": "518571ecec83b0e011581a971dca62755c475398ef9b5d4d8831baca4067a0e7",
+      "no_peer": "128faba95499d1085b0830984c6c54587b77d4e17819d9b9d6ab6c82f76c137b"
+    },
+    "request_sha256": "fba8d07dc1f3fd32b826b860fe84a0f52c3dacce4aeb4e49d5df5b149161a7aa",
+    "estimated_input_tokens": 6742,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 상반기 외형 성장과 수익성·현금흐름 약화, 3분기 반등을 함께 놓고 일시적 반등과 구조적 마진 압박을 구분하려 유보적으로 해석했다. B는 GS리테일 대비 높은 P/B·P/S를 정확히 언급하지만 이는 성과 해석의 우위를 결정할 정도는 아니며, 양측 모두 공통 비교근거상 매출 성장·현금흐름률 등의 상대적 강약을 충분히 종합하지는 못했다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6729,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6726
+      },
+      "output_tokens": 419,
+      "output_tokens_details": {
+        "reasoning_tokens": 271
+      },
+      "total_tokens": 7148
+    }
+  },
+  {
+    "custom_id": "NPJ0036",
+    "pair_id": "NP006",
+    "company": "두산",
+    "as_of_date": "2025-11-11",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/두산.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/두산.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/두산.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/두산.txt"
+    },
+    "source_sha256": {
+      "reference": "4e86766973d13350d29d1169e5e839a4c76edd35eeeb2a619ce3a92352f45ac0",
+      "peer_evidence": "da12081e6528a0355b5b945b8658deaae13ce797d2ee9268bc20f1366a65213e",
+      "full": "a3d570b27f4e3af71979a4fc963a3a695f4751cf159a56a92d3598978955b7f8",
+      "no_peer": "0208933692a14e0f3509c64fe45ba3677798255967d0a2995a1c4868877fe507"
+    },
+    "request_sha256": "aacd5cfad9e87ebc839f6f7076bff63f0230370726847e3dfb0f3a504776785f",
+    "estimated_input_tokens": 6550,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 전자BG의 수요·증설→이익 기여→연결 실적 보완이라는 경로와 로보틱스 손실·인수 자금소요가 이를 제약하는 경로를 더 명확히 연결했다. 또한 반기 현금유출, 레버리지, 주가 초과성과를 구체적으로 결합해 중립 판단이 바뀔 조건을 제시해 대상기업 특유의 투자 매력과 위험을 A보다 선명하게 구분했다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6537,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6534
+      },
+      "output_tokens": 383,
+      "output_tokens_details": {
+        "reasoning_tokens": 248
+      },
+      "total_tokens": 6920
+    }
+  },
+  {
+    "custom_id": "NPJ0037",
+    "pair_id": "NP005",
+    "company": "두산",
+    "as_of_date": "2025-11-11",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/두산.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/두산.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/두산.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/두산.txt"
+    },
+    "source_sha256": {
+      "reference": "4e86766973d13350d29d1169e5e839a4c76edd35eeeb2a619ce3a92352f45ac0",
+      "peer_evidence": "da12081e6528a0355b5b945b8658deaae13ce797d2ee9268bc20f1366a65213e",
+      "full": "021c732ad5d05f8ed27be40ad9836c5e5bbfcb8eab44bc209127468402c9679c",
+      "no_peer": "d72065712ec936c230b510e5598ed027c7386bfa3265abab70a3f678d7bd7541"
+    },
+    "request_sha256": "9d4204703e814609b4777fdb22d197f51493d3887afd50cd202adbe1d22067c0",
+    "estimated_input_tokens": 6807,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 동일한 2025년 반기 기준으로 두산의 매출성장률(+6.5%)과 영업이익률(5.8%)이 SK의 역성장과 낮은 영업이익률보다 상대적으로 양호하다는 점을 연결해, 전자BG 성장의 업종 내 차별성을 구체화했다. 이는 단일 비교기업을 업종 평균으로 일반화하지도 않았다. B도 전자BG 중심 회복과 전사 현금흐름·자본배치의 괴리를 잘 짚지만, 공통 비교 근거로 확인되는 두산의 상대적 강점은 명확히 부각하지 못했다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6794,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6791
+      },
+      "output_tokens": 362,
+      "output_tokens_details": {
+        "reasoning_tokens": 189
+      },
+      "total_tokens": 7156
+    }
+  },
+  {
+    "custom_id": "NPJ0038",
+    "pair_id": "NP007",
+    "company": "BGF리테일",
+    "as_of_date": "2025-11-07",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/BGF리테일.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/BGF리테일.json",
+      "full": "evaluation/texts/generated/full/BGF리테일.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/BGF리테일.txt"
+    },
+    "source_sha256": {
+      "reference": "b59eeb5ac0bad25fb1900f227064a33cb053b02d5efd98fb78ae00fc4d106016",
+      "peer_evidence": "9ed6ef0e6541a17a6a1730b5c97f77f45bba3f13a2d324ec6ee3eb1d24fc9dee",
+      "full": "518571ecec83b0e011581a971dca62755c475398ef9b5d4d8831baca4067a0e7",
+      "no_peer": "128faba95499d1085b0830984c6c54587b77d4e17819d9b9d6ab6c82f76c137b"
+    },
+    "request_sha256": "f4b1f0d864d816b04a1804024077edc04543f6169b3c2ab0bede6d84dc60c108",
+    "estimated_input_tokens": 6730,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 CU의 매출 경쟁력과 상품·물류 확장이라는 강점을 이익 전환의 불확실성과 연결하고, GS리테일 대비 더 높은 P/B·P/S를 근거로 할인 매력이 부족하다는 점을 중립 판단에 실제 반영했다. B도 사업 실행력과 마진 압박을 구체적으로 제시하지만, 이용 가능한 국내 비교 근거를 최종 가치평가와 판단 변경 조건에 연결하지 않아 대상기업의 상대적 투자 매력이 덜 선명하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6717,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6714
+      },
+      "output_tokens": 323,
+      "output_tokens_details": {
+        "reasoning_tokens": 184
+      },
+      "total_tokens": 7040
+    }
+  },
+  {
+    "custom_id": "NPJ0039",
+    "pair_id": "NP002",
+    "company": "현대건설",
+    "as_of_date": "2025-10-20",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/현대건설.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/현대건설.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/현대건설.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/현대건설.txt"
+    },
+    "source_sha256": {
+      "reference": "820e186230a202be893320efa1863f411bb299ff3868ddfeabe4eb717f4c137e",
+      "peer_evidence": "a2559e0c7285317fc6c5d2209cfda3bd9c19c956c7413429ca8aa4b91d1b64da",
+      "full": "28fab3929dd98adebf3bc255115f57e6e3fd97de9518821d26ef683222319807",
+      "no_peer": "73d20d756a5350d17c1e13dc371a0bba9c64925a41f34aee005a2bd84e9ef40a"
+    },
+    "request_sha256": "3e6992f9ebb884d75e5b358ec03d1ca84c4db7adb0d398a98a33fc087956e816",
+    "estimated_input_tokens": 8306,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 매출 감소·낮은 영업마진·대규모 영업현금 유출을 이익 회복만으로 과대평가하지 않고 초기 정상화 단계로 유보적으로 해석했다. 시장성과도 12개월 강세와 최근 3개월 시장 대비 부진을 함께 제시해 단순 주가 방향으로 결론내리지 않았다. A의 GS건설 대비 재무구조 언급은 제한된 단일 비교군이라는 점에서 추가적인 해상도를 크게 높이지 못하며, B와의 실질적 우위는 분명하지 않다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 8293,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 8290
+      },
+      "output_tokens": 432,
+      "output_tokens_details": {
+        "reasoning_tokens": 276
+      },
+      "total_tokens": 8725
+    }
+  },
+  {
+    "custom_id": "NPJ0040",
+    "pair_id": "NP004",
+    "company": "두산",
+    "as_of_date": "2025-11-11",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/두산.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/두산.json",
+      "full": "evaluation/texts/generated/full/두산.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/두산.txt"
+    },
+    "source_sha256": {
+      "reference": "4e86766973d13350d29d1169e5e839a4c76edd35eeeb2a619ce3a92352f45ac0",
+      "peer_evidence": "da12081e6528a0355b5b945b8658deaae13ce797d2ee9268bc20f1366a65213e",
+      "full": "148a4427e70c163b512c0455af3139c90a2a11cf6e2fd4c7bfc20015558668fe",
+      "no_peer": "a23b2825781eb58b64fae12fd2601e32883a63582ca9f6c90f2d9d4991ea6a11"
+    },
+    "request_sha256": "ba1831099305cf0aa744013031b04dee93f5dd272e4137218b0d0944372b38f7",
+    "estimated_input_tokens": 6534,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 전자BG의 AI용 CCL 성장, 연결 현금흐름·레버리지 부담, 급등한 주가를 투자 매력과 위험의 핵심 경로로 연결해 중립 판단을 제시한다. 공통 비교근거상 두산은 SK 대비 매출 성장과 영업마진이 우위이나 영업현금흐름과 순이익률은 열위인데, 양측 모두 이 상대적 위치를 최종 판단에 명시적으로 반영하지 않았다. B가 전사 현금흐름 전이 여부를 조금 더 선명히 적었지만, A 역시 같은 확인 조건과 연결 포트폴리오 위험을 구체화해 이번 기준에서 명확한 우위는 아니다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6521,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6518
+      },
+      "output_tokens": 310,
+      "output_tokens_details": {
+        "reasoning_tokens": 122
+      },
+      "total_tokens": 6831
+    }
+  },
+  {
+    "custom_id": "NPJ0041",
+    "pair_id": "NP010",
+    "company": "아모레퍼시픽",
+    "as_of_date": "2025-11-07",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/아모레퍼시픽.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/아모레퍼시픽.json",
+      "full": "evaluation/texts/generated/full/아모레퍼시픽.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/아모레퍼시픽.txt"
+    },
+    "source_sha256": {
+      "reference": "8ac149215512a5340d927d9adc3f495ce9e0df5dcc27acb5839709497da1c0ce",
+      "peer_evidence": "e005ca2fdb44ce704e26d3b6a2a1290f3ccb51085f099ea1e7161d13a2d8d6c1",
+      "full": "37e16034bdd607d0a45fdfde523dfde44b25ce328674b7fe0c5326bd70ac38de",
+      "no_peer": "12af420b2e1c601c6e7f957fd888bd773a3ec28362c852327f07e97406fc7055"
+    },
+    "request_sha256": "b690132c40646d943a13af35f1435f4834f6cf76d8f78a3137abde7247b104c6",
+    "estimated_input_tokens": 7210,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 동일한 2025년 상반기 기준으로 LG생활건강 대비 매출성장률(14.11% 대 -5.32%)과 영업·순이익률, 영업현금흐름률 우위를 연결해 아모레퍼시픽의 회복이 국내 비교 범위에서 차별적임을 구체화했다. 동시에 코스알엑스·중국 회복의 지속성과 채널 통합·공급망 실행 부담을 고유한 약점으로 제시하고, 제한된 비교군을 업종 전체로 일반화하지 않았다. B도 개별 사업 강점과 위험을 서술하지만, 공통 비교근거를 통해 그 차별성을 검증·부각하는 정도는 A보다 약하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7197,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7194
+      },
+      "output_tokens": 294,
+      "output_tokens_details": {
+        "reasoning_tokens": 102
+      },
+      "total_tokens": 7491
+    }
+  },
+  {
+    "custom_id": "NPJ0042",
+    "pair_id": "NP008",
+    "company": "BGF리테일",
+    "as_of_date": "2025-11-07",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/BGF리테일.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/BGF리테일.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/BGF리테일.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/BGF리테일.txt"
+    },
+    "source_sha256": {
+      "reference": "b59eeb5ac0bad25fb1900f227064a33cb053b02d5efd98fb78ae00fc4d106016",
+      "peer_evidence": "9ed6ef0e6541a17a6a1730b5c97f77f45bba3f13a2d324ec6ee3eb1d24fc9dee",
+      "full": "b3057da2dfbc1d0237a0c82b86964b706dcc6ba260186924d0a4128ebf298aad",
+      "no_peer": "f706d2473e01ab8d46021eedd6c64c86bad3dee945da3c1f9aba753c73b538a9"
+    },
+    "request_sha256": "cfbd597faf9d808ecb17ddbfd8032d2a144edebf2fecfbfa0b48e9e37d4685d4",
+    "estimated_input_tokens": 7090,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 GS리테일 대비 상반기 매출성장률·순이익률·영업현금흐름마진 우위와 더 높은 P/B·P/S를 함께 반영해, 본업 체력은 방어됐지만 명백한 저평가도 아니라는 중립 판단을 구체화했다. 반면 A는 비교기업이 없다고 서술해 제공된 국내 비교 근거를 활용하지 못했고, 가격 및 수익성 판단의 상대적 변별력이 더 약하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7077,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7074
+      },
+      "output_tokens": 208,
+      "output_tokens_details": {
+        "reasoning_tokens": 71
+      },
+      "total_tokens": 7285
+    }
+  },
+  {
+    "custom_id": "NPJ0043",
+    "pair_id": "NP015",
+    "company": "SK바이오팜",
+    "as_of_date": "2025-11-06",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/SK바이오팜.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/SK바이오팜.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/SK바이오팜.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/SK바이오팜.txt"
+    },
+    "source_sha256": {
+      "reference": "58c33340319e96090a8e84d3bd6f3753ce1b2b44278c0429d483bf3693845b98",
+      "peer_evidence": "1367a8fdba849d056d108b5e3f78e3bbe894508204356ec731f71905239e38c1",
+      "full": "949fba09d9ab835370ff342cd35c0d7d6f2334415712288f68f2608b70a099f8",
+      "no_peer": "dc7f8b624e49bf456b5bdbcdc5517a99d21c7ac3cd4a7b442809d22b69229567"
+    },
+    "request_sha256": "27fcc360ba3ed03f6727fa690124a0fc224d1256c0f1c8a0991e2d9b7815db75",
+    "estimated_input_tokens": 6479,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 SK바이오팜의 높은 반기 수익성·현금창출력을 유한양행 대비 상대적으로 확인하면서도, 그 우위가 세노바메이트와 미국시장 집중의 반대급부라는 점을 최종 중립 판단에 연결했다. 또한 경쟁사 대비 단기 주가 흐름 우위와 장기 시장 대비 부진을 구분해 재평가 미확정이라는 조건을 더 구체화했다. A도 집중위험과 확장 불확실성을 잘 짚었지만, 공통 비교근거를 통한 대상기업 고유성의 선명도는 B가 더 높다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6466,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6463
+      },
+      "output_tokens": 561,
+      "output_tokens_details": {
+        "reasoning_tokens": 396
+      },
+      "total_tokens": 7027
+    }
+  },
+  {
+    "custom_id": "NPJ0044",
+    "pair_id": "NP002",
+    "company": "현대건설",
+    "as_of_date": "2025-10-20",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/현대건설.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/현대건설.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/현대건설.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/현대건설.txt"
+    },
+    "source_sha256": {
+      "reference": "820e186230a202be893320efa1863f411bb299ff3868ddfeabe4eb717f4c137e",
+      "peer_evidence": "a2559e0c7285317fc6c5d2209cfda3bd9c19c956c7413429ca8aa4b91d1b64da",
+      "full": "28fab3929dd98adebf3bc255115f57e6e3fd97de9518821d26ef683222319807",
+      "no_peer": "73d20d756a5350d17c1e13dc371a0bba9c64925a41f34aee005a2bd84e9ef40a"
+    },
+    "request_sha256": "808680cf88131a8673ebd5c7142626fe0e8bd0aab6d7d048aeb4bf493c5a5b66",
+    "estimated_input_tokens": 8294,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 현대엔지니어링의 해외 저마진·사고 수습 부담과 해외 현장 원가관리 위험을 연결 실적 변동성의 구체적 경로로 제시해, 현대건설의 회복이 왜 매끄럽지 않을 수 있는지를 더 선명하게 설명한다. 또한 정비사업·해외 플랜트 수주 기반이라는 강점을 인정하면서도 현금화·원가 통제가 판단 변경 조건이라는 점을 유지해, 수주 일반론보다 대상기업 특유의 투자 매력과 제약을 더 구분했다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 8281,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 8278
+      },
+      "output_tokens": 391,
+      "output_tokens_details": {
+        "reasoning_tokens": 241
+      },
+      "total_tokens": 8672
+    }
+  },
+  {
+    "custom_id": "NPJ0045",
+    "pair_id": "NP008",
+    "company": "BGF리테일",
+    "as_of_date": "2025-11-07",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/BGF리테일.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/BGF리테일.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/BGF리테일.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/BGF리테일.txt"
+    },
+    "source_sha256": {
+      "reference": "b59eeb5ac0bad25fb1900f227064a33cb053b02d5efd98fb78ae00fc4d106016",
+      "peer_evidence": "9ed6ef0e6541a17a6a1730b5c97f77f45bba3f13a2d324ec6ee3eb1d24fc9dee",
+      "full": "b3057da2dfbc1d0237a0c82b86964b706dcc6ba260186924d0a4128ebf298aad",
+      "no_peer": "f706d2473e01ab8d46021eedd6c64c86bad3dee945da3c1f9aba753c73b538a9"
+    },
+    "request_sha256": "b90f05106077587abee3b0db90f3da7df52b0af1057615042f9e09d232866094",
+    "estimated_input_tokens": 7090,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 BGF리테일이 GS리테일 대비 상반기 매출성장률·순이익률·영업현금흐름마진에서 우위인 반면 P/B와 P/S는 더 높다는 점을 중립 판단에 직접 연결했다. 이는 성장·현금창출의 상대적 강점과 밸류에이션 할인 부재를 함께 보여 주어, 단순한 마진 회복 불확실성 논지에 머문 B보다 대상기업의 투자 매력과 제약을 더 변별력 있게 제시한다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7077,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7074
+      },
+      "output_tokens": 258,
+      "output_tokens_details": {
+        "reasoning_tokens": 109
+      },
+      "total_tokens": 7335
+    }
+  },
+  {
+    "custom_id": "NPJ0046",
+    "pair_id": "NP002",
+    "company": "현대건설",
+    "as_of_date": "2025-10-20",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/현대건설.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/현대건설.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/현대건설.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/현대건설.txt"
+    },
+    "source_sha256": {
+      "reference": "820e186230a202be893320efa1863f411bb299ff3868ddfeabe4eb717f4c137e",
+      "peer_evidence": "a2559e0c7285317fc6c5d2209cfda3bd9c19c956c7413429ca8aa4b91d1b64da",
+      "full": "28fab3929dd98adebf3bc255115f57e6e3fd97de9518821d26ef683222319807",
+      "no_peer": "73d20d756a5350d17c1e13dc371a0bba9c64925a41f34aee005a2bd84e9ef40a"
+    },
+    "request_sha256": "4ca9c89a8db811640257656229660223b9fac07de7682941030a6e3cf3c97981",
+    "estimated_input_tokens": 8306,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 GS건설 대비 현대건설의 부채비율·자본비율·유동성 우위를 제한적으로 활용하면서도 이를 전면적 업종 우위로 일반화하지 않았고, 회복을 현금화 확인 전의 검증 국면으로 유보했다. 반면 A는 비교 근거 없이 주가 흐름이 실적·현금흐름 우려의 재평가를 의미한다고 해석해 동시 발생을 인과적으로 읽는 부분이 더 크다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 8293,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 8290
+      },
+      "output_tokens": 594,
+      "output_tokens_details": {
+        "reasoning_tokens": 459
+      },
+      "total_tokens": 8887
+    }
+  },
+  {
+    "custom_id": "NPJ0047",
+    "pair_id": "NP005",
+    "company": "두산",
+    "as_of_date": "2025-11-11",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/두산.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/두산.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/두산.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/두산.txt"
+    },
+    "source_sha256": {
+      "reference": "4e86766973d13350d29d1169e5e839a4c76edd35eeeb2a619ce3a92352f45ac0",
+      "peer_evidence": "da12081e6528a0355b5b945b8658deaae13ce797d2ee9268bc20f1366a65213e",
+      "full": "021c732ad5d05f8ed27be40ad9836c5e5bbfcb8eab44bc209127468402c9679c",
+      "no_peer": "d72065712ec936c230b510e5598ed027c7386bfa3265abab70a3f678d7bd7541"
+    },
+    "request_sha256": "675c0a13632c2663d703454547cfb8ed184ff3f0a2ef78ee768dd3490dd47da5",
+    "estimated_input_tokens": 6783,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 전자BG의 AI용 CCL 성장이라는 고유한 강점과, 전사 현금유출·부채·로보틱스 손실 및 자본배치 위험이 기업가치로 연결되는 경로를 구체적으로 제시한다. A는 SK 대비 매출 성장과 영업이익률 우위를 보조 근거로 활용했지만, 제한된 단일 비교군이라는 범위 내에서 최종 중립 판단을 B보다 명확히 차별화할 정도는 아니다. B 역시 전자BG 회복이 전사 현금창출로 전이되어야 한다는 판단 변경 조건을 선명히 제시해, 투자 매력의 변별력에서 실질적 우열이 불분명하다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6770,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6767
+      },
+      "output_tokens": 356,
+      "output_tokens_details": {
+        "reasoning_tokens": 167
+      },
+      "total_tokens": 7126
+    }
+  },
+  {
+    "custom_id": "NPJ0048",
+    "pair_id": "NP004",
+    "company": "두산",
+    "as_of_date": "2025-11-11",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/두산.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/두산.json",
+      "full": "evaluation/texts/generated/full/두산.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/두산.txt"
+    },
+    "source_sha256": {
+      "reference": "4e86766973d13350d29d1169e5e839a4c76edd35eeeb2a619ce3a92352f45ac0",
+      "peer_evidence": "da12081e6528a0355b5b945b8658deaae13ce797d2ee9268bc20f1366a65213e",
+      "full": "148a4427e70c163b512c0455af3139c90a2a11cf6e2fd4c7bfc20015558668fe",
+      "no_peer": "a23b2825781eb58b64fae12fd2601e32883a63582ca9f6c90f2d9d4991ea6a11"
+    },
+    "request_sha256": "000e3f943010104d1d1a89df39db7313059f087aea44a50686fa2cd1c231728d",
+    "estimated_input_tokens": 6558,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 후보 모두 전자BG 성장과 전사 현금흐름·레버리지 부담을 핵심 강점·약점으로 제시하지만, 공통 비교근거상 확인되는 두산의 상대적 수익성·성장성 및 현금흐름 약점을 업종 맥락에서 명확히 구분해 해석하지는 못했다. B가 일부 절대 지표를 더 세분화했지만 대상기업의 차별성을 더 정확하게 부각한 실질적 우위로 보기는 어렵다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6545,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6542
+      },
+      "output_tokens": 273,
+      "output_tokens_details": {
+        "reasoning_tokens": 132
+      },
+      "total_tokens": 6818
+    }
+  },
+  {
+    "custom_id": "NPJ0049",
+    "pair_id": "NP001",
+    "company": "현대건설",
+    "as_of_date": "2025-10-20",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/현대건설.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/현대건설.json",
+      "full": "evaluation/texts/generated/full/현대건설.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/현대건설.txt"
+    },
+    "source_sha256": {
+      "reference": "820e186230a202be893320efa1863f411bb299ff3868ddfeabe4eb717f4c137e",
+      "peer_evidence": "a2559e0c7285317fc6c5d2209cfda3bd9c19c956c7413429ca8aa4b91d1b64da",
+      "full": "d4e327e67ca1743453403e89da066d5092f691644d004eacef35ac2e17aee06a",
+      "no_peer": "20c00d1f68322eaab28f5122ad63a3a78fa8d9d499e3bddd7a2af0dcba149d53"
+    },
+    "request_sha256": "245edbf4b5ee3d437f7eb4e94b18c1a4880e5f634a8e17ef0dd4cb9dfcd34895",
+    "estimated_input_tokens": 7905,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 GS건설 대비 더 낮은 부채비율과 높은 유동비율을 회복 논거의 제한된 근거로만 사용하면서도, 현금흐름·원가 통제 확인이 필요하다는 최종 판단으로 연결했다. 이는 현대건설의 재무 완충력과 현금화 취약성을 함께 더 선명하게 구분한다. A도 수주와 실행 리스크를 잘 짚지만, 공통 비교근거를 통한 대상기업의 상대적 위치 반영은 더 약하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7892,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7889
+      },
+      "output_tokens": 468,
+      "output_tokens_details": {
+        "reasoning_tokens": 327
+      },
+      "total_tokens": 8360
+    }
+  },
+  {
+    "custom_id": "NPJ0050",
+    "pair_id": "NP001",
+    "company": "현대건설",
+    "as_of_date": "2025-10-20",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/현대건설.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/현대건설.json",
+      "full": "evaluation/texts/generated/full/현대건설.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/현대건설.txt"
+    },
+    "source_sha256": {
+      "reference": "820e186230a202be893320efa1863f411bb299ff3868ddfeabe4eb717f4c137e",
+      "peer_evidence": "a2559e0c7285317fc6c5d2209cfda3bd9c19c956c7413429ca8aa4b91d1b64da",
+      "full": "d4e327e67ca1743453403e89da066d5092f691644d004eacef35ac2e17aee06a",
+      "no_peer": "20c00d1f68322eaab28f5122ad63a3a78fa8d9d499e3bddd7a2af0dcba149d53"
+    },
+    "request_sha256": "f011fed76d16fb203570fd20e88bf2f2781ef80c8ed5a51f6c7dc1796250d920",
+    "estimated_input_tokens": 7905,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 현대건설의 GS건설 대비 낮은 부채비율·높은 유동비율을 매도 회피 요인으로 제한적으로 반영하면서도, 더 큰 영업현금흐름 적자와 매출 감소 때문에 이를 매수 근거로 확대하지 않았다. 또한 수주 확대가 매출·현금회수로 전환돼야 판단이 바뀐다는 조건을 제시해, 재무상 상대 강점과 실행 리스크를 최종 중립 판단에 더 직접 연결했다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7892,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7889
+      },
+      "output_tokens": 573,
+      "output_tokens_details": {
+        "reasoning_tokens": 434
+      },
+      "total_tokens": 8465
+    }
+  },
+  {
+    "custom_id": "NPJ0051",
+    "pair_id": "NP013",
+    "company": "SK바이오팜",
+    "as_of_date": "2025-11-06",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/SK바이오팜.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/SK바이오팜.json",
+      "full": "evaluation/texts/generated/full/SK바이오팜.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/SK바이오팜.txt"
+    },
+    "source_sha256": {
+      "reference": "58c33340319e96090a8e84d3bd6f3753ce1b2b44278c0429d483bf3693845b98",
+      "peer_evidence": "1367a8fdba849d056d108b5e3f78e3bbe894508204356ec731f71905239e38c1",
+      "full": "a17b088febac2ac183370c45ebc1ceb626baf7a34b32df5e2002030ecc1f0967",
+      "no_peer": "a5ed711b72cb8bc9358fd2f46874e54ed5e13ad5fa9c9a3abb3175570465008b"
+    },
+    "request_sha256": "b964c6975689e83a5f35661439abdadbf73860b24a5e76a7194ee9b18444dbb1",
+    "estimated_input_tokens": 7376,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 동일한 2025년 상반기 누적 기준으로 유한양행 대비 더 높은 매출성장률(29.3% 대 10.0%)과 영업수익성을 명시해, SK바이오팜의 고성장·고마진 전환이 국내 제한 비교군에서 갖는 차별성을 적절히 부각했다. 동시에 세노바메이트 매출 집중과 미국 의존을 그 수익성의 구조적 약점으로 연결했다. B도 집중위험을 잘 짚지만, 절대 실적 중심이라 제공된 비교 근거상 차별적 강점의 식별은 A보다 덜 선명하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7363,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7360
+      },
+      "output_tokens": 313,
+      "output_tokens_details": {
+        "reasoning_tokens": 140
+      },
+      "total_tokens": 7676
+    }
+  },
+  {
+    "custom_id": "NPJ0052",
+    "pair_id": "NP012",
+    "company": "아모레퍼시픽",
+    "as_of_date": "2025-11-07",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/아모레퍼시픽.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/아모레퍼시픽.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/아모레퍼시픽.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/아모레퍼시픽.txt"
+    },
+    "source_sha256": {
+      "reference": "8ac149215512a5340d927d9adc3f495ce9e0df5dcc27acb5839709497da1c0ce",
+      "peer_evidence": "e005ca2fdb44ce704e26d3b6a2a1290f3ccb51085f099ea1e7161d13a2d8d6c1",
+      "full": "1ea96eccf6db156f0227dbfb4455682b629fabffdc73f352454f45abbba36d49",
+      "no_peer": "0df10b56f834c050ad87d6db011909c3ea74482813e20f37928dcaac366d3a78"
+    },
+    "request_sha256": "cb41dbe620ccee074ec066ca69ecc07500890e155cf2f78a54dc083fb93ac8ec",
+    "estimated_input_tokens": 6884,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 아모레퍼시픽의 수익성 회복, 비중국 해외·디지털 채널 확장, 중국 재편·코스알엑스·북미 공급망 리스크를 실적 지속성과 재평가의 조건으로 연결했다. 또한 제한된 비교 근거만으로 상대 밸류에이션을 단정하지 않은 점도 공통적이다. B의 매수 판단은 A의 중립보다 더 강하지만, 제공된 비교 근거로 그 강도의 차이를 뒷받침하는 추가적인 변별력은 명확하지 않다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6871,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6868
+      },
+      "output_tokens": 344,
+      "output_tokens_details": {
+        "reasoning_tokens": 190
+      },
+      "total_tokens": 7215
+    }
+  },
+  {
+    "custom_id": "NPJ0053",
+    "pair_id": "NP006",
+    "company": "두산",
+    "as_of_date": "2025-11-11",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/두산.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/두산.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/두산.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/두산.txt"
+    },
+    "source_sha256": {
+      "reference": "4e86766973d13350d29d1169e5e839a4c76edd35eeeb2a619ce3a92352f45ac0",
+      "peer_evidence": "da12081e6528a0355b5b945b8658deaae13ce797d2ee9268bc20f1366a65213e",
+      "full": "a3d570b27f4e3af71979a4fc963a3a695f4751cf159a56a92d3598978955b7f8",
+      "no_peer": "0208933692a14e0f3509c64fe45ba3677798255967d0a2995a1c4868877fe507"
+    },
+    "request_sha256": "a1894426d87b83348f418357ebad0a6b55573748736e688d957d6b89b97e9399",
+    "estimated_input_tokens": 6574,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 공통 비교근거상 두산의 매출 성장·영업마진 우위와 순이익률·영업현금흐름 열위, 유사한 레버리지라는 상대적 특징을 명확히 연결하지 못했다. A는 비교기업 자료가 없다고 서술하고, B는 절대 수치를 더 제시하지만 이를 업종 내 차별성으로 해석하지 않아 이번 기준에서 뚜렷한 우위가 없다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6561,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6558
+      },
+      "output_tokens": 384,
+      "output_tokens_details": {
+        "reasoning_tokens": 254
+      },
+      "total_tokens": 6945
+    }
+  },
+  {
+    "custom_id": "NPJ0054",
+    "pair_id": "NP009",
+    "company": "BGF리테일",
+    "as_of_date": "2025-11-07",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/BGF리테일.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/BGF리테일.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/BGF리테일.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/BGF리테일.txt"
+    },
+    "source_sha256": {
+      "reference": "b59eeb5ac0bad25fb1900f227064a33cb053b02d5efd98fb78ae00fc4d106016",
+      "peer_evidence": "9ed6ef0e6541a17a6a1730b5c97f77f45bba3f13a2d324ec6ee3eb1d24fc9dee",
+      "full": "f28c4df05541d6ce86e325a49bbafa0326cce3cc86760e548c5fbafa90c212ba",
+      "no_peer": "117347b8776c26884ed27c7f68759d21e126c7f6941081b9976319907a3f4bd2"
+    },
+    "request_sha256": "95877a4d1c4246fda6db921091e8674c3b07ac333ea9c7e2fef544fc6b39bdbb",
+    "estimated_input_tokens": 6529,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 GS리테일과 동일한 2025년 반기 누적 기준으로 BGF리테일의 더 높은 매출성장률, 순이익률 및 영업현금흐름마진과 거의 유사한 영업이익률을 연결해 외형·현금창출의 상대적 강점과 마진 한계를 함께 식별했다. 또한 더 높은 P/B·P/S를 근거로 상대가치 매력을 절제해 해석했다. A는 비교 가능한 상대 근거가 없다고 하여 제공된 국내 비교군으로 확인 가능한 차별성을 활용하지 못했다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6516,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6513
+      },
+      "output_tokens": 261,
+      "output_tokens_details": {
+        "reasoning_tokens": 103
+      },
+      "total_tokens": 6777
+    }
+  },
+  {
+    "custom_id": "NPJ0055",
+    "pair_id": "NP005",
+    "company": "두산",
+    "as_of_date": "2025-11-11",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/두산.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/두산.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/두산.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/두산.txt"
+    },
+    "source_sha256": {
+      "reference": "4e86766973d13350d29d1169e5e839a4c76edd35eeeb2a619ce3a92352f45ac0",
+      "peer_evidence": "da12081e6528a0355b5b945b8658deaae13ce797d2ee9268bc20f1366a65213e",
+      "full": "021c732ad5d05f8ed27be40ad9836c5e5bbfcb8eab44bc209127468402c9679c",
+      "no_peer": "d72065712ec936c230b510e5598ed027c7386bfa3265abab70a3f678d7bd7541"
+    },
+    "request_sha256": "b8acfaa1d9f49ff371e63f37f12dc684d7bd0f809ec877204117c143ff362627",
+    "estimated_input_tokens": 6795,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 제한된 국내 비교군인 SK 대비 두산의 반기 매출 성장과 영업이익률이 우위였음을 근거로, 상반기 감익·현금유출만으로 사업 경쟁력을 단정적으로 부정하지 않았다. 동시에 이를 완전한 업종 평균으로 일반화하지 않고 전사 현금흐름 및 재무부담과 분리해 해석했다. B도 상반기 부진과 3분기 반등의 잠정성을 적절히 유보했지만, 공통 비교근거를 통해 두산 실적의 상대적 의미를 검증하는 단계는 부족하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6782,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6779
+      },
+      "output_tokens": 430,
+      "output_tokens_details": {
+        "reasoning_tokens": 267
+      },
+      "total_tokens": 7212
+    }
+  },
+  {
+    "custom_id": "NPJ0056",
+    "pair_id": "NP011",
+    "company": "아모레퍼시픽",
+    "as_of_date": "2025-11-07",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/아모레퍼시픽.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/아모레퍼시픽.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/아모레퍼시픽.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/아모레퍼시픽.txt"
+    },
+    "source_sha256": {
+      "reference": "8ac149215512a5340d927d9adc3f495ce9e0df5dcc27acb5839709497da1c0ce",
+      "peer_evidence": "e005ca2fdb44ce704e26d3b6a2a1290f3ccb51085f099ea1e7161d13a2d8d6c1",
+      "full": "00a5fdecc718a0e9b9812c3335b133f11567a61286b2b5c000f71b4aceeebb25",
+      "no_peer": "b7efab0cb8f8c718a73b355e9c988bcf6476fb715d58ee3401ef48e3e4bf4b9b"
+    },
+    "request_sha256": "71750ab2ecb18c2411a3ac6df4e4af821748231eaf4e06cf288c60a56e2850d2",
+    "estimated_input_tokens": 7278,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 제한된 국내 비교기업 한 곳이라는 범위를 완전한 업종 평균으로 확대하지 않으면서도, LG생활건강의 반기 매출 역성장과 더 낮은 영업·순이익·영업현금흐름 마진을 근거로 아모레퍼시픽의 개선이 단순 업황 동반 회복만은 아닐 수 있음을 적절히 보강한다. 또한 순이익 감소와 코스알엑스 둔화를 분리해 구조적 개선 판단을 유보한다. B는 대상기업의 절대 개선과 주가 부진을 설명하지만, 기업 고유 회복과 공통 업황을 구분하는 비교 근거가 상대적으로 부족하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7265,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7262
+      },
+      "output_tokens": 361,
+      "output_tokens_details": {
+        "reasoning_tokens": 177
+      },
+      "total_tokens": 7626
+    }
+  },
+  {
+    "custom_id": "NPJ0057",
+    "pair_id": "NP008",
+    "company": "BGF리테일",
+    "as_of_date": "2025-11-07",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/BGF리테일.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/BGF리테일.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/BGF리테일.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/BGF리테일.txt"
+    },
+    "source_sha256": {
+      "reference": "b59eeb5ac0bad25fb1900f227064a33cb053b02d5efd98fb78ae00fc4d106016",
+      "peer_evidence": "9ed6ef0e6541a17a6a1730b5c97f77f45bba3f13a2d324ec6ee3eb1d24fc9dee",
+      "full": "b3057da2dfbc1d0237a0c82b86964b706dcc6ba260186924d0a4128ebf298aad",
+      "no_peer": "f706d2473e01ab8d46021eedd6c64c86bad3dee945da3c1f9aba753c73b538a9"
+    },
+    "request_sha256": "2108ae4aa387dfb031b006f797b282f54ea2415d7f229b4af8ef01e76aa50ef5",
+    "estimated_input_tokens": 7102,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 BGF리테일의 상반기 매출성장률·순이익률·영업현금흐름마진이 국내 비교대상보다 높다는 공통 근거를 통해, 이익 감소를 곧바로 본업 경쟁력 훼손으로 단정하지 않았다. 동시에 P/B·P/S 프리미엄과 3분기 반등의 지속성 불확실성을 분리해 상대적 강점이 즉시 투자 매력으로 이어지지 않는다고 해석한 점이 더 정교하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7089,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7086
+      },
+      "output_tokens": 379,
+      "output_tokens_details": {
+        "reasoning_tokens": 235
+      },
+      "total_tokens": 7468
+    }
+  },
+  {
+    "custom_id": "NPJ0058",
+    "pair_id": "NP010",
+    "company": "아모레퍼시픽",
+    "as_of_date": "2025-11-07",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/아모레퍼시픽.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/아모레퍼시픽.json",
+      "full": "evaluation/texts/generated/full/아모레퍼시픽.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/아모레퍼시픽.txt"
+    },
+    "source_sha256": {
+      "reference": "8ac149215512a5340d927d9adc3f495ce9e0df5dcc27acb5839709497da1c0ce",
+      "peer_evidence": "e005ca2fdb44ce704e26d3b6a2a1290f3ccb51085f099ea1e7161d13a2d8d6c1",
+      "full": "37e16034bdd607d0a45fdfde523dfde44b25ce328674b7fe0c5326bd70ac38de",
+      "no_peer": "12af420b2e1c601c6e7f957fd888bd773a3ec28362c852327f07e97406fc7055"
+    },
+    "request_sha256": "5fbbe38cc6f47321f1caaca3f1289b9a51d7366878899168094cf46d499ca2e5",
+    "estimated_input_tokens": 7186,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 아모레퍼시픽의 상반기 성장·마진·현금흐름 개선이 LG생활건강 대비 우위라는 제한된 상대 근거를 ‘매도하기 어려운 체력’으로만 절제해 활용하고, 코스알엑스·중국·북미 공급망·D2C 실행이 확인되기 전에는 매수로 전환하지 않는 조건을 최종 판단에 연결했다. A도 해외 다변화와 실행 리스크를 구체화했지만, 비교 근거를 투자판단의 변별력으로 연결하지 않은 채 상대 주가 부진을 매수 매력으로 더 강하게 해석해 판단 변경 조건의 검증 기준이 상대적으로 약하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7173,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7170
+      },
+      "output_tokens": 277,
+      "output_tokens_details": {
+        "reasoning_tokens": 94
+      },
+      "total_tokens": 7450
+    }
+  },
+  {
+    "custom_id": "NPJ0059",
+    "pair_id": "NP009",
+    "company": "BGF리테일",
+    "as_of_date": "2025-11-07",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/BGF리테일.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/BGF리테일.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/BGF리테일.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/BGF리테일.txt"
+    },
+    "source_sha256": {
+      "reference": "b59eeb5ac0bad25fb1900f227064a33cb053b02d5efd98fb78ae00fc4d106016",
+      "peer_evidence": "9ed6ef0e6541a17a6a1730b5c97f77f45bba3f13a2d324ec6ee3eb1d24fc9dee",
+      "full": "f28c4df05541d6ce86e325a49bbafa0326cce3cc86760e548c5fbafa90c212ba",
+      "no_peer": "117347b8776c26884ed27c7f68759d21e126c7f6941081b9976319907a3f4bd2"
+    },
+    "request_sha256": "48fd51a3b4e7cd771db70f4afb5b689dc59e64dd65f8d56430d7bf9eaf424f02",
+    "estimated_input_tokens": 6505,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 GS리테일 대비 BGF리테일의 더 높은 상반기 매출성장률, 더 높은 순이익률·영업현금흐름마진과 거의 유사한 영업이익률을 연결해 외형·현금창출 강점과 비용 부담이라는 약점을 구체화했다. 또한 더 높은 P/B·P/S가 이익 회복 확인 전 중립 판단을 지지한다는 경로를 제시해, 상대 비교가 최종 판단과 변경 조건에 실제 반영됐다. A는 비교 가능한 상대가치 근거가 없다고 처리해 제공된 제한적 비교 맥락을 대상기업의 변별력 있는 투자 논지로 활용하지 못했다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6492,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6489
+      },
+      "output_tokens": 292,
+      "output_tokens_details": {
+        "reasoning_tokens": 111
+      },
+      "total_tokens": 6784
+    }
+  },
+  {
+    "custom_id": "NPJ0060",
+    "pair_id": "NP012",
+    "company": "아모레퍼시픽",
+    "as_of_date": "2025-11-07",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/아모레퍼시픽.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/아모레퍼시픽.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/아모레퍼시픽.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/아모레퍼시픽.txt"
+    },
+    "source_sha256": {
+      "reference": "8ac149215512a5340d927d9adc3f495ce9e0df5dcc27acb5839709497da1c0ce",
+      "peer_evidence": "e005ca2fdb44ce704e26d3b6a2a1290f3ccb51085f099ea1e7161d13a2d8d6c1",
+      "full": "1ea96eccf6db156f0227dbfb4455682b629fabffdc73f352454f45abbba36d49",
+      "no_peer": "0df10b56f834c050ad87d6db011909c3ea74482813e20f37928dcaac366d3a78"
+    },
+    "request_sha256": "83b8c780a6acdb06e6c68e968fa4956d424ea2d3854e52eb9c6e10abeba39ffd",
+    "estimated_input_tokens": 6908,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 아모레퍼시픽의 매출 성장·수익성 회복과 중국 재편/코스알엑스 리스크를 구체적으로 다루지만, 공통 근거상 확인되는 LG생활건강 대비 높은 성장률·영업/현금흐름 마진이라는 차별성을 명시적으로 연결하지는 못했다. 반대로 유동성·현금비율은 비교기업보다 낮은 편이라는 상대적 약점도 양측 모두 식별하지 않아, 대상기업 고유의 강·약점 부각 측면에서 우열이 뚜렷하지 않다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6895,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6892
+      },
+      "output_tokens": 384,
+      "output_tokens_details": {
+        "reasoning_tokens": 223
+      },
+      "total_tokens": 7279
+    }
+  },
+  {
+    "custom_id": "NPJ0061",
+    "pair_id": "NP012",
+    "company": "아모레퍼시픽",
+    "as_of_date": "2025-11-07",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/아모레퍼시픽.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/아모레퍼시픽.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/아모레퍼시픽.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/아모레퍼시픽.txt"
+    },
+    "source_sha256": {
+      "reference": "8ac149215512a5340d927d9adc3f495ce9e0df5dcc27acb5839709497da1c0ce",
+      "peer_evidence": "e005ca2fdb44ce704e26d3b6a2a1290f3ccb51085f099ea1e7161d13a2d8d6c1",
+      "full": "1ea96eccf6db156f0227dbfb4455682b629fabffdc73f352454f45abbba36d49",
+      "no_peer": "0df10b56f834c050ad87d6db011909c3ea74482813e20f37928dcaac366d3a78"
+    },
+    "request_sha256": "551ebf96b0b61e13b9984f42c8f560d80383329555453addb7019ee698f6e022",
+    "estimated_input_tokens": 6896,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 상반기 매출·영업이익률·현금흐름 개선과 순이익 변동성을 함께 제시하고, 단일 밸류에이션과 주가 부진만으로 가격 매력을 단정하지 않아 해석의 유보 수준이 유사하다. 다만 공통 비교근거상 국내 비교사 대비 매출 성장과 수익성은 상대적으로 양호한 반면 양사 모두 이를 명시적으로 활용해 기업 고유 성과와 업종 흐름을 구분하지 못했다. B가 다소 보수적이지만, 이번 기준에서 A 대비 명확한 우위로 볼 차이는 아니다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6883,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6880
+      },
+      "output_tokens": 418,
+      "output_tokens_details": {
+        "reasoning_tokens": 249
+      },
+      "total_tokens": 7301
+    }
+  },
+  {
+    "custom_id": "NPJ0062",
+    "pair_id": "NP003",
+    "company": "현대건설",
+    "as_of_date": "2025-10-20",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/현대건설.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/현대건설.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/현대건설.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/현대건설.txt"
+    },
+    "source_sha256": {
+      "reference": "820e186230a202be893320efa1863f411bb299ff3868ddfeabe4eb717f4c137e",
+      "peer_evidence": "a2559e0c7285317fc6c5d2209cfda3bd9c19c956c7413429ca8aa4b91d1b64da",
+      "full": "8bf56ad496b2ad0fa71b95f570d43c554680f67d27b6522f1868314dd03c1a48",
+      "no_peer": "158d62fbedcd2cbc896b5ceb681aeb0e42e7f44983b0956486035178508166fc"
+    },
+    "request_sha256": "794ede42c06642d2218c75397dd12ee48b845df3f547d069be3868154e230edf",
+    "estimated_input_tokens": 8129,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 현대건설의 수주 기반과 현금흐름·원가 실행 리스크를 구체적으로 다뤘지만, 공통 비교근거상 확인되는 GS건설 대비 더 낮은 영업마진·더 큰 매출 감소·음의 영업현금흐름, 반면 더 낮은 부채비율과 흑자 순이익이라는 차별성을 명확히 연결하지 못했다. B의 정비사업 경쟁력 강조와 A의 수주 경쟁력 언급 모두 상대적 근거가 충분히 제시되지 않아, 대상기업 고유 강점·약점 식별의 우열은 불분명하다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 8116,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 8113
+      },
+      "output_tokens": 365,
+      "output_tokens_details": {
+        "reasoning_tokens": 195
+      },
+      "total_tokens": 8481
+    }
+  },
+  {
+    "custom_id": "NPJ0063",
+    "pair_id": "NP004",
+    "company": "두산",
+    "as_of_date": "2025-11-11",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/두산.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/두산.json",
+      "full": "evaluation/texts/generated/full/두산.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/두산.txt"
+    },
+    "source_sha256": {
+      "reference": "4e86766973d13350d29d1169e5e839a4c76edd35eeeb2a619ce3a92352f45ac0",
+      "peer_evidence": "da12081e6528a0355b5b945b8658deaae13ce797d2ee9268bc20f1366a65213e",
+      "full": "148a4427e70c163b512c0455af3139c90a2a11cf6e2fd4c7bfc20015558668fe",
+      "no_peer": "a23b2825781eb58b64fae12fd2601e32883a63582ca9f6c90f2d9d4991ea6a11"
+    },
+    "request_sha256": "c5f685d04059d2d1bbb0c7cbd256d3e4e7a75f88ed19af84e4479e7d1a810079",
+    "estimated_input_tokens": 6546,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 두산의 상반기 매출 성장과 이익·현금흐름 약화를 함께 보며 단순 외형 성장으로 성과를 과대평가하지 않았고, 3분기 반등의 지속성도 유보했다. 다만 공통 비교근거상 SK 대비 매출·수익성·현금흐름의 상대적 의미를 직접 활용하지 않아 기업 고유 성과와 시장 공통 흐름의 구분은 양측 모두 제한적이다. A의 구조적·일시적 요인 분리 한계 언급과 B의 조건부 해석은 실질적 우열을 가를 정도의 차이는 아니다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6533,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6530
+      },
+      "output_tokens": 397,
+      "output_tokens_details": {
+        "reasoning_tokens": 224
+      },
+      "total_tokens": 6930
+    }
+  },
+  {
+    "custom_id": "NPJ0064",
+    "pair_id": "NP009",
+    "company": "BGF리테일",
+    "as_of_date": "2025-11-07",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/BGF리테일.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/BGF리테일.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/BGF리테일.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/BGF리테일.txt"
+    },
+    "source_sha256": {
+      "reference": "b59eeb5ac0bad25fb1900f227064a33cb053b02d5efd98fb78ae00fc4d106016",
+      "peer_evidence": "9ed6ef0e6541a17a6a1730b5c97f77f45bba3f13a2d324ec6ee3eb1d24fc9dee",
+      "full": "f28c4df05541d6ce86e325a49bbafa0326cce3cc86760e548c5fbafa90c212ba",
+      "no_peer": "117347b8776c26884ed27c7f68759d21e126c7f6941081b9976319907a3f4bd2"
+    },
+    "request_sha256": "13f72e804e11d804629136720d15e7fe0c0000ef3fed0cf5600016eda781ebe6",
+    "estimated_input_tokens": 6505,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 GS리테일 대비 더 높은 반기 매출성장률과 순이익·영업현금흐름 마진, 유사한 영업이익률을 본업 방어력의 근거로, 더 높은 P/B·P/S를 가격 매력의 제약으로 연결했다. 이는 CU의 매출 리더십과 비용 부담이라는 대상기업 고유 요인이 중립 판단 및 회복 확인 조건에 반영된 구조다. 반면 B는 활용 가능한 비교 근거가 있음에도 상대가치 근거가 없다고 처리해 대상기업의 상대적 위치가 최종 판단에 덜 반영됐다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6492,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6489
+      },
+      "output_tokens": 280,
+      "output_tokens_details": {
+        "reasoning_tokens": 116
+      },
+      "total_tokens": 6772
+    }
+  },
+  {
+    "custom_id": "NPJ0065",
+    "pair_id": "NP006",
+    "company": "두산",
+    "as_of_date": "2025-11-11",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/두산.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/두산.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/두산.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/두산.txt"
+    },
+    "source_sha256": {
+      "reference": "4e86766973d13350d29d1169e5e839a4c76edd35eeeb2a619ce3a92352f45ac0",
+      "peer_evidence": "da12081e6528a0355b5b945b8658deaae13ce797d2ee9268bc20f1366a65213e",
+      "full": "a3d570b27f4e3af71979a4fc963a3a695f4751cf159a56a92d3598978955b7f8",
+      "no_peer": "0208933692a14e0f3509c64fe45ba3677798255967d0a2995a1c4868877fe507"
+    },
+    "request_sha256": "fee39511c352bd4b5c639df9259dff4fdb7cac42830b1bb398d465d2e14d7f0c",
+    "estimated_input_tokens": 6562,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 반기 매출 성장에도 수익성 및 영업현금흐름이 악화된 점을 구체적으로 분리하고, 전자BG 개선이 연결 체력 개선으로 전이됐는지는 공시 분해 한계 때문에 유보했다. B도 유사한 유보를 했지만 비교기업 자료가 없다고 서술해 실제 제공된 SK 비교 근거를 놓쳤으며, A의 해석이 성과의 질과 구조적 전환 여부를 더 신중하게 구분한다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6549,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6546
+      },
+      "output_tokens": 357,
+      "output_tokens_details": {
+        "reasoning_tokens": 220
+      },
+      "total_tokens": 6906
+    }
+  },
+  {
+    "custom_id": "NPJ0066",
+    "pair_id": "NP011",
+    "company": "아모레퍼시픽",
+    "as_of_date": "2025-11-07",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/아모레퍼시픽.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/아모레퍼시픽.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/아모레퍼시픽.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/아모레퍼시픽.txt"
+    },
+    "source_sha256": {
+      "reference": "8ac149215512a5340d927d9adc3f495ce9e0df5dcc27acb5839709497da1c0ce",
+      "peer_evidence": "e005ca2fdb44ce704e26d3b6a2a1290f3ccb51085f099ea1e7161d13a2d8d6c1",
+      "full": "00a5fdecc718a0e9b9812c3335b133f11567a61286b2b5c000f71b4aceeebb25",
+      "no_peer": "b7efab0cb8f8c718a73b355e9c988bcf6476fb715d58ee3401ef48e3e4bf4b9b"
+    },
+    "request_sha256": "761b1c06e576d131b0d29d5b6fdc0967c8886760883420cabec27f5b0d372a19",
+    "estimated_input_tokens": 7266,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 LG생활건강 대비 반기 매출 성장, 영업·순이익률 및 영업현금흐름 마진 우위라는 공통 근거를 통해 아모레퍼시픽의 회복이 단순 업황 반등만은 아닐 수 있다는 상대적 위치를 투자 논지에 연결했다. 또한 중국 재정비·북미 공급망·코스알엑스 둔화를 판단 변경 요인으로 구체화해 강점의 지속 조건을 제시했다. A도 개별 사업 리스크를 다뤘지만, 동일한 대상기업 특성이 동종사 대비 왜 더 투자 매력적인지의 변별력은 B보다 약하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7253,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7250
+      },
+      "output_tokens": 258,
+      "output_tokens_details": {
+        "reasoning_tokens": 83
+      },
+      "total_tokens": 7511
+    }
+  },
+  {
+    "custom_id": "NPJ0067",
+    "pair_id": "NP005",
+    "company": "두산",
+    "as_of_date": "2025-11-11",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/두산.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/두산.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/두산.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/두산.txt"
+    },
+    "source_sha256": {
+      "reference": "4e86766973d13350d29d1169e5e839a4c76edd35eeeb2a619ce3a92352f45ac0",
+      "peer_evidence": "da12081e6528a0355b5b945b8658deaae13ce797d2ee9268bc20f1366a65213e",
+      "full": "021c732ad5d05f8ed27be40ad9836c5e5bbfcb8eab44bc209127468402c9679c",
+      "no_peer": "d72065712ec936c230b510e5598ed027c7386bfa3265abab70a3f678d7bd7541"
+    },
+    "request_sha256": "20a3f4f732a43a3e0a15503105f598891b9a4ebbd92c43f155070c29077c9dee",
+    "estimated_input_tokens": 6807,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 동일한 2025년 반기 기준에서 SK 대비 두산의 매출 성장(+6.5% vs. -3.8%)과 영업이익률(5.8% vs. 1.0%)이 상대적으로 양호하다는 점을 연결해 전자BG 중심 회복의 차별성을 더 선명하게 부각했다. 동시에 현금유출·높은 부채와 로보틱스 및 자금배치 부담을 전사 구조적 약점으로 분리했다. A도 강점과 약점을 균형 있게 다루지만, 공통 비교근거로 확인되는 상대적 의미를 대상기업의 차별성으로 구체화하지 못했다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6794,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6791
+      },
+      "output_tokens": 304,
+      "output_tokens_details": {
+        "reasoning_tokens": 127
+      },
+      "total_tokens": 7098
+    }
+  },
+  {
+    "custom_id": "NPJ0068",
+    "pair_id": "NP003",
+    "company": "현대건설",
+    "as_of_date": "2025-10-20",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/현대건설.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/현대건설.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/현대건설.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/현대건설.txt"
+    },
+    "source_sha256": {
+      "reference": "820e186230a202be893320efa1863f411bb299ff3868ddfeabe4eb717f4c137e",
+      "peer_evidence": "a2559e0c7285317fc6c5d2209cfda3bd9c19c956c7413429ca8aa4b91d1b64da",
+      "full": "8bf56ad496b2ad0fa71b95f570d43c554680f67d27b6522f1868314dd03c1a48",
+      "no_peer": "158d62fbedcd2cbc896b5ceb681aeb0e42e7f44983b0956486035178508166fc"
+    },
+    "request_sha256": "c6f0e34e0e4a442e276604c0b3bb92992d93facb991f7bdf3b6e529d6f45ea6a",
+    "estimated_input_tokens": 8117,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 매출 감소·영업현금 유출과 최근 주가 약세를 수주/이익 전환의 불확실성과 연결하되, 확정되지 않은 3분기 전망과 프로젝트 수익성의 한계를 유보한다. 반면 공통 비교근거상 GS건설 대비 현대건설의 매출 감소폭, 마진, 현금흐름이 갖는 상대적 의미를 어느 쪽도 충분히 해석하지 않아 대상기업 고유성과 업종 공통 흐름의 구분에서 뚜렷한 우위가 없다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 8104,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 8101
+      },
+      "output_tokens": 392,
+      "output_tokens_details": {
+        "reasoning_tokens": 238
+      },
+      "total_tokens": 8496
+    }
+  },
+  {
+    "custom_id": "NPJ0069",
+    "pair_id": "NP001",
+    "company": "현대건설",
+    "as_of_date": "2025-10-20",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/현대건설.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/현대건설.json",
+      "full": "evaluation/texts/generated/full/현대건설.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/현대건설.txt"
+    },
+    "source_sha256": {
+      "reference": "820e186230a202be893320efa1863f411bb299ff3868ddfeabe4eb717f4c137e",
+      "peer_evidence": "a2559e0c7285317fc6c5d2209cfda3bd9c19c956c7413429ca8aa4b91d1b64da",
+      "full": "d4e327e67ca1743453403e89da066d5092f691644d004eacef35ac2e17aee06a",
+      "no_peer": "20c00d1f68322eaab28f5122ad63a3a78fa8d9d499e3bddd7a2af0dcba149d53"
+    },
+    "request_sha256": "602f8a5d631a45d53a2a4277c16175106a06df3b965370c9c784aba3d5e74623",
+    "estimated_input_tokens": 7929,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 현대건설의 부채비율(167.9%)과 유동비율(145.3%)이 GS건설보다 양호하다는 상대적 재무 강점을, 더 낮은 현금비율과 큰 영업현금흐름 적자라는 약점과 함께 연결했다. 이는 동일 반기 기준 비교 근거와 부합하며, B의 절대적 회복·위험 서술보다 업종 내 차별성을 더 선명하게 드러낸다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7916,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7913
+      },
+      "output_tokens": 319,
+      "output_tokens_details": {
+        "reasoning_tokens": 187
+      },
+      "total_tokens": 8235
+    }
+  },
+  {
+    "custom_id": "NPJ0070",
+    "pair_id": "NP010",
+    "company": "아모레퍼시픽",
+    "as_of_date": "2025-11-07",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/아모레퍼시픽.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/아모레퍼시픽.json",
+      "full": "evaluation/texts/generated/full/아모레퍼시픽.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/아모레퍼시픽.txt"
+    },
+    "source_sha256": {
+      "reference": "8ac149215512a5340d927d9adc3f495ce9e0df5dcc27acb5839709497da1c0ce",
+      "peer_evidence": "e005ca2fdb44ce704e26d3b6a2a1290f3ccb51085f099ea1e7161d13a2d8d6c1",
+      "full": "37e16034bdd607d0a45fdfde523dfde44b25ce328674b7fe0c5326bd70ac38de",
+      "no_peer": "12af420b2e1c601c6e7f957fd888bd773a3ec28362c852327f07e97406fc7055"
+    },
+    "request_sha256": "0233a73a4b7b232732703bef0eb505541ca65ff486f55c5a63f6c3c4627d80fd",
+    "estimated_input_tokens": 7186,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 아모레퍼시픽의 상반기 성장·마진·현금흐름 개선이 LG생활건강 대비 우위라는 제한된 국내 비교를 최종 중립 판단에 연결하면서, 실적 체력은 인정하되 코스알엑스·중국·북미 실행 리스크의 검증이 필요하다는 변경 조건을 구체화했다. B도 대상기업 고유의 해외 채널·브랜드 요인을 제시하지만, 밸류에이션 판단이 제한적임을 인정하면서도 주가 부진을 매수 근거로 더 강하게 해석해 상대적 실적 위치와 잔존 위험이 매수 결론에 미치는 경로가 A보다 덜 선명하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7173,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7170
+      },
+      "output_tokens": 287,
+      "output_tokens_details": {
+        "reasoning_tokens": 101
+      },
+      "total_tokens": 7460
+    }
+  },
+  {
+    "custom_id": "NPJ0071",
+    "pair_id": "NP005",
+    "company": "두산",
+    "as_of_date": "2025-11-11",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/두산.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/두산.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/두산.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/두산.txt"
+    },
+    "source_sha256": {
+      "reference": "4e86766973d13350d29d1169e5e839a4c76edd35eeeb2a619ce3a92352f45ac0",
+      "peer_evidence": "da12081e6528a0355b5b945b8658deaae13ce797d2ee9268bc20f1366a65213e",
+      "full": "021c732ad5d05f8ed27be40ad9836c5e5bbfcb8eab44bc209127468402c9679c",
+      "no_peer": "d72065712ec936c230b510e5598ed027c7386bfa3265abab70a3f678d7bd7541"
+    },
+    "request_sha256": "11f43eeb48261c33f23ccfa769a9a7a35e9a690bbf23745fca3f29e30fcb14c0",
+    "estimated_input_tokens": 6783,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 전자BG의 AI용 CCL 성장과 전사 현금흐름·부채·자본배치 부담이 기업가치로 연결되는 경로를 구체적으로 제시한다. B는 SK 대비 매출 성장과 영업이익률을 보조 근거로 활용했지만, 이 제한된 비교가 최종 중립 판단을 실질적으로 더 변별력 있게 만들었다고 보기 어렵고 최근 1개월 상대 약세라는 서술은 공통 근거와도 맞지 않는다. A 역시 비교기업 맥락을 직접 활용하지 않았지만 대상기업 고유의 성장축과 그룹 차원의 제약을 충분히 연결했다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6770,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6767
+      },
+      "output_tokens": 356,
+      "output_tokens_details": {
+        "reasoning_tokens": 184
+      },
+      "total_tokens": 7126
+    }
+  },
+  {
+    "custom_id": "NPJ0072",
+    "pair_id": "NP014",
+    "company": "SK바이오팜",
+    "as_of_date": "2025-11-06",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/SK바이오팜.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/SK바이오팜.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/SK바이오팜.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/SK바이오팜.txt"
+    },
+    "source_sha256": {
+      "reference": "58c33340319e96090a8e84d3bd6f3753ce1b2b44278c0429d483bf3693845b98",
+      "peer_evidence": "1367a8fdba849d056d108b5e3f78e3bbe894508204356ec731f71905239e38c1",
+      "full": "0ba499510c2a2edb4bcc99cb919f44eb0b0ead5c522a698e6b64b0a28f14be18",
+      "no_peer": "7b0939e97a34e540108e1220597c22875fe54adf817efe0181701412fd0f0ac5"
+    },
+    "request_sha256": "6f63a7332509239e6c9542a6e886ab88d321b540d56c1d7a439e4053153cf58d",
+    "estimated_input_tokens": 6898,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 세노바메이트의 95.1% 매출 집중, 미국 상업화 성장의 이익 레버리지, 허가·급여·수익귀속 시차를 중립 판단의 핵심 경로로 연결했다. A는 중국 사업의 직접 수익 귀속 한계를 좀 더 구체화했고, B는 생산거점 등 관세 대응을 보완했으나, 어느 쪽도 제한된 국내 peer를 근거로 대상기업의 상대적 위치를 최종 판단에서 유의미하게 더 선명하게 만들지는 못했다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6885,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6882
+      },
+      "output_tokens": 356,
+      "output_tokens_details": {
+        "reasoning_tokens": 205
+      },
+      "total_tokens": 7241
+    }
+  },
+  {
+    "custom_id": "NPJ0073",
+    "pair_id": "NP008",
+    "company": "BGF리테일",
+    "as_of_date": "2025-11-07",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/BGF리테일.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/BGF리테일.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/BGF리테일.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/BGF리테일.txt"
+    },
+    "source_sha256": {
+      "reference": "b59eeb5ac0bad25fb1900f227064a33cb053b02d5efd98fb78ae00fc4d106016",
+      "peer_evidence": "9ed6ef0e6541a17a6a1730b5c97f77f45bba3f13a2d324ec6ee3eb1d24fc9dee",
+      "full": "b3057da2dfbc1d0237a0c82b86964b706dcc6ba260186924d0a4128ebf298aad",
+      "no_peer": "f706d2473e01ab8d46021eedd6c64c86bad3dee945da3c1f9aba753c73b538a9"
+    },
+    "request_sha256": "15461859f24442b0bf42f13a004af748771dabc9ca1b2c1bb7eac8e810993c71",
+    "estimated_input_tokens": 7114,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 동일 반기 기준 GS리테일 대비 더 높은 매출성장률·순이익률·영업현금흐름마진을 BGF리테일의 상대적 체력으로, 더 높은 P/B·P/S를 밸류에이션 제약으로 연결해 차별성을 구체화했다. B는 비교기업이 없다고 서술해 제공된 국내 비교 근거를 활용하지 못했으며, 대상기업의 강점·약점을 업종 내 상대 맥락에서 덜 선명하게 식별했다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7101,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7098
+      },
+      "output_tokens": 311,
+      "output_tokens_details": {
+        "reasoning_tokens": 167
+      },
+      "total_tokens": 7412
+    }
+  },
+  {
+    "custom_id": "NPJ0074",
+    "pair_id": "NP013",
+    "company": "SK바이오팜",
+    "as_of_date": "2025-11-06",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/SK바이오팜.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/SK바이오팜.json",
+      "full": "evaluation/texts/generated/full/SK바이오팜.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/SK바이오팜.txt"
+    },
+    "source_sha256": {
+      "reference": "58c33340319e96090a8e84d3bd6f3753ce1b2b44278c0429d483bf3693845b98",
+      "peer_evidence": "1367a8fdba849d056d108b5e3f78e3bbe894508204356ec731f71905239e38c1",
+      "full": "a17b088febac2ac183370c45ebc1ceb626baf7a34b32df5e2002030ecc1f0967",
+      "no_peer": "a5ed711b72cb8bc9358fd2f46874e54ed5e13ad5fa9c9a3abb3175570465008b"
+    },
+    "request_sha256": "be42d7496e26e3152bf9d71a5166d779709e354ff722756f8f7cd69e0ade0378",
+    "estimated_input_tokens": 7364,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 유한양행과 동일한 2025년 상반기 누적 기준에서 SK바이오팜의 성장률과 수익성이 더 높았음을 제한적으로 확인하면서도, 단일 제품 집중과 3분기 실적의 정기 재무시계열 미확인을 명시해 구조적 우위 결론을 유보했다. 반면 B는 동일한 주력품목 집중 및 확장 경로의 매출화 불확실성을 인정하면서도 상반기 개선과 단기 이벤트를 ‘구조적 전환’의 근거로 더 강하게 해석해 지속성 판단이 상대적으로 앞선다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7351,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7348
+      },
+      "output_tokens": 376,
+      "output_tokens_details": {
+        "reasoning_tokens": 210
+      },
+      "total_tokens": 7727
+    }
+  },
+  {
+    "custom_id": "NPJ0075",
+    "pair_id": "NP007",
+    "company": "BGF리테일",
+    "as_of_date": "2025-11-07",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/BGF리테일.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/BGF리테일.json",
+      "full": "evaluation/texts/generated/full/BGF리테일.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/BGF리테일.txt"
+    },
+    "source_sha256": {
+      "reference": "b59eeb5ac0bad25fb1900f227064a33cb053b02d5efd98fb78ae00fc4d106016",
+      "peer_evidence": "9ed6ef0e6541a17a6a1730b5c97f77f45bba3f13a2d324ec6ee3eb1d24fc9dee",
+      "full": "518571ecec83b0e011581a971dca62755c475398ef9b5d4d8831baca4067a0e7",
+      "no_peer": "128faba95499d1085b0830984c6c54587b77d4e17819d9b9d6ab6c82f76c137b"
+    },
+    "request_sha256": "81bce7e764d659399fd1ee2a617c46ca652e44d0511e43f0a2b003c12baa12b6",
+    "estimated_input_tokens": 6754,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 동일 기준일 GS리테일과의 P/B·P/S 비교를 제한적으로 사용해 BGF리테일의 상대적 가격 매력이 뚜렷하지 않다는 점을 구체화했다. A는 비교 기준이 없다고 처리해 공통 근거상 확인 가능한 상대 맥락을 놓쳤다. B 역시 3분기 반등과 상품 경쟁력을 이익 회복으로 과장하지 않아 강점과 마진 약화의 구분이 더 선명하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6741,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6738
+      },
+      "output_tokens": 321,
+      "output_tokens_details": {
+        "reasoning_tokens": 187
+      },
+      "total_tokens": 7062
+    }
+  },
+  {
+    "custom_id": "NPJ0076",
+    "pair_id": "NP001",
+    "company": "현대건설",
+    "as_of_date": "2025-10-20",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/현대건설.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/현대건설.json",
+      "full": "evaluation/texts/generated/full/현대건설.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/현대건설.txt"
+    },
+    "source_sha256": {
+      "reference": "820e186230a202be893320efa1863f411bb299ff3868ddfeabe4eb717f4c137e",
+      "peer_evidence": "a2559e0c7285317fc6c5d2209cfda3bd9c19c956c7413429ca8aa4b91d1b64da",
+      "full": "d4e327e67ca1743453403e89da066d5092f691644d004eacef35ac2e17aee06a",
+      "no_peer": "20c00d1f68322eaab28f5122ad63a3a78fa8d9d499e3bddd7a2af0dcba149d53"
+    },
+    "request_sha256": "439140665507e3ea81dee6fdcdd7e9e5c5a97c50ccd2062114aa9f122d6832e9",
+    "estimated_input_tokens": 7929,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 GS건설 대비 현대건설의 낮은 부채비율(167.9% 대 253.2%)과 높은 유동비율(145.3% 대 119.9%)을 제한된 국내 비교군이라는 범위 안에서 활용해 재무체력의 상대적 강점을 식별했다. 동시에 낮은 현금비율과 대규모 영업현금흐름 적자를 회복의 제약으로 제시해, 손익 반등을 구조적 우위로 과장하지 않았다. A는 절대 실적과 리스크 분석은 충실하지만 공통 비교근거로 확인 가능한 업종 내 차별성을 거의 부각하지 못했다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7916,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7913
+      },
+      "output_tokens": 385,
+      "output_tokens_details": {
+        "reasoning_tokens": 211
+      },
+      "total_tokens": 8301
+    }
+  },
+  {
+    "custom_id": "NPJ0077",
+    "pair_id": "NP006",
+    "company": "두산",
+    "as_of_date": "2025-11-11",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/두산.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/두산.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/두산.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/두산.txt"
+    },
+    "source_sha256": {
+      "reference": "4e86766973d13350d29d1169e5e839a4c76edd35eeeb2a619ce3a92352f45ac0",
+      "peer_evidence": "da12081e6528a0355b5b945b8658deaae13ce797d2ee9268bc20f1366a65213e",
+      "full": "a3d570b27f4e3af71979a4fc963a3a695f4751cf159a56a92d3598978955b7f8",
+      "no_peer": "0208933692a14e0f3509c64fe45ba3677798255967d0a2995a1c4868877fe507"
+    },
+    "request_sha256": "d76d2d0580599daae75e1f6b8eeb0699d1ee44fe58aa4f17e8834f5b1bd409e6",
+    "estimated_input_tokens": 6562,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 상반기 매출 성장과 수익성·영업현금흐름 악화를 함께 보며, 3분기 개선을 구조적 전환으로 단정하지 않고 연결 전이 여부를 유보했다. 공통 비교근거상 SK 대비 두산의 성장률·영업마진은 우위지만 현금흐름과 부채비율은 유사하거나 취약하다는 상대 맥락을 어느 쪽도 실질적으로 활용하지 않아 성과 의미 해석의 변별력 차이는 명확하지 않다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6549,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6546
+      },
+      "output_tokens": 355,
+      "output_tokens_details": {
+        "reasoning_tokens": 207
+      },
+      "total_tokens": 6904
+    }
+  },
+  {
+    "custom_id": "NPJ0078",
+    "pair_id": "NP012",
+    "company": "아모레퍼시픽",
+    "as_of_date": "2025-11-07",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/아모레퍼시픽.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/아모레퍼시픽.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/아모레퍼시픽.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/아모레퍼시픽.txt"
+    },
+    "source_sha256": {
+      "reference": "8ac149215512a5340d927d9adc3f495ce9e0df5dcc27acb5839709497da1c0ce",
+      "peer_evidence": "e005ca2fdb44ce704e26d3b6a2a1290f3ccb51085f099ea1e7161d13a2d8d6c1",
+      "full": "1ea96eccf6db156f0227dbfb4455682b629fabffdc73f352454f45abbba36d49",
+      "no_peer": "0df10b56f834c050ad87d6db011909c3ea74482813e20f37928dcaac366d3a78"
+    },
+    "request_sha256": "7b8b0fe7fa02859b73ab326ac54d93fff0ee64716c20a72482cf3fded30750fd",
+    "estimated_input_tokens": 6908,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 해외·디지털 채널 다변화와 중국 재편·코스알엑스 둔화를 아모레퍼시픽의 고유한 강점과 약점으로 비교적 구체적으로 제시했다. 다만 공통 근거상 확인되는 경쟁사 대비 높은 매출 성장과 영업·현금흐름 마진이라는 차별성은 어느 쪽도 명확히 연결하지 않아, 이번 기준에서 한 보고서의 우위를 뒷받침할 차이가 뚜렷하지 않다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6895,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6892
+      },
+      "output_tokens": 315,
+      "output_tokens_details": {
+        "reasoning_tokens": 170
+      },
+      "total_tokens": 7210
+    }
+  },
+  {
+    "custom_id": "NPJ0079",
+    "pair_id": "NP002",
+    "company": "현대건설",
+    "as_of_date": "2025-10-20",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/현대건설.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/현대건설.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/현대건설.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/현대건설.txt"
+    },
+    "source_sha256": {
+      "reference": "820e186230a202be893320efa1863f411bb299ff3868ddfeabe4eb717f4c137e",
+      "peer_evidence": "a2559e0c7285317fc6c5d2209cfda3bd9c19c956c7413429ca8aa4b91d1b64da",
+      "full": "28fab3929dd98adebf3bc255115f57e6e3fd97de9518821d26ef683222319807",
+      "no_peer": "73d20d756a5350d17c1e13dc371a0bba9c64925a41f34aee005a2bd84e9ef40a"
+    },
+    "request_sha256": "e99701b04d64399b9f35597b4820e20cef6b2891194a3e8e77eecae4d0e5b5af",
+    "estimated_input_tokens": 8294,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 현대건설의 핵심 변별점인 대형 정비·해외/에너지 수주 기반과, 영업현금흐름 악화·미청구공사·원가 통제 위험이 기업가치로 연결되는 경로를 유사한 수준으로 제시한다. A는 GS건설 대비 상대적으로 낮은 부채비율과 높은 유동비율을 언급하지만 이를 현금흐름 열위와 함께 최종 판단에 실질적으로 정교화하지는 않았고, B는 비교 맥락 대신 대상기업의 수주·사업 확장 사례를 조금 더 구체화했다. 어느 쪽이 공통 비교 근거를 통해 투자 매력의 변별력을 명확히 더 높였다고 보기 어렵다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 8281,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 8278
+      },
+      "output_tokens": 391,
+      "output_tokens_details": {
+        "reasoning_tokens": 195
+      },
+      "total_tokens": 8672
+    }
+  },
+  {
+    "custom_id": "NPJ0080",
+    "pair_id": "NP009",
+    "company": "BGF리테일",
+    "as_of_date": "2025-11-07",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/BGF리테일.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/BGF리테일.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/BGF리테일.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/BGF리테일.txt"
+    },
+    "source_sha256": {
+      "reference": "b59eeb5ac0bad25fb1900f227064a33cb053b02d5efd98fb78ae00fc4d106016",
+      "peer_evidence": "9ed6ef0e6541a17a6a1730b5c97f77f45bba3f13a2d324ec6ee3eb1d24fc9dee",
+      "full": "f28c4df05541d6ce86e325a49bbafa0326cce3cc86760e548c5fbafa90c212ba",
+      "no_peer": "117347b8776c26884ed27c7f68759d21e126c7f6941081b9976319907a3f4bd2"
+    },
+    "request_sha256": "72204ec81d925cf120fe4ad225c7c87c0134466d9e08daf81a3dbe295ef356b0",
+    "estimated_input_tokens": 6517,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 BGF리테일의 상반기 매출 성장률이 GS리테일보다 높지만 영업이익률은 거의 비슷하고, 순이익률·영업현금흐름률은 더 높다는 공통 근거를 함께 제시해 외형 성장의 의미를 상대적으로 해석했다. 또한 3분기 개선을 소비쿠폰 등 일시 변수와 비용구조 정상화 가능성으로 구분해 유보적으로 판단했다. 반면 A는 비교 가능한 상대 근거가 없다고 하여 제공된 국내 비교군을 활용하지 못했다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6504,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6501
+      },
+      "output_tokens": 261,
+      "output_tokens_details": {
+        "reasoning_tokens": 108
+      },
+      "total_tokens": 6765
+    }
+  },
+  {
+    "custom_id": "NPJ0081",
+    "pair_id": "NP011",
+    "company": "아모레퍼시픽",
+    "as_of_date": "2025-11-07",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/아모레퍼시픽.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/아모레퍼시픽.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/아모레퍼시픽.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/아모레퍼시픽.txt"
+    },
+    "source_sha256": {
+      "reference": "8ac149215512a5340d927d9adc3f495ce9e0df5dcc27acb5839709497da1c0ce",
+      "peer_evidence": "e005ca2fdb44ce704e26d3b6a2a1290f3ccb51085f099ea1e7161d13a2d8d6c1",
+      "full": "00a5fdecc718a0e9b9812c3335b133f11567a61286b2b5c000f71b4aceeebb25",
+      "no_peer": "b7efab0cb8f8c718a73b355e9c988bcf6476fb715d58ee3401ef48e3e4bf4b9b"
+    },
+    "request_sha256": "f0e11c93e0e3c60585faa8ba433122d029dcdbb0fafb88bdca6f79cbf763fe5e",
+    "estimated_input_tokens": 7278,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 동일한 2025년 반기 누적 기준의 LG생활건강과 비교해 아모레퍼시픽의 매출 성장(+14.1% 대 -5.3%)과 영업이익률·순이익률·영업현금흐름 마진 우위를 연결해, 회복의 상대적 의미를 더 선명하게 해석했다. 또한 순이익 감소와 코스알엑스·중국·공급망 변수로 구조적 개선 판단을 제한했다. A는 비교 가능한 국내 peer 근거가 있는데도 비교기업 데이터가 없다고 전제해 상대적 성과 해석의 해상도가 낮다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7265,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7262
+      },
+      "output_tokens": 256,
+      "output_tokens_details": {
+        "reasoning_tokens": 87
+      },
+      "total_tokens": 7521
+    }
+  },
+  {
+    "custom_id": "NPJ0082",
+    "pair_id": "NP015",
+    "company": "SK바이오팜",
+    "as_of_date": "2025-11-06",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/SK바이오팜.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/SK바이오팜.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/SK바이오팜.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/SK바이오팜.txt"
+    },
+    "source_sha256": {
+      "reference": "58c33340319e96090a8e84d3bd6f3753ce1b2b44278c0429d483bf3693845b98",
+      "peer_evidence": "1367a8fdba849d056d108b5e3f78e3bbe894508204356ec731f71905239e38c1",
+      "full": "949fba09d9ab835370ff342cd35c0d7d6f2334415712288f68f2608b70a099f8",
+      "no_peer": "dc7f8b624e49bf456b5bdbcdc5517a99d21c7ac3cd4a7b442809d22b69229567"
+    },
+    "request_sha256": "413547c77d65e1b0874a479a2c46d029d383c9d7bf70b494241f438d99be653d",
+    "estimated_input_tokens": 6503,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 유한양행과 비교 가능한 반기 기준에서 SK바이오팜의 더 높은 수익성·현금창출력을 최근 실적의 질적 차별점으로 연결하면서도, 단일 제품·미국 집중이라는 구조적 약점을 함께 선명히 제시했다. 또한 제한된 국내 비교군과 밸류에이션 비교 한계를 명시해 상대 우위를 업종 전체의 결론으로 과장하지 않았다. B도 집중위험을 잘 짚었지만, 공통 비교 근거로 확인되는 대상기업의 차별적 강점을 상대 맥락에서 구체화한 정도는 A보다 약하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6490,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6487
+      },
+      "output_tokens": 291,
+      "output_tokens_details": {
+        "reasoning_tokens": 125
+      },
+      "total_tokens": 6781
+    }
+  },
+  {
+    "custom_id": "NPJ0083",
+    "pair_id": "NP006",
+    "company": "두산",
+    "as_of_date": "2025-11-11",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/두산.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/두산.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/두산.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/두산.txt"
+    },
+    "source_sha256": {
+      "reference": "4e86766973d13350d29d1169e5e839a4c76edd35eeeb2a619ce3a92352f45ac0",
+      "peer_evidence": "da12081e6528a0355b5b945b8658deaae13ce797d2ee9268bc20f1366a65213e",
+      "full": "a3d570b27f4e3af71979a4fc963a3a695f4751cf159a56a92d3598978955b7f8",
+      "no_peer": "0208933692a14e0f3509c64fe45ba3677798255967d0a2995a1c4868877fe507"
+    },
+    "request_sha256": "e68c5aac0a76b19b9c13ef5c96b05371f48c03ef28282c24f56d9b53fe7cfd62",
+    "estimated_input_tokens": 6574,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 전자BG 성장과 연결 수익성·현금흐름 약화의 괴리를 수치로 구체화해 사업부 성장만으로 전사 체력 개선을 단정할 수 없다는 구조적 약점을 더 선명하게 제시했다. B도 유사한 결론이지만, 비교기업 자료가 없다고 서술해 실제로 제공된 SK와의 동일 기간 비교 가능 근거를 잘못 처리했으며, 상대적 차별성의 해석을 더 약화시켰다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 6561,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6558
+      },
+      "output_tokens": 546,
+      "output_tokens_details": {
+        "reasoning_tokens": 407
+      },
+      "total_tokens": 7107
+    }
+  },
+  {
+    "custom_id": "NPJ0084",
+    "pair_id": "NP014",
+    "company": "SK바이오팜",
+    "as_of_date": "2025-11-06",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/SK바이오팜.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/SK바이오팜.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/SK바이오팜.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/SK바이오팜.txt"
+    },
+    "source_sha256": {
+      "reference": "58c33340319e96090a8e84d3bd6f3753ce1b2b44278c0429d483bf3693845b98",
+      "peer_evidence": "1367a8fdba849d056d108b5e3f78e3bbe894508204356ec731f71905239e38c1",
+      "full": "0ba499510c2a2edb4bcc99cb919f44eb0b0ead5c522a698e6b64b0a28f14be18",
+      "no_peer": "7b0939e97a34e540108e1220597c22875fe54adf817efe0181701412fd0f0ac5"
+    },
+    "request_sha256": "b363dd118fe89fd38f2ffdad33aed829ab4e3dbe02b7cb99aa741ced8b3a1e43",
+    "estimated_input_tokens": 6922,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 세노바메이트 집중과 미국 상업화 기반의 고마진·영업레버리지 개선을 대상기업의 핵심 강점과 약점으로 구체화했다. 다만 공통 비교근거상 확인되는 더 높은 성장률·영업이익률·공헌이익률이라는 상대적 차별성을 어느 쪽도 명시적으로 연결하지 않았고, 재무안정성의 상대적 열위 가능성도 뚜렷이 구분하지 않아 우열이 명확하지 않다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 6909,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 6906
+      },
+      "output_tokens": 388,
+      "output_tokens_details": {
+        "reasoning_tokens": 244
+      },
+      "total_tokens": 7297
+    }
+  },
+  {
+    "custom_id": "NPJ0085",
+    "pair_id": "NP013",
+    "company": "SK바이오팜",
+    "as_of_date": "2025-11-06",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/SK바이오팜.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/SK바이오팜.json",
+      "full": "evaluation/texts/generated/full/SK바이오팜.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/SK바이오팜.txt"
+    },
+    "source_sha256": {
+      "reference": "58c33340319e96090a8e84d3bd6f3753ce1b2b44278c0429d483bf3693845b98",
+      "peer_evidence": "1367a8fdba849d056d108b5e3f78e3bbe894508204356ec731f71905239e38c1",
+      "full": "a17b088febac2ac183370c45ebc1ceb626baf7a34b32df5e2002030ecc1f0967",
+      "no_peer": "a5ed711b72cb8bc9358fd2f46874e54ed5e13ad5fa9c9a3abb3175570465008b"
+    },
+    "request_sha256": "7c591126512c6bdfc7c6d2c365323071d998aadc7563404ba1d15946626e5b52",
+    "estimated_input_tokens": 7376,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 유한양행과의 동일한 2025년 상반기 기준 비교를 통해 SK바이오팜의 더 높은 매출성장률과 수익성을 업종 내 차별점으로 연결하고, 이를 세노바메이트 단일품목·미국 의존이라는 구조적 약점과 함께 제시했다. A도 고마진·현금창출과 집중위험을 구체적으로 설명하지만, 공통 비교근거로 확인되는 이러한 상대적 차별성을 업종 맥락에서 부각하는 정도는 B보다 약하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7363,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7360
+      },
+      "output_tokens": 258,
+      "output_tokens_details": {
+        "reasoning_tokens": 108
+      },
+      "total_tokens": 7621
+    }
+  },
+  {
+    "custom_id": "NPJ0086",
+    "pair_id": "NP010",
+    "company": "아모레퍼시픽",
+    "as_of_date": "2025-11-07",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/아모레퍼시픽.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r01/아모레퍼시픽.json",
+      "full": "evaluation/texts/generated/full/아모레퍼시픽.txt",
+      "no_peer": "evaluation/texts/generated/no_peer/아모레퍼시픽.txt"
+    },
+    "source_sha256": {
+      "reference": "8ac149215512a5340d927d9adc3f495ce9e0df5dcc27acb5839709497da1c0ce",
+      "peer_evidence": "e005ca2fdb44ce704e26d3b6a2a1290f3ccb51085f099ea1e7161d13a2d8d6c1",
+      "full": "37e16034bdd607d0a45fdfde523dfde44b25ce328674b7fe0c5326bd70ac38de",
+      "no_peer": "12af420b2e1c601c6e7f957fd888bd773a3ec28362c852327f07e97406fc7055"
+    },
+    "request_sha256": "b608115919d782936716984ca6545037f4c4527e14cd35b5b35477f0383fc107",
+    "estimated_input_tokens": 7210,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 동일한 2025년 상반기 기준으로 LG생활건강 대비 아모레퍼시픽의 매출 성장률, 영업·순이익률 및 영업현금흐름률 우위를 연결해 회복의 업종 내 차별성을 구체화했다. 동시에 이를 업종 전체 평균으로 일반화하지 않고, 코스알엑스·중국·북미 공급망 등 대상기업 고유의 지속성 약점과 비교 기간 한계도 명시했다. A도 사업 다변화와 실행 리스크를 잘 짚지만, 공통 비교 근거로 확인되는 상대적 강점의 식별은 B보다 선명하지 않다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7197,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7194
+      },
+      "output_tokens": 371,
+      "output_tokens_details": {
+        "reasoning_tokens": 197
+      },
+      "total_tokens": 7568
+    }
+  },
+  {
+    "custom_id": "NPJ0087",
+    "pair_id": "NP003",
+    "company": "현대건설",
+    "as_of_date": "2025-10-20",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "orientation": 2,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/현대건설.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/현대건설.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/현대건설.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/현대건설.txt"
+    },
+    "source_sha256": {
+      "reference": "820e186230a202be893320efa1863f411bb299ff3868ddfeabe4eb717f4c137e",
+      "peer_evidence": "a2559e0c7285317fc6c5d2209cfda3bd9c19c956c7413429ca8aa4b91d1b64da",
+      "full": "8bf56ad496b2ad0fa71b95f570d43c554680f67d27b6522f1868314dd03c1a48",
+      "no_peer": "158d62fbedcd2cbc896b5ceb681aeb0e42e7f44983b0956486035178508166fc"
+    },
+    "request_sha256": "e5867d4e9e01b5f2efb32a5ea4a9e3d1d0fd9f185f3906de3e64725618602d85",
+    "estimated_input_tokens": 8117,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 매출 감소·영업수익성 회복·대규모 영업현금 유출을 병렬적으로 제시하며, 단기 반등을 구조적 정상화로 단정하지 않았다. 다만 공통 비교근거상 확인 가능한 GS건설 대비 매출 감소폭, 수익성, 현금흐름의 상대적 차이를 활용해 현대건설 성과의 업종 내 의미를 선명하게 해석한 보고서는 없어 우열이 뚜렷하지 않다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 8104,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 8101
+      },
+      "output_tokens": 380,
+      "output_tokens_details": {
+        "reasoning_tokens": 241
+      },
+      "total_tokens": 8484
+    }
+  },
+  {
+    "custom_id": "NPJ0088",
+    "pair_id": "NP011",
+    "company": "아모레퍼시픽",
+    "as_of_date": "2025-11-07",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 2,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/아모레퍼시픽.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/아모레퍼시픽.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/아모레퍼시픽.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/아모레퍼시픽.txt"
+    },
+    "source_sha256": {
+      "reference": "8ac149215512a5340d927d9adc3f495ce9e0df5dcc27acb5839709497da1c0ce",
+      "peer_evidence": "e005ca2fdb44ce704e26d3b6a2a1290f3ccb51085f099ea1e7161d13a2d8d6c1",
+      "full": "00a5fdecc718a0e9b9812c3335b133f11567a61286b2b5c000f71b4aceeebb25",
+      "no_peer": "b7efab0cb8f8c718a73b355e9c988bcf6476fb715d58ee3401ef48e3e4bf4b9b"
+    },
+    "request_sha256": "1672d5509336b3d9ad36f532a858e20c63470d75a04663f548534715e53b78b0",
+    "estimated_input_tokens": 7266,
+    "state": "success",
+    "verdict": "A",
+    "reason": "A는 LG생활건강 대비 더 높은 매출 성장률·영업/순이익률·영업현금흐름 마진을 실제로 연결해, 회복이 업황 공통 효과보다 아모레퍼시픽의 비용 효율 및 사업 재편 성과일 가능성을 최종 매수 판단에 반영했다. 또한 중국 재정비, 북미 공급망 부담, 코스알엑스 둔화를 판단 변경 요인으로 구체화했다. B도 개별 리스크는 잘 제시했지만, 확보된 비교 근거가 있음에도 상대적 위치를 투자 논지에 활용하지 않아 변별력이 약하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7253,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7250
+      },
+      "output_tokens": 340,
+      "output_tokens_details": {
+        "reasoning_tokens": 172
+      },
+      "total_tokens": 7593
+    }
+  },
+  {
+    "custom_id": "NPJ0089",
+    "pair_id": "NP003",
+    "company": "현대건설",
+    "as_of_date": "2025-10-20",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "orientation": 1,
+    "label_a": "full",
+    "label_b": "no_peer",
+    "sources": {
+      "reference": "evaluation/texts/reference/현대건설.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r03/현대건설.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r03/full/현대건설.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r03/no_peer/현대건설.txt"
+    },
+    "source_sha256": {
+      "reference": "820e186230a202be893320efa1863f411bb299ff3868ddfeabe4eb717f4c137e",
+      "peer_evidence": "a2559e0c7285317fc6c5d2209cfda3bd9c19c956c7413429ca8aa4b91d1b64da",
+      "full": "8bf56ad496b2ad0fa71b95f570d43c554680f67d27b6522f1868314dd03c1a48",
+      "no_peer": "158d62fbedcd2cbc896b5ceb681aeb0e42e7f44983b0956486035178508166fc"
+    },
+    "request_sha256": "70cee2a74903402a7234dd5d95cf1a0c37670b07720bca5027fc394abee70042",
+    "estimated_input_tokens": 8105,
+    "state": "success",
+    "verdict": "C",
+    "reason": "두 보고서 모두 수주 기반 대비 현금전환·원가관리 리스크를 핵심 판단으로 삼지만, 공통 비교근거상 현대건설의 양(+)의 순이익·낮은 부채비율과 경쟁사 대비 더 큰 매출 감소·음의 영업현금흐름이라는 상대적 위치를 최종 판단에 구체적으로 반영하지 않았다. A는 주가 상대성과 수치를 조금 더 상세히 제시하고, B는 수주가 하방을 지지하나 재평가에는 현금회수가 필요하다는 경로를 다소 명료하게 설명하지만, 대상기업만의 변별력 측면에서 우열을 가를 정도의 차이는 아니다.",
+    "normalized_winner": null,
+    "usage": {
+      "input_tokens": 8092,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 8089
+      },
+      "output_tokens": 367,
+      "output_tokens_details": {
+        "reasoning_tokens": 185
+      },
+      "total_tokens": 8459
+    }
+  },
+  {
+    "custom_id": "NPJ0090",
+    "pair_id": "NP008",
+    "company": "BGF리테일",
+    "as_of_date": "2025-11-07",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "orientation": 1,
+    "label_a": "no_peer",
+    "label_b": "full",
+    "sources": {
+      "reference": "evaluation/texts/reference/BGF리테일.txt",
+      "peer_evidence": "evaluation/no_peer_target_llm_judge/common_peer_evidence/r02/BGF리테일.json",
+      "full": "evaluation/repeated_standard_5companies/texts/generated/r02/full/BGF리테일.txt",
+      "no_peer": "evaluation/repeated_standard_5companies/texts/generated/r02/no_peer/BGF리테일.txt"
+    },
+    "source_sha256": {
+      "reference": "b59eeb5ac0bad25fb1900f227064a33cb053b02d5efd98fb78ae00fc4d106016",
+      "peer_evidence": "9ed6ef0e6541a17a6a1730b5c97f77f45bba3f13a2d324ec6ee3eb1d24fc9dee",
+      "full": "b3057da2dfbc1d0237a0c82b86964b706dcc6ba260186924d0a4128ebf298aad",
+      "no_peer": "f706d2473e01ab8d46021eedd6c64c86bad3dee945da3c1f9aba753c73b538a9"
+    },
+    "request_sha256": "8301540a8d1282f0c33fbc257705b0e04f72c0aaadec3a7e88087f49b8dfc4fa",
+    "estimated_input_tokens": 7114,
+    "state": "success",
+    "verdict": "B",
+    "reason": "B는 동일 반기 누적 기준에서 BGF리테일의 매출성장률·순이익률·영업현금흐름마진이 GS리테일보다 높다는 점을 통해, 마진 압박에도 상대적 본업 체력이 남아 있다는 차별적 강점을 식별했다. 동시에 P/B와 P/S가 비교기업보다 높아 주가 부진만으로 상대 저평가를 주장하기 어렵다는 약점도 같은 기준일 지표로 연결했다. A는 수익성 악화 자체의 진단은 충실하지만 비교 근거가 있어도 상대적 차별성을 대부분 유보해 업종 내 위치가 덜 선명하다.",
+    "normalized_winner": "full",
+    "usage": {
+      "input_tokens": 7101,
+      "input_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 7098
+      },
+      "output_tokens": 289,
+      "output_tokens_details": {
+        "reasoning_tokens": 115
+      },
+      "total_tokens": 7390
+    }
+  }
+]

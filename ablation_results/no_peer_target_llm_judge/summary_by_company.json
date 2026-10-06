@@ -1,0 +1,167 @@
+[
+  {
+    "comparison": "full_vs_no_peer",
+    "company": "현대건설",
+    "criterion": "NP1",
+    "win": 1,
+    "loss": 0,
+    "tie": 2,
+    "error": 0,
+    "valid_n": 3,
+    "adjusted_win_rate": 0.6666666666666666
+  },
+  {
+    "comparison": "full_vs_no_peer",
+    "company": "현대건설",
+    "criterion": "NP2",
+    "win": 0,
+    "loss": 0,
+    "tie": 3,
+    "error": 0,
+    "valid_n": 3,
+    "adjusted_win_rate": 0.5
+  },
+  {
+    "comparison": "full_vs_no_peer",
+    "company": "현대건설",
+    "criterion": "NP3",
+    "win": 1,
+    "loss": 0,
+    "tie": 2,
+    "error": 0,
+    "valid_n": 3,
+    "adjusted_win_rate": 0.6666666666666666
+  },
+  {
+    "comparison": "full_vs_no_peer",
+    "company": "두산",
+    "criterion": "NP1",
+    "win": 1,
+    "loss": 0,
+    "tie": 2,
+    "error": 0,
+    "valid_n": 3,
+    "adjusted_win_rate": 0.6666666666666666
+  },
+  {
+    "comparison": "full_vs_no_peer",
+    "company": "두산",
+    "criterion": "NP2",
+    "win": 1,
+    "loss": 0,
+    "tie": 2,
+    "error": 0,
+    "valid_n": 3,
+    "adjusted_win_rate": 0.6666666666666666
+  },
+  {
+    "comparison": "full_vs_no_peer",
+    "company": "두산",
+    "criterion": "NP3",
+    "win": 1,
+    "loss": 0,
+    "tie": 2,
+    "error": 0,
+    "valid_n": 3,
+    "adjusted_win_rate": 0.6666666666666666
+  },
+  {
+    "comparison": "full_vs_no_peer",
+    "company": "BGF리테일",
+    "criterion": "NP1",
+    "win": 3,
+    "loss": 0,
+    "tie": 0,
+    "error": 0,
+    "valid_n": 3,
+    "adjusted_win_rate": 1.0
+  },
+  {
+    "comparison": "full_vs_no_peer",
+    "company": "BGF리테일",
+    "criterion": "NP2",
+    "win": 2,
+    "loss": 0,
+    "tie": 1,
+    "error": 0,
+    "valid_n": 3,
+    "adjusted_win_rate": 0.8333333333333334
+  },
+  {
+    "comparison": "full_vs_no_peer",
+    "company": "BGF리테일",
+    "criterion": "NP3",
+    "win": 3,
+    "loss": 0,
+    "tie": 0,
+    "error": 0,
+    "valid_n": 3,
+    "adjusted_win_rate": 1.0
+  },
+  {
+    "comparison": "full_vs_no_peer",
+    "company": "아모레퍼시픽",
+    "criterion": "NP1",
+    "win": 2,
+    "loss": 0,
+    "tie": 1,
+    "error": 0,
+    "valid_n": 3,
+    "adjusted_win_rate": 0.8333333333333334
+  },
+  {
+    "comparison": "full_vs_no_peer",
+    "company": "아모레퍼시픽",
+    "criterion": "NP2",
+    "win": 2,
+    "loss": 0,
+    "tie": 1,
+    "error": 0,
+    "valid_n": 3,
+    "adjusted_win_rate": 0.8333333333333334
+  },
+  {
+    "comparison": "full_vs_no_peer",
+    "company": "아모레퍼시픽",
+    "criterion": "NP3",
+    "win": 2,
+    "loss": 0,
+    "tie": 1,
+    "error": 0,
+    "valid_n": 3,
+    "adjusted_win_rate": 0.8333333333333334
+  },
+  {
+    "comparison": "full_vs_no_peer",
+    "company": "SK바이오팜",
+    "criterion": "NP1",
+    "win": 2,
+    "loss": 0,
+    "tie": 1,
+    "error": 0,
+    "valid_n": 3,
+    "adjusted_win_rate": 0.8333333333333334
+  },
+  {
+    "comparison": "full_vs_no_peer",
+    "company": "SK바이오팜",
+    "criterion": "NP2",
+    "win": 2,
+    "loss": 0,
+    "tie": 1,
+    "error": 0,
+    "valid_n": 3,
+    "adjusted_win_rate": 0.8333333333333334
+  },
+  {
+    "comparison": "full_vs_no_peer",
+    "company": "SK바이오팜",
+    "criterion": "NP3",
+    "win": 2,
+    "loss": 0,
+    "tie": 1,
+    "error": 0,
+    "valid_n": 3,
+    "adjusted_win_rate": 0.8333333333333334
+  }
+]

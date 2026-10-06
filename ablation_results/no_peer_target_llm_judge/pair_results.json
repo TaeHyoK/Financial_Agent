@@ -1,0 +1,1082 @@
+[
+  {
+    "pair_id": "NP001",
+    "company": "현대건설",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0069",
+        "orientation": 1,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0076",
+        "orientation": 2,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP001",
+    "company": "현대건설",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0032",
+        "orientation": 1,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0033",
+        "orientation": 2,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP001",
+    "company": "현대건설",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0050",
+        "orientation": 1,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0049",
+        "orientation": 2,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP002",
+    "company": "현대건설",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0020",
+        "orientation": 1,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0013",
+        "orientation": 2,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP002",
+    "company": "현대건설",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0039",
+        "orientation": 1,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0046",
+        "orientation": 2,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP002",
+    "company": "현대건설",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0079",
+        "orientation": 1,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0044",
+        "orientation": 2,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP003",
+    "company": "현대건설",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0062",
+        "orientation": 1,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0004",
+        "orientation": 2,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP003",
+    "company": "현대건설",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0068",
+        "orientation": 1,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0087",
+        "orientation": 2,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP003",
+    "company": "현대건설",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0089",
+        "orientation": 1,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0005",
+        "orientation": 2,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP004",
+    "company": "두산",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0048",
+        "orientation": 1,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0030",
+        "orientation": 2,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP004",
+    "company": "두산",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0063",
+        "orientation": 1,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0010",
+        "orientation": 2,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP004",
+    "company": "두산",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0012",
+        "orientation": 1,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0040",
+        "orientation": 2,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP005",
+    "company": "두산",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0067",
+        "orientation": 1,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0037",
+        "orientation": 2,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP005",
+    "company": "두산",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0023",
+        "orientation": 1,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0055",
+        "orientation": 2,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP005",
+    "company": "두산",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0071",
+        "orientation": 1,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0047",
+        "orientation": 2,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP006",
+    "company": "두산",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0083",
+        "orientation": 1,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0053",
+        "orientation": 2,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP006",
+    "company": "두산",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0065",
+        "orientation": 1,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0077",
+        "orientation": 2,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP006",
+    "company": "두산",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0014",
+        "orientation": 1,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0036",
+        "orientation": 2,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP007",
+    "company": "BGF리테일",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0001",
+        "orientation": 1,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0075",
+        "orientation": 2,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP007",
+    "company": "BGF리테일",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0003",
+        "orientation": 1,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0035",
+        "orientation": 2,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP007",
+    "company": "BGF리테일",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0038",
+        "orientation": 1,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0008",
+        "orientation": 2,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP008",
+    "company": "BGF리테일",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0090",
+        "orientation": 1,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0073",
+        "orientation": 2,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP008",
+    "company": "BGF리테일",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0057",
+        "orientation": 1,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0021",
+        "orientation": 2,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP008",
+    "company": "BGF리테일",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0042",
+        "orientation": 1,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0045",
+        "orientation": 2,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP009",
+    "company": "BGF리테일",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0054",
+        "orientation": 1,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0015",
+        "orientation": 2,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP009",
+    "company": "BGF리테일",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0080",
+        "orientation": 1,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0017",
+        "orientation": 2,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP009",
+    "company": "BGF리테일",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0059",
+        "orientation": 1,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0064",
+        "orientation": 2,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP010",
+    "company": "아모레퍼시픽",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0041",
+        "orientation": 1,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0086",
+        "orientation": 2,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP010",
+    "company": "아모레퍼시픽",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0026",
+        "orientation": 1,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0019",
+        "orientation": 2,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP010",
+    "company": "아모레퍼시픽",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0070",
+        "orientation": 1,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0058",
+        "orientation": 2,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP011",
+    "company": "아모레퍼시픽",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0034",
+        "orientation": 1,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0011",
+        "orientation": 2,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP011",
+    "company": "아모레퍼시픽",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0081",
+        "orientation": 1,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0056",
+        "orientation": 2,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP011",
+    "company": "아모레퍼시픽",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0066",
+        "orientation": 1,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0088",
+        "orientation": 2,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP012",
+    "company": "아모레퍼시픽",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0078",
+        "orientation": 1,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0060",
+        "orientation": 2,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP012",
+    "company": "아모레퍼시픽",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0002",
+        "orientation": 1,
+        "verdict": "A",
+        "normalized_winner": "no_peer",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0061",
+        "orientation": 2,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP012",
+    "company": "아모레퍼시픽",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0052",
+        "orientation": 1,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0028",
+        "orientation": 2,
+        "verdict": "B",
+        "normalized_winner": "no_peer",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP013",
+    "company": "SK바이오팜",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0085",
+        "orientation": 1,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0051",
+        "orientation": 2,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP013",
+    "company": "SK바이오팜",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0029",
+        "orientation": 1,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0074",
+        "orientation": 2,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP013",
+    "company": "SK바이오팜",
+    "replicate": "r01",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0016",
+        "orientation": 1,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0007",
+        "orientation": 2,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP014",
+    "company": "SK바이오팜",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0084",
+        "orientation": 1,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0024",
+        "orientation": 2,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP014",
+    "company": "SK바이오팜",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0018",
+        "orientation": 1,
+        "verdict": "A",
+        "normalized_winner": "no_peer",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0022",
+        "orientation": 2,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP014",
+    "company": "SK바이오팜",
+    "replicate": "r02",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "outcome_for_full": "Tie",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0072",
+        "orientation": 1,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0009",
+        "orientation": 2,
+        "verdict": "C",
+        "normalized_winner": null,
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP015",
+    "company": "SK바이오팜",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP1",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0082",
+        "orientation": 1,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0025",
+        "orientation": 2,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP015",
+    "company": "SK바이오팜",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP2",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0006",
+        "orientation": 1,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0027",
+        "orientation": 2,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  },
+  {
+    "pair_id": "NP015",
+    "company": "SK바이오팜",
+    "replicate": "r03",
+    "ablation": "no_peer",
+    "criterion": "NP3",
+    "outcome_for_full": "Win",
+    "ordered_judgments": [
+      {
+        "custom_id": "NPJ0031",
+        "orientation": 1,
+        "verdict": "A",
+        "normalized_winner": "full",
+        "state": "success"
+      },
+      {
+        "custom_id": "NPJ0043",
+        "orientation": 2,
+        "verdict": "B",
+        "normalized_winner": "full",
+        "state": "success"
+      }
+    ]
+  }
+]

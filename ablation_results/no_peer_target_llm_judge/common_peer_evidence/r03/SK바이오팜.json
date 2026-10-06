@@ -1,0 +1,171 @@
+{
+  "evidence_version": "no_peer_target_common_evidence_v1",
+  "target_company": "SK바이오팜",
+  "as_of_date": "2025-11-06",
+  "peer_scope": "domestic_only",
+  "peer_groups": {
+    "target": {
+      "run_key": "SK바이오팜_20251106",
+      "company_name": "SK바이오팜"
+    },
+    "domestic_peers": [
+      {
+        "run_key": "유한양행_20251106",
+        "company_name": "유한양행"
+      }
+    ],
+    "global_peers": []
+  },
+  "metrics": [
+    {
+      "company_name": "SK바이오팜",
+      "run_key": "SK바이오팜_20251106",
+      "peer_group": "target",
+      "ticker": "326030.KS",
+      "as_of_date": "20251106",
+      "financial_metrics": {
+        "revenue_100m": 3206.5416396,
+        "revenue_growth_pct": 29.31159868,
+        "revenue_growth_basis": "2025 HALF YTD",
+        "contribution_margin_pct": 93.63709581,
+        "sga_margin_pct": 66.33207462,
+        "operating_margin_pct": 27.305021193774987,
+        "net_margin_pct": 15.32715717645596,
+        "operating_cash_flow_margin_pct": 7.459584885660127,
+        "eps": 718.0,
+        "operating_cash_flow_100m": 239.1946955,
+        "cash_and_equivalents_100m": 2209.85220976,
+        "debt_ratio_pct": 55.16442018936946,
+        "current_ratio_pct": 218.90079902712108,
+        "cash_ratio_pct": 83.964521369348,
+        "equity_ratio_pct": 64.44776442818245,
+        "financial_period": "2025 HALF YTD",
+        "balance_sheet_basis": "POINT_IN_TIME"
+      },
+      "market_metrics": {
+        "stock_return_1m_pct": 15.406698564593292,
+        "stock_return_3m_pct": 8.258527827648109,
+        "stock_return_6m_pct": 12.290502793296081,
+        "stock_return_12m_pct": 1.3445378151260399,
+        "stock_excess_return_1m_pct": 2.58102845920287,
+        "stock_excess_return_3m_pct": -16.95785497019428,
+        "stock_excess_return_6m_pct": -44.14498061617848,
+        "stock_excess_return_12m_pct": -54.05346690306172,
+        "market_date": "2025-11-05",
+        "stock_return_5d_pct": 5.23560209424083,
+        "stock_return_20d_pct": 16.86046511627907,
+        "stock_return_60d_pct": 25.4942767950052,
+        "stock_excess_return_20d_pct": 0.9861359001955099,
+        "stock_relative_strength_60_pct": -1.3528507278741502,
+        "stock_volume_ratio_20": 5.401520353838543
+      },
+      "valuation_metrics": {
+        "calculated_as_of_date": "2025-11-05",
+        "calculation_basis": "disclosed_share_count_estimate",
+        "statement_scope_basis": "consolidated",
+        "limitations_basis": [
+          "공시된 보통주 발행주식 수에 과거 종가를 적용한 추정값이며, 공시 후 주식 수 변동을 모두 확인한 기준일 시가총액은 아니다.",
+          "가격 제공업체의 사후 분할 조정 가능성은 남아 있으며, 관측된 분할이 주식 수 기준일 뒤에 있으면 계산하지 않는다."
+        ],
+        "market_cap_100m_krw": null,
+        "trailing_pe": null,
+        "price_to_book": null,
+        "price_to_sales": null,
+        "direct_valuation_date": "2025-09-30",
+        "provider_values_basis": "reference_only_not_point_in_time_verified",
+        "enterprise_value_100m_krw": 77300.0,
+        "enterprise_value_to_revenue": 11.45,
+        "enterprise_value_to_ebitda": 44.16
+      },
+      "data_quality": {
+        "missing_fields": [
+          "valuation_metrics.market_cap_100m_krw",
+          "valuation_metrics.trailing_pe",
+          "valuation_metrics.price_to_book",
+          "valuation_metrics.price_to_sales"
+        ]
+      }
+    },
+    {
+      "company_name": "유한양행",
+      "run_key": "유한양행_20251106",
+      "peer_group": "domestic_peer",
+      "ticker": "000100.KS",
+      "as_of_date": "20251106",
+      "financial_metrics": {
+        "revenue_100m": 10705.51004703,
+        "revenue_growth_pct": 10.03644895,
+        "revenue_growth_basis": "2025 HALF YTD",
+        "contribution_margin_pct": 32.496778739999996,
+        "sga_margin_pct": 18.2964612,
+        "operating_margin_pct": 5.257170132273501,
+        "net_margin_pct": 5.045047018286045,
+        "operating_cash_flow_margin_pct": 2.024611950274438,
+        "eps": null,
+        "operating_cash_flow_100m": 216.74503575,
+        "cash_and_equivalents_100m": 3324.49564852,
+        "debt_ratio_pct": 37.22244189859984,
+        "current_ratio_pct": 225.4783099401438,
+        "cash_ratio_pct": 51.52323018350072,
+        "equity_ratio_pct": 72.87437726395711,
+        "financial_period": "2025 HALF YTD",
+        "balance_sheet_basis": "POINT_IN_TIME"
+      },
+      "market_metrics": {
+        "stock_return_1m_pct": -2.83569641367806,
+        "stock_return_3m_pct": 1.39251523063532,
+        "stock_return_6m_pct": 2.64317180616739,
+        "stock_return_12m_pct": -14.338235294117649,
+        "stock_excess_return_1m_pct": -15.661366519068478,
+        "stock_excess_return_3m_pct": -23.823867567207067,
+        "stock_excess_return_6m_pct": -53.792311603307176,
+        "stock_excess_return_12m_pct": -69.73624001230542,
+        "market_date": "2025-11-05",
+        "stock_return_5d_pct": -0.59726962457338,
+        "stock_return_20d_pct": -2.75459098497495,
+        "stock_return_60d_pct": 3.4635879218472403,
+        "stock_excess_return_20d_pct": -18.62892020105852,
+        "stock_relative_strength_60_pct": -18.67049029950339,
+        "stock_volume_ratio_20": 1.6153483360545375
+      },
+      "valuation_metrics": {
+        "calculated_as_of_date": "2025-11-05",
+        "calculation_basis": "disclosed_share_count_estimate",
+        "statement_scope_basis": "consolidated",
+        "limitations_basis": [
+          "공시된 보통주 발행주식 수에 과거 종가를 적용한 추정값이며, 공시 후 주식 수 변동을 모두 확인한 기준일 시가총액은 아니다.",
+          "가격 제공업체의 사후 분할 조정 가능성은 남아 있으며, 관측된 분할이 주식 수 기준일 뒤에 있으면 계산하지 않는다."
+        ],
+        "market_cap_100m_krw": null,
+        "trailing_pe": null,
+        "price_to_book": null,
+        "price_to_sales": null,
+        "direct_valuation_date": "2025-09-30",
+        "provider_values_basis": "reference_only_not_point_in_time_verified",
+        "enterprise_value_100m_krw": 88400.0,
+        "enterprise_value_to_revenue": 4.14,
+        "enterprise_value_to_ebitda": 62.35
+      },
+      "data_quality": {
+        "missing_fields": [
+          "financial_metrics.eps",
+          "valuation_metrics.market_cap_100m_krw",
+          "valuation_metrics.trailing_pe",
+          "valuation_metrics.price_to_book",
+          "valuation_metrics.price_to_sales"
+        ]
+      }
+    }
+  ],
+  "comparison_limits": [
+    "국내 비교군은 현재 확보된 동일 기준일 국내 비교 대상만 포함한다.",
+    "글로벌 peer 비교는 현재 데이터 범위에 없어 생성하지 않는다.",
+    "기준일 계산 P/E, P/B, P/S는 동일 기준일끼리 비교하며 직접 YFinance EV 배수는 제공자 표시일을 별도로 유지한다.",
+    "완전한 업종 평균 비교는 업종 전체 표본이 없어 생성하지 않는다.",
+    "누적 기간과 연간 기준이 섞일 수 있어 기간 기준을 확인한 뒤 해석해야 한다."
+  ],
+  "excluded_scope": [
+    "global_peer_comparison",
+    "complete_industry_average_comparison"
+  ]
+}

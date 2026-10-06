@@ -81,6 +81,7 @@ BERTScore 단계가 쓰는 본문 추출·채점 코드(`real_report_evaluation/
 | 7. r01 BERTScore | `python run_config/evaluate_report_bodies.py` | 현재 브랜치 가능 | 3·4단계 상태 파일과 보고서, `references/`, `evaluation/` 의 기존 평가 파일, 내려받아 둔 `BAAI/bge-m3` | `evaluation/with_one_team_gpt54/` |
 | 8. r02·r03 BERTScore와 평균 | `python run_config/evaluate_repeated_bert.py` | 현재 브랜치 가능 | 7단계 산출물, 5·6단계 상태 파일과 보고서 | `evaluation/repeated_standard_5companies/` |
 | 9. LLM Judge | `python run_config/final_report_llm_judge.py prepare` → `validate` → `run --execute-paid-api --confirm-call-count 360 --workers 4` → `aggregate` | 현재 브랜치 가능 | `evaluation/` 아래 추출 본문(r01 네 조건과 참조 본문은 7단계 이전의 r01 평가 `evaluation/texts/`, r01 One-team 은 7단계, r02·r03 은 8단계), `OPENAI_API_KEY` | `evaluation/final_report_llm_judge/` |
+| 10. No-peer 대상기업 통찰 Judge | `python run_config/no_peer_target_llm_judge.py prepare` → `validate` → `run --execute-paid-api --confirm-call-count 90 --workers 4` → `aggregate` | 현재 브랜치 가능 | 9단계와 같은 추출 본문, Full 비교 데이터셋(`reports/`), `OPENAI_API_KEY` | `evaluation/no_peer_target_llm_judge/` |
 
 주:
 
@@ -90,6 +91,7 @@ BERTScore 단계가 쓰는 본문 추출·채점 코드(`real_report_evaluation/
 - 3단계는 r01 월별 요약(`gpt-5.6-luna`)도 만든다. 7개 기업 28개 보고서를 만들며 논문은 그중 20개를 쓴다.
 - 7·8단계는 유료 API 를 부르지 않는다. 두 스크립트 모두 `--device` 로 장치를 고른다. 기본값 `auto` 는 CUDA 가 있으면 CUDA, 없으면 CPU 를 쓴다. 논문 결과는 `cuda:2` 에서 계산했다. 8단계는 7단계의 r01 점수 25개를 다시 쓰고 r02·r03 점수 50개를 새로 계산해 75개를 집계한다.
 - 9단계 `run` 은 유료 호출이다. 두 확인 옵션을 함께 줘야 시작한다. Judge 는 실행을 마쳤지만 요청·응답·결과 파일은 리포에 없다. 설계는 `run_config/FINAL_REPORT_LLM_JUDGE.md` 를 본다.
+- 10단계 `run` 도 유료 호출이다. NP1(차별적 강점·약점), NP2(성과의 의미), NP3(투자 매력의 변별력)는 별도 생성 조건이 아니라 Full 대 No-peer의 비교기업 효과를 평가하는 기준이다. 원본 90호출의 공개용 집계와 판정은 `ablation_results/no_peer_target_llm_judge/`에 있으며 요청 전문·원응답은 없다.
 - 7·8단계 전에 `python -m pip install -e ".[eval]"` 로 PDF 본문 추출(pdfplumber)과 BERTScore(bert-score, torch, transformers) 의존성을 설치한다.
 
 ## 현재 코드로 다시 생성
@@ -173,6 +175,8 @@ PYTHONPATH=src python run_config/rerun_ablation.py collect --source <원래 작�
 | r02·r03 | `reports/repeated_standard_5companies/replicate_0N/<조건>/<기업>/report_<기업>.html` |
 
 `ablation_results/repeated_standard_5companies/` 는 8단계 산출물이다. 평균은 기업별 3회 평균이고, 표준편차는 표본 표준편차(n=3)다. 조건별 전체 평균의 표준편차는 회차마다 5개 기업 평균을 구한 뒤 그 3개 값으로 계산한다. `metrics.csv` 의 `offline_recovery` 열은 6단계에서 복구한 r03 One-team 아모레퍼시픽 보고서에만 값이 있다. 복구는 차트 2개의 근거 카드 목록만 고쳤고 본문은 바꾸지 않았다.
+
+`ablation_results/no_peer_target_llm_judge/`는 10단계 원본 실행의 공개용 내보내기다. 기준별 15쌍을 A/B 순서를 바꿔 평가했고, 동일한 후보가 두 번 모두 이겼을 때만 승패로 센다. Full의 결과는 NP1 9승·0패·6무(조정 승률 80.0%), NP2 7승·0패·8무(73.3%), NP3 9승·0패·6무(80.0%)다. 세 기준의 정의, 판정 규칙과 파일 구성은 [NP 평가 설명](../ablation_results/no_peer_target_llm_judge/README.md)에 있다.
 
 ## 한계
 

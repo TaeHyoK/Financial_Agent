@@ -125,7 +125,7 @@ src/
 run_config/                    # 논문 실험의 수집·생성·평가·LLM Judge 실행기
 final_reports/                 # 논문 실험 최종 보고서 HTML 75개
 final_reports_redesigned/      # 같은 보고서를 현재 디자인으로 다시 그린 판
-ablation_results/              # 최종 보고서 BERTScore 결과
+ablation_results/              # 최종 보고서 BERTScore 및 NP1·NP2·NP3 평가 결과
 docs/                          # 방법 문서, docs/history/ 는 작업 기록
 scripts/                       # 점검·비교용 보조 스크립트
 tests/                         # 회귀 테스트
@@ -142,14 +142,14 @@ One-team 조건에서 사용하는 통합 분석 구성요소는 `Unified_Agent`
 
 ## Ablation 결과와 재현 코드
 
-논문 실험의 실행기(`run_config/`), 최종 보고서 75개(`final_reports/`), BERTScore 결과(`ablation_results/`), 최종 보고서 LLM-as-a-Judge 코드가 들어 있다. 조건 정의와 단계별 재현 방법은 [Ablation 방법과 재현](docs/ABLATION.md)에 정리했다.
+논문 실험의 실행기(`run_config/`), 최종 보고서 75개(`final_reports/`), BERTScore 및 Full 대 No-peer의 NP1·NP2·NP3 결과(`ablation_results/`), 최종 보고서 LLM-as-a-Judge 코드가 들어 있다. 조건 정의와 단계별 재현 방법은 [Ablation 방법과 재현](docs/ABLATION.md)에 정리했다.
 
 - 원자료는 태그 `paper-collection`(커밋 `7e20b3d`)에서 수집했다. 다시 수집할 때는 이 리포 안에 `git worktree add repo paper-collection` 으로 수집용 작업 트리를 만들고 `python run_config/collect_pre_llm_data.py` 를 실행한다. 결과는 `collected_data/` 에 저장된다.
 - 보고서 75개는 태그 `paper-generation`(커밋 `da85eb3`)의 코드로 생성했다.
 - 그 뒤 `main`에는 동작을 바꾸는 변경이 들어왔다. 산출물 파일명과 모듈 이름을 정리했고(버전 접미사 제거), 종류주식 가치평가를 고쳤고(PR #25), Writer 표의 투자의견을 매수/중립/매도로 표시하도록 바꿨고(PR #26), Writer 프롬프트를 정리하고 고지문을 새로 썼다(PR #27). 따라서 `main`을 실행해도 75개 보고서를 똑같이 재현하지 않는다.
 - 다시 돌리려면 Git 밖 자료가 필요하다. 동결 입력(`collected_data/`, `prepared_inputs/`, `reports/`, `status/`), 평가 자료(`evaluation/`), 실제 애널리스트 PDF(`references/`)는 저작권과 크기 때문에 리포에 두지 않는다.
 
-Judge 는 실행을 마쳤고, 요청·응답·결과 파일은 리포에 두지 않는다.
+Judge 는 실행을 마쳤다. NP1·NP2·NP3의 공개용 집계·판정 결과는 리포에 두며, 요청 전문·모델 원응답과 다른 Judge 중간 산출물은 두지 않는다.
 
 ## 테스트
 

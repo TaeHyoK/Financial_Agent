@@ -1,0 +1,166 @@
+{
+  "evidence_version": "no_peer_target_common_evidence_v1",
+  "target_company": "현대건설",
+  "as_of_date": "2025-10-20",
+  "peer_scope": "domestic_only",
+  "peer_groups": {
+    "target": {
+      "run_key": "현대건설_20251020",
+      "company_name": "현대건설"
+    },
+    "domestic_peers": [
+      {
+        "run_key": "GS건설_20251020",
+        "company_name": "GS건설"
+      }
+    ],
+    "global_peers": []
+  },
+  "metrics": [
+    {
+      "company_name": "현대건설",
+      "run_key": "현대건설_20251020",
+      "peer_group": "target",
+      "ticker": "000720.KS",
+      "as_of_date": "20251020",
+      "financial_metrics": {
+        "revenue_100m": 151762.99,
+        "revenue_growth_pct": -11.59348554,
+        "revenue_growth_basis": "2025 HALF YTD",
+        "contribution_margin_pct": 6.47042471,
+        "sga_margin_pct": 3.63246006,
+        "operating_margin_pct": 2.837964644739801,
+        "net_margin_pct": 2.1436451667168654,
+        "operating_cash_flow_margin_pct": -12.448041515260078,
+        "eps": 1912.0,
+        "operating_cash_flow_100m": -18891.52,
+        "cash_and_equivalents_100m": 32268.18,
+        "debt_ratio_pct": 167.88659607997675,
+        "current_ratio_pct": 145.32611707969738,
+        "cash_ratio_pct": 22.9062102827781,
+        "equity_ratio_pct": 37.3292286599309,
+        "financial_period": "2025 HALF YTD",
+        "balance_sheet_basis": "POINT_IN_TIME"
+      },
+      "market_metrics": {
+        "stock_return_1m_pct": -3.2815198618307297,
+        "stock_return_3m_pct": -20.6798866855524,
+        "stock_return_6m_pct": 42.67515923566878,
+        "stock_return_12m_pct": 85.7379767827529,
+        "stock_excess_return_1m_pct": -13.11013648550898,
+        "stock_excess_return_3m_pct": -38.11564116602828,
+        "stock_excess_return_6m_pct": -9.076575332830899,
+        "stock_excess_return_12m_pct": 42.06381810323245,
+        "market_date": "2025-10-17",
+        "stock_return_5d_pct": -0.35587188612099,
+        "stock_return_20d_pct": -4.59965928449744,
+        "stock_return_60d_pct": -21.23769338959212,
+        "stock_excess_return_20d_pct": -16.70090763432888,
+        "stock_relative_strength_60_pct": -33.05574810181395,
+        "stock_volume_ratio_20": 1.978324554551227
+      },
+      "valuation_metrics": {
+        "calculated_as_of_date": "2025-10-17",
+        "calculation_basis": "disclosed_share_count_estimate",
+        "statement_scope_basis": "consolidated",
+        "limitations_basis": [
+          "공시된 보통주 발행주식 수에 과거 종가를 적용한 추정값이며, 공시 후 주식 수 변동을 모두 확인한 기준일 시가총액은 아니다.",
+          "가격 제공업체의 사후 분할 조정 가능성은 남아 있으며, 관측된 분할이 주식 수 기준일 뒤에 있으면 계산하지 않는다."
+        ],
+        "market_cap_100m_krw": null,
+        "trailing_pe": null,
+        "price_to_book": null,
+        "price_to_sales": null,
+        "direct_valuation_date": "2025-09-30",
+        "provider_values_basis": "reference_only_not_point_in_time_verified",
+        "enterprise_value_100m_krw": 65400.0,
+        "enterprise_value_to_revenue": 0.22,
+        "enterprise_value_to_ebitda": null
+      },
+      "data_quality": {
+        "missing_fields": [
+          "valuation_metrics.market_cap_100m_krw",
+          "valuation_metrics.trailing_pe",
+          "valuation_metrics.price_to_book",
+          "valuation_metrics.price_to_sales",
+          "valuation_metrics.enterprise_value_to_ebitda"
+        ]
+      }
+    },
+    {
+      "company_name": "GS건설",
+      "run_key": "GS건설_20251020",
+      "peer_group": "domestic_peer",
+      "ticker": "006360.KS",
+      "as_of_date": "20251020",
+      "financial_metrics": {
+        "revenue_100m": 62589.88305321,
+        "revenue_growth_pct": -1.71343045,
+        "revenue_growth_basis": "2025 HALF YTD",
+        "contribution_margin_pct": 9.42496691,
+        "sga_margin_pct": 5.71130229,
+        "operating_margin_pct": 3.7136646187115563,
+        "net_margin_pct": -1.1715336180715132,
+        "operating_cash_flow_margin_pct": 3.2123710984101015,
+        "eps": -405.0,
+        "operating_cash_flow_100m": 2010.61931373,
+        "cash_and_equivalents_100m": 24159.87641021,
+        "debt_ratio_pct": 253.16224712242263,
+        "current_ratio_pct": 119.9193344631228,
+        "cash_ratio_pct": 32.10896037549017,
+        "equity_ratio_pct": 28.315597381884167,
+        "financial_period": "2025 HALF YTD",
+        "balance_sheet_basis": "POINT_IN_TIME"
+      },
+      "market_metrics": {
+        "stock_return_1m_pct": -3.8947368421052597,
+        "stock_return_3m_pct": -11.14355231143552,
+        "stock_return_6m_pct": 11.07055961070559,
+        "stock_return_12m_pct": -3.9957939011566697,
+        "stock_excess_return_1m_pct": -13.7233534657835,
+        "stock_excess_return_3m_pct": -28.579306791911392,
+        "stock_excess_return_6m_pct": -40.68117495779408,
+        "stock_excess_return_12m_pct": -47.66995258067712,
+        "market_date": "2025-10-17",
+        "stock_return_5d_pct": -2.87234042553191,
+        "stock_return_20d_pct": -5.38860103626942,
+        "stock_return_60d_pct": -11.14355231143552,
+        "stock_excess_return_20d_pct": -17.48984938610086,
+        "stock_relative_strength_60_pct": -24.476203493319098,
+        "stock_volume_ratio_20": 1.1958225392597612
+      },
+      "valuation_metrics": {
+        "calculated_as_of_date": "2025-10-17",
+        "calculation_basis": "disclosed_share_count_estimate",
+        "statement_scope_basis": "consolidated",
+        "limitations_basis": [
+          "공시된 보통주 발행주식 수에 과거 종가를 적용한 추정값이며, 공시 후 주식 수 변동을 모두 확인한 기준일 시가총액은 아니다.",
+          "가격 제공업체의 사후 분할 조정 가능성은 남아 있으며, 관측된 분할이 주식 수 기준일 뒤에 있으면 계산하지 않는다."
+        ],
+        "market_cap_100m_krw": 15627.180074,
+        "trailing_pe": 31.63299538334653,
+        "price_to_book": 0.3517716940066686,
+        "price_to_sales": 0.12252096822233055,
+        "direct_valuation_date": "2025-09-30",
+        "provider_values_basis": "reference_only_not_point_in_time_verified",
+        "enterprise_value_100m_krw": 47300.0,
+        "enterprise_value_to_revenue": 0.37,
+        "enterprise_value_to_ebitda": 7.15
+      },
+      "data_quality": {
+        "missing_fields": []
+      }
+    }
+  ],
+  "comparison_limits": [
+    "국내 비교군은 현재 확보된 동일 기준일 국내 비교 대상만 포함한다.",
+    "글로벌 peer 비교는 현재 데이터 범위에 없어 생성하지 않는다.",
+    "기준일 계산 P/E, P/B, P/S는 동일 기준일끼리 비교하며 직접 YFinance EV 배수는 제공자 표시일을 별도로 유지한다.",
+    "완전한 업종 평균 비교는 업종 전체 표본이 없어 생성하지 않는다.",
+    "누적 기간과 연간 기준이 섞일 수 있어 기간 기준을 확인한 뒤 해석해야 한다."
+  ],
+  "excluded_scope": [
+    "global_peer_comparison",
+    "complete_industry_average_comparison"
+  ]
+}

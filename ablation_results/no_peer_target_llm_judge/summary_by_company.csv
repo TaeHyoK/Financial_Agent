@@ -1,0 +1,16 @@
+﻿comparison,company,criterion,win,loss,tie,error,valid_n,adjusted_win_rate
+full_vs_no_peer,현대건설,NP1,1,0,2,0,3,0.6666666666666666
+full_vs_no_peer,현대건설,NP2,0,0,3,0,3,0.5
+full_vs_no_peer,현대건설,NP3,1,0,2,0,3,0.6666666666666666
+full_vs_no_peer,두산,NP1,1,0,2,0,3,0.6666666666666666
+full_vs_no_peer,두산,NP2,1,0,2,0,3,0.6666666666666666
+full_vs_no_peer,두산,NP3,1,0,2,0,3,0.6666666666666666
+full_vs_no_peer,BGF리테일,NP1,3,0,0,0,3,1.0
+full_vs_no_peer,BGF리테일,NP2,2,0,1,0,3,0.8333333333333334
+full_vs_no_peer,BGF리테일,NP3,3,0,0,0,3,1.0
+full_vs_no_peer,아모레퍼시픽,NP1,2,0,1,0,3,0.8333333333333334
+full_vs_no_peer,아모레퍼시픽,NP2,2,0,1,0,3,0.8333333333333334
+full_vs_no_peer,아모레퍼시픽,NP3,2,0,1,0,3,0.8333333333333334
+full_vs_no_peer,SK바이오팜,NP1,2,0,1,0,3,0.8333333333333334
+full_vs_no_peer,SK바이오팜,NP2,2,0,1,0,3,0.8333333333333334
+full_vs_no_peer,SK바이오팜,NP3,2,0,1,0,3,0.8333333333333334

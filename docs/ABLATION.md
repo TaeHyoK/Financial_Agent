@@ -92,6 +92,76 @@ BERTScore 단계가 쓰는 본문 추출·채점 코드(`real_report_evaluation/
 - 9단계 `run` 은 유료 호출이다. 두 확인 옵션을 함께 줘야 시작한다. Judge 는 실행을 마쳤지만 요청·응답·결과 파일은 리포에 없다. 설계는 `run_config/FINAL_REPORT_LLM_JUDGE.md` 를 본다.
 - 7·8단계 전에 `python -m pip install -e ".[eval]"` 로 PDF 본문 추출(pdfplumber)과 BERTScore(bert-score, torch, transformers) 의존성을 설치한다.
 
+## 현재 코드로 다시 생성
+
+`run_config/rerun_ablation.py` 는 75개 보고서를 현재 `main` 코드로 다시 만든다. 단계 순서와 조건별 재사용 관계는 원래 생성과 같다. Full 을 먼저 돌리고 No-peer·One-team 을 돌리며, r01 을 먼저 돌리고 r02·r03 을 돌린다. 월별 요약은 r01 의 Full 과 Random news 에서만 만들고 나머지는 이를 다시 쓴다.
+
+- 원래 작업공간을 `--source` 로 준다. `collected_data/`, `reports/`, `status/` 가 있어야 한다. 네트워크에서 자료를 다시 받지 않는다.
+- 결정적 단계는 현재 코드로 다시 계산한다. 뉴스 선정, Random 표본(같은 시드 규칙), 월별 요약 요청, 조건별 입력, 재무 사실, 시장 요약, 가치평가가 여기에 든다. 주식 수 정보는 `--share-info recompute`(기본값)이면 저장해 둔 DART XML 에서 현재 추출기로 다시 뽑고, `frozen` 이면 수집할 때 값을 그대로 쓴다. 해당 XML 이 없는 기업은 두 경우 모두 수집 때 값을 쓴다.
+- LLM 호출마다 요청 해시를 구한다. 단계·기업·조건·회차가 같은 원래 호출과 해시가 같으면 모델을 부르지 않고 원래 응답을 돌려준다. 해시는 `shared/llm_clients.py` 와 같이 compact JSON 의 SHA-256 이다. 원래 응답만 다시 쓰고, 응답 뒤의 검증·병합·보고서 작성은 모두 현재 코드로 돌린다. 해시가 다르면 모델을 새로 부른다.
+- 모델 이름은 `gpt-5.4`(하위 분석, 통합 분석, 비교 분석, Strategy, Writer)와 `gpt-5.6-luna`(월별 요약)다. 요청 해시와 기록에도 이 이름이 그대로 남는다.
+- 에이전트를 하위 프로세스로 띄우지 않고 한 프로세스 안에서 돌린다. `--workers N` 은 서로 기다릴 필요가 없는 보고서를 프로세스 N 개로 나눠 돌린다.
+
+```bash
+# 1. 계획: 모델을 부르지 않고, 단계·조건·회차마다 원래 응답을 쓸 호출과 새로 부를 호출을 센다
+PYTHONPATH=src python run_config/rerun_ablation.py plan --source <원래 작업공간> --out <새 작업공간> --workers 6
+# 2. 실행: 중단되면 같은 명령을 다시 준다. 끝난 보고서와 끝난 단계는 건너뛴다
+PYTHONPATH=src python run_config/rerun_ablation.py run --source <원래 작업공간> --out <새 작업공간> --workers 4
+# 3. 정리: final_reports/, strategy_decisions/, manifest.json 을 다시 쓴다(run 도 끝날 때 한 번 쓴다)
+PYTHONPATH=src python run_config/rerun_ablation.py collect --source <원래 작업공간> --out <새 작업공간>
+```
+
+`--companies`, `--conditions`, `--replicates` 로 범위를 줄인다. 범위를 줄여 새 `--out` 에 돌려도 된다. No-peer 는 같은 회차 Full 의 대상기업 하위 분석을, One-team 과 r02·r03 은 r01 Full(또는 같은 조건 r01)의 입력과 월별 요약을 쓴다. 고르지 않은 앞선 보고서가 필요하면 `plan` 과 `run` 이 그 보고서를 더하되 필요한 단계만 돌린다. 이 보고서는 `partial` 상태로 남고 Strategy·Writer 는 돌리지 않는다. 무엇을 더했는지는 시작할 때 `dependency ...` 줄로 출력한다. `--no-dependencies` 를 주면 더하지 않고, 앞선 단계가 `--out` 에 없는 보고서는 멈춘다. `run` 을 시작하려면 환경에 `OPENAI_API_KEY` 가 있어야 한다. `--env-file` 로 키 파일을 줄 수 있지만 이미 내보낸 환경 변수가 먼저다. 같은 `--out` 에서 `--source` 나 `--share-info` 를 바꾸면 실행기가 멈춘다. `run --fake-transport stop|canned` 는 모델 없이 배선만 확인하는 점검용이며 결과로 쓰지 않는다.
+
+2026-10-04 `plan` 결과(현재 코드, 원래 응답을 쓸 호출 / 새로 부를 호출):
+
+| 단계 | `recompute` | `frozen` |
+|---|---:|---:|
+| 월별 요약 | 240 / 0 | 240 / 0 |
+| 뉴스 하위 분석 | 90 / 0 | 90 / 0 |
+| 재무 하위 분석 | 72 / 18 | 90 / 0 |
+| 시장 하위 분석 | 90 / 0 | 90 / 0 |
+| One-team 통합 분석 | 24 / 6 | 30 / 0 |
+| 비교 분석 | 0 / 60 | 0 / 60 |
+| Strategy | 0 / 75 | 0 / 75 |
+| Writer | 0 / 75 | 0 / 75 |
+
+`recompute` 에서 새로 부르는 재무·통합 분석 24회는 SK바이오팜(대상기업)과 SK(두산의 비교기업)다. 현재 추출기가 두 기업의 보통주 수를 새로 읽어 재무 요청이 바뀐다. 비교 분석은 비교 데이터셋 계산이 바뀌어 60회 모두 새로 부른다.
+
+원래 응답은 다음 파일에서 읽는다. 월별 요약·뉴스·재무·시장은 모델이 돌려준 JSON 원문을 저장하지 않았다. 그래서 저장된 출력에서 모델 JSON 을 다시 묶어 돌려준다. `plan` 과 `run` 은 원래 응답을 쓴 단계마다 새 출력과 원래 출력을 비교해 `status/replay_fidelity.jsonl` 에 남긴다. 2026-10-04 비교에서 월별 요약·뉴스·재무 출력은 원래와 같았다. 시장 보고서는 `valuation_snapshot` 만, 통합 보고서는 `supporting_facts.market.valuation_snapshot` 만 달랐다. 둘 다 현재 코드가 다시 계산한 가치평가다.
+
+| 단계 | 원래 응답 | 돌려주는 방법 |
+|---|---|---|
+| 월별 요약 | `News/<날짜>/context_exports/month/llm_period_summaries.json` 의 기간별 결과 | 기간 결과를 `{"periods": [...]}` 로 감싼다. 기간 ID 를 붙이는 후처리는 같은 값을 다시 쓴다 |
+| 뉴스 | `News/<날짜>/output/news_agent_handoff.json` 의 `output` | 호출 뒤 붙인 필드를 빼고, 검증 때 빠진 기준 근거 ID 를 병합된 ID 목록의 첫 값으로 되살린다 |
+| 재무 | `Financial/<날짜>/final_report.json` | 모델이 쓴 판단(주 판단, 항목별 판단, 보조 맥락 판단)을 요청 스키마대로 다시 묶는다 |
+| 시장 | `Y_Finance/<날짜>/final_report.json` | 호출 뒤 붙인 필드를 빼고 보조 맥락 판단을 영역별로 다시 묶는다 |
+| One-team 통합 분석 | `runs/<날짜>/unified_domain_team/unified_response.json` 의 `output` | 저장된 모델 JSON 을 그대로 쓴다 |
+
+`--out` 에 남는 것:
+
+- `reports/`: 원래와 같은 구조의 보고서별 작업 폴더. `prepared_inputs/` 와 `collected_data/`(주식 수를 반영한 재무 입력)도 같은 구조로 남는다.
+- `final_reports/r0N/<조건>/<기업>.html`, `strategy_decisions/r0N/<조건>/<기업>.json`
+- `manifest.json`: 코드 커밋, 단계별 모델 이름, 주식 수 처리 방식, 원래 응답을 쓴 호출 수와 새로 부른 호출 수, 시각
+- `status/llm_calls.jsonl`: 호출마다 단계, 기업, 조건, 회차, 모델 이름, 요청 해시, 원래 응답을 썼는지
+- `status/llm_usage.jsonl`: 모델에 실제로 보낸 호출만 남는 사용량 기록(`LLM_USAGE_MANIFEST`)
+- `status/reports/r0N/<조건>/<기업>.json`: 보고서별 진행 상태. 이어서 돌릴 때 이 파일을 본다.
+
+### 앞선 재생성의 응답 다시 쓰기
+
+`--replay-from <앞선 --out>` 을 주면 앞선 재생성이 모델에서 받은 응답도 다시 쓴다. 여러 번 줄 수 있다. 키와 해시는 원래 응답과 같다(회차, 조건, 대상기업, 역할, 단계와 요청 해시). 같은 키와 해시가 여러 곳에 있으면 원래 작업공간을 먼저 쓰고, 그다음 `--replay-from` 을 준 순서대로 쓴다. `run` 을 실제 모델로 끝낸 작업공간만 받는다(`run_settings.json` 의 `transport` 가 `real`). 같은 단계를 여러 번 불렀다면 저장된 출력은 마지막 호출의 것이므로 마지막 호출만 다시 쓴다. 단계가 끝나지 않은 보고서의 호출은 쓰지 않는다.
+
+| 단계 | 앞선 재생성에서 읽는 파일 | 돌려주는 방법 |
+|---|---|---|
+| 월별 요약·뉴스·재무·시장·통합 분석 | 원래 응답과 같은 파일 | 원래 응답과 같다. 뉴스·재무·통합 분석은 저장된 요청의 해시가 기록된 해시와 같은지도 본다 |
+| 비교 분석 | `Competitor/<날짜>/peer_comparison_output.json` | 모델 JSON 을 그대로 쓴다 |
+| Strategy | `Strategy/<날짜>/strategy_response_attempts/` 중 검증을 통과했고 `strategy_decision_cache.json` 과 지문이 같은 마지막 응답 | 모델 JSON 을 그대로 쓴다 |
+| Writer | `Writer/<날짜>/llm_writer_output.json` 의 `raw_payload` 와 `usage` | 모델 JSON 을 그대로 쓴다 |
+
+응답을 다시 쓴 단계는 응답을 가져온 작업공간의 출력과 비교해 `status/replay_fidelity.jsonl` 에 남긴다(`reference` 필드). Writer 를 다시 썼으면 그린 HTML 도 비교한다. `plan` 은 다시 쓴 호출 수를 작업공간별로 나눠 출력한다(`calls by source`).
+
+2026-10-04 첫 재생성(75개)을 `--replay-from` 으로 준 `plan` 결과: 비교 분석 60회, 재무 18회, 통합 분석 6회를 첫 재생성의 응답으로 다시 쓰고, 출력 144개가 모두 같았다. Strategy 75회와 Writer 75회는 새로 부른다. Strategy 요청에 든 이익률 변화 항목의 키 순서가 실행할 때마다 달라질 수 있어(`Strategy_Agent/packet.py` 의 `_margin_changes` 가 집합 교집합 순서를 쓴다) 요청 해시가 맞지 않는다. Writer 요청은 Strategy 응답에 따라 정해지므로 함께 바뀐다.
+
 ## 결과 파일과 대응
 
 `final_reports/r0N/<조건>/<기업>.html` 은 `ablation_results/repeated_standard_5companies/metrics.csv` 의 한 행(`company`, `condition`, `replicate`)에 대응한다. `report` 열은 생성 당시 경로이고 `report_sha256` 은 75개 파일과 모두 일치한다. 생성 당시 경로는 다음과 같다(`${ABLATION_WORKSPACE}` 는 생성 작업공간).

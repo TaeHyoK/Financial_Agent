@@ -53,3 +53,15 @@ Thumbs.db
 /bundle_manifest.json
 /BUNDLE_README.md
 /ABLATION_HANDOFF_*.md
+
+# Private development records and handoff artifacts
+/docs/history/
+/docs/ablation_handoff/
+/docs/*HANDOFF*.md
+/private_audit/
+/progress_report_to_professor.md
+/summary.md
+/*_PLAN.md
+/ablation/requests/
+/ablation/responses/
+/ablation/logs/

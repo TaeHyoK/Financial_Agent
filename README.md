@@ -15,7 +15,7 @@
 
 차트 목록에는 실제 도식에 사용된 기간과 주요 지표가 구조화되어 전달된다. Writer Agent는 이를 Strategy 근거와 연결해 차트 관찰과 대상기업 판단에 미치는 의미를 작성하며, 고정 문구는 축·단위와 대체 설명 같은 도식 정보에만 사용한다.
 
-![기업 분석 보고서 생성 구조](docs/assets/pipeline_architecture.jpg)
+![멀티에이전트 금융 의사결정 프레임워크](docs/assets/multi_agent_financial_framework.jpg)
 
 공통 subdata는 **월별 뉴스 요약, 시장 지표표 1개, 재무 추세표 1개**다. 같은 자료를 받는 두 에이전트는 동일한 구성과 값을 사용한다. 시장 원자료는 보관하며, 언어모델에는 월별 관측치와 최근 20거래일만 전달한다. 세부 지표·기간·출력 계약과 검증 방법은 [12개월 분석 설계](docs/annual_analysis.md)를 참고한다.
 
@@ -98,7 +98,7 @@ Output_total/
     └── runs/{selected_date}/full_pipeline_manifest.json
 ```
 
-산출물은 대상기업별로 모이며 에이전트별 자료는 그 아래에서 기준일별로 구분된다. 비교기업의 하위 분석은 독립된 최상위 결과로 취급하지 않고 대상기업의 `비교기업/{peer_company_name}` 아래에 저장한다. 최종 보고서는 기업 폴더의 최상위인 `Output_total/{company_name}/report_{company_name}.html`에 저장된다. Writer 폴더의 `report.html`은 생성 과정과 검증을 위한 내부 사본이다. 논문 실험의 최종 보고서 예시는 [final_reports/r01/full/현대건설.html](final_reports/r01/full/현대건설.html)에서 볼 수 있다. 이 보고서는 논문 생성 시점의 코드로 만들었으므로 현재 코드의 출력과 표기가 일부 다르다.
+산출물은 대상기업별로 모이며 에이전트별 자료는 그 아래에서 기준일별로 구분된다. 비교기업의 하위 분석은 독립된 최상위 결과로 취급하지 않고 대상기업의 `비교기업/{peer_company_name}` 아래에 저장한다. 최종 보고서는 기업 폴더의 최상위인 `Output_total/{company_name}/report_{company_name}.html`에 저장된다. Writer 폴더의 `report.html`은 생성 과정과 검증을 위한 내부 사본이다. 공개 최종 보고서 예시는 [final_reports/r01/full/현대건설.html](final_reports/r01/full/현대건설.html)에서 볼 수 있다.
 
 실행이 끝나면 터미널 마지막에 전체 언어 모델 토큰 사용량과 예상 OpenAI API 비용이 달러로 표시된다. 비용은 캐시되지 않은 입력, 캐시 입력과 출력 토큰을 각각의 단가로 계산한다. 같은 내용은 실행별 `llm_usage_summary.json`의 `estimated_api_cost`에도 기록된다. 단가는 OpenAI 공식 모델 문서의 표준 API 가격을 기준으로 하며 도구 호출 요금과 지역 처리 추가 요금은 포함하지 않는다.
 
@@ -122,34 +122,33 @@ src/
 리포 루트에는 다음 폴더가 함께 있다.
 
 ```text
-run_config/                    # 논문 실험의 수집·생성·평가·LLM Judge 실행기
-final_reports/                 # 논문 실험 최종 보고서 HTML 75개
-final_reports_redesigned/      # 같은 보고서를 현재 디자인으로 다시 그린 판
-ablation_results/              # 최종 보고서 BERTScore 및 NP1·NP2·NP3 평가 결과
-docs/                          # 방법 문서, docs/history/ 는 작업 기록
-scripts/                       # 점검·비교용 보조 스크립트
+ablation/                      # 실험 실행·설정·평가 코드와 결과
+├── run_config/                # 수집·조건 준비·보고서 생성·Judge 실행기
+├── ablation_suite/            # Random 표본 추출과 입력 처리
+├── ablation_evaluation/       # 조건별 입력 발견과 평가 유틸
+├── real_report_evaluation/    # 본문 추출과 BERTScore 계산
+├── results/                   # BERTScore 및 NP1·NP2·NP3 결과
+└── docs/                      # 실험 조건과 재현 절차
+final_reports/                 # 기업·회차·조건별 최종 보고서 HTML 75개
+docs/                          # 데이터 처리와 분석 설계
+scripts/                       # 점검용 보조 스크립트
 tests/                         # 회귀 테스트
 configs/                       # 기업 입력과 .env 예시
-ablation_suite/                # 이전 실험 코드(아래 참고)
-ablation_evaluation/           # 이전 실험 코드(아래 참고)
-real_report_evaluation/        # 이전 실험 코드(아래 참고)
-run_real_report_evaluation.py  # 이전 평가 진입점
 ```
 
-`ablation_suite/`, `ablation_evaluation/`, `real_report_evaluation/`, `run_real_report_evaluation.py` 는 이전 6개 기업 실험의 코드다. 논문 실험은 이 중 Random news 표본 추출(`ablation_suite/annual_random.py`)과 본문 추출·BERTScore 계산(`real_report_evaluation/extract.py`, `runner.py`)만 쓴다. 평가 규약(`ablation_results/repeated_standard_5companies/protocol.json`)이 이 두 파일의 sha256 을 고정하고, 두 파일이 나머지 모듈을 import 하므로 폴더째 남겨 둔다.
-
-One-team 조건에서 사용하는 통합 분석 구성요소는 `Unified_Agent`에 포함한다. 재무·뉴스·시장 자료를 하나의 분석 요청으로 전달하고, 통합 결과를 비교 분석·Strategy·Writer에 연결한다. 일반 실행 결과와 API 키가 포함될 수 있는 `.env`는 Git 추적 대상에서 제외한다.
+One-team 조건의 통합 분석 구성요소는 `src/Agent_Team/Unified_Agent/`에 포함한다. 재무·뉴스·시장 자료를 하나의 분석 요청으로 전달하고, 통합 결과를 비교 분석·Strategy·Writer에 연결한다.
 
 ## Ablation 결과와 재현 코드
 
-논문 실험의 실행기(`run_config/`), 최종 보고서 75개(`final_reports/`), BERTScore 및 Full 대 No-peer의 NP1·NP2·NP3 결과(`ablation_results/`), 최종 보고서 LLM-as-a-Judge 코드가 들어 있다. 조건 정의와 단계별 재현 방법은 [Ablation 방법과 재현](docs/ABLATION.md)에 정리했다.
+5개 기업 × 5개 조건 × 3회 생성 실험의 실행·평가 코드와 공개 결과를 [`ablation/`](ablation/README.md)에 모았다. 조건은 Full, Random news, No-subdata, No-peer, One-team이다. 세부 정의와 실행 순서는 [실험 방법](ablation/docs/ABLATION.md)을 참고한다.
 
-- 원자료는 태그 `paper-collection`(커밋 `7e20b3d`)에서 수집했다. 다시 수집할 때는 이 리포 안에 `git worktree add repo paper-collection` 으로 수집용 작업 트리를 만들고 `python run_config/collect_pre_llm_data.py` 를 실행한다. 결과는 `collected_data/` 에 저장된다.
-- 보고서 75개는 태그 `paper-generation`(커밋 `da85eb3`)의 코드로 생성했다.
-- 그 뒤 `main`에는 동작을 바꾸는 변경이 들어왔다. 산출물 파일명과 모듈 이름을 정리했고(버전 접미사 제거), 종류주식 가치평가를 고쳤고(PR #25), Writer 표의 투자의견을 매수/중립/매도로 표시하도록 바꿨고(PR #26), Writer 프롬프트를 정리하고 고지문을 새로 썼다(PR #27). 따라서 `main`을 실행해도 75개 보고서를 똑같이 재현하지 않는다.
-- 다시 돌리려면 Git 밖 자료가 필요하다. 동결 입력(`collected_data/`, `prepared_inputs/`, `reports/`, `status/`), 평가 자료(`evaluation/`), 실제 애널리스트 PDF(`references/`)는 저작권과 크기 때문에 리포에 두지 않는다.
+- [최종 보고서](final_reports/README.md): HTML 75개. 차트를 포함하므로 파일을 내려받아 브라우저에서 열 수 있다.
+- [BERTScore 결과](ablation/results/repeated_standard_5companies/평가결과.md): 조건별·기업별 3회 평균과 표준편차.
+- [NP1·NP2·NP3 결과](ablation/results/no_peer_target_llm_judge/README.md): Full 대 No-peer의 대상기업 통찰 평가.
 
-Judge 는 실행을 마쳤다. NP1·NP2·NP3의 공개용 집계·판정 결과는 리포에 두며, 요청 전문·모델 원응답과 다른 Judge 중간 산출물은 두지 않는다.
+분석·비교·Strategy·Writer 모델은 `gpt-5.4`, 월별 뉴스 요약은 `gpt-5.6-luna`를 사용했다. NP 평가의 Judge 모델은 `gpt-5.6-terra`다. 보고서 생성 당시 코드의 기준은 `paper-generation`, 원자료 수집 코드의 기준은 `paper-collection` 태그다. 현재 구현과 생성 당시 구현이 다를 수 있으므로 실행 버전과 입력을 함께 기록해야 한다.
+
+API 키, 내부 작업 기록, 수집 원자료, 실제 애널리스트 PDF, 요청·원응답과 실행 로그는 공개하지 않는다. 새 실행에는 개인 API 키와 별도 원자료가 필요하며, 유료 Judge 실행은 명시적인 확인 옵션을 요구한다. 평가 당시 파일 해시는 평가 결과에 보존하며, 공개 HTML의 해시와 대응 관계는 [보고서 명세](final_reports/report_manifest.json)에 기록한다.
 
 ## 테스트
 

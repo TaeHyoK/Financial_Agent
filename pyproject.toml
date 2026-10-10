@@ -52,16 +52,22 @@ news-analysis-agent = "Agent_Team.News_Agent.analysis_agent:main"
 strategy-agent = "Agent_Team.Strategy_Agent.cli:main"
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "run_config/tests"]
+testpaths = ["tests", "ablation/run_config/tests"]
 
 [tool.setuptools.package-dir]
 "" = "src"
+"ablation_suite" = "ablation/ablation_suite"
+"ablation_evaluation" = "ablation/ablation_evaluation"
+"real_report_evaluation" = "ablation/real_report_evaluation"
+"run_config" = "ablation/run_config"
 
 [tool.setuptools.packages.find]
-where = ["src"]
-include = ["Agent_Team*", "shared*", "orchestration*"]
-exclude = ["*__pycache__*"]
+where = ["src", "ablation"]
+include = ["Agent_Team*", "shared*", "orchestration*", "ablation_suite*", "ablation_evaluation*", "real_report_evaluation*", "run_config*"]
+exclude = ["*__pycache__*", "*.tests*"]
 
 [tool.setuptools.package-data]
 "Agent_Team.Competitor_Agent" = ["prompts/*.md"]
 "Agent_Team.Strategy_Agent" = ["prompts/*.md"]
+
+"real_report_evaluation" = ["reference_regions.json"]

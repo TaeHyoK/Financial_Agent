@@ -146,13 +146,13 @@ print('single report reached comparison and Strategy')
 
 
 @unittest.skipUnless(
-    (Path(__file__).resolve().parents[1] / "run_config/run_one_team_reports.py").is_file(),
-    "Runs only when run_config/run_one_team_reports.py is present.",
+    (Path(__file__).resolve().parents[1] / "ablation/run_config/run_one_team_reports.py").is_file(),
+    "Runs only when ablation/run_config/run_one_team_reports.py is present.",
 )
 class OneTeamRunnerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        path = Path(__file__).resolve().parents[1] / "run_config/run_one_team_reports.py"
+        path = Path(__file__).resolve().parents[1] / "ablation/run_config/run_one_team_reports.py"
         spec = importlib.util.spec_from_file_location("one_team_runner_test", path)
         cls.runner = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = cls.runner

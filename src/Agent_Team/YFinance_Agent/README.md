@@ -13,7 +13,7 @@ python -m pip install -r requirements.txt
 
 ## Run
 
-시장 데이터 수집과 지표 계산은 `main.py` 가 담당합니다. 최종 보고서 파이프라인(`run_config/`)도 이 스크립트를 직접 호출합니다.
+시장 데이터 수집과 지표 계산은 `main.py` 가 담당합니다. 최종 보고서 파이프라인(`ablation/run_config/`)도 이 스크립트를 직접 호출합니다.
 
 ```bash
 cd /path/to/Financial_Agent

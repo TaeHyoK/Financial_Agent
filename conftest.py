@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
-for entry in (ROOT / "src", ROOT / "run_config"):
+for entry in (ROOT / "src", ROOT / "ablation", ROOT / "ablation" / "run_config"):
     path = str(entry)
     if path in sys.path:
         sys.path.remove(path)
